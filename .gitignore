@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+publish/
+publish_tmp/
+
+# VS / Rider
+.vs/
+.idea/
+*.user
+*.suo
+
+# Logs
+*.log
+
+# Local publish artifacts
+*.exe
+!setup.iss
+
+# OS
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,190 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+namespace SeewoAutoLogin.Services
+{
+    public sealed class TrayIconService : IDisposable
+    {
+        private NotifyIcon _notifyIcon;
+        private readonly Action _showWindowAction;
+        private Icon _cachedIcon;
+        private bool _disposed;
+        private ContextMenuStrip _menu;
+        private readonly Func<List<AccountMenuItem>> _getAccounts;
+        private readonly Action<string> _onSwitchAccount;
+        private List<string> _visibleIds = new List<string>();
+
+        /// <param name="showWindowAction">打开管理窗口</param>
+        /// <param name="getAccounts">获取所有账号菜单项</param>
+        /// <param name="onSwitchAccount">切换账号（参数为账号 ID）</param>
+        public TrayIconService(Action showWindowAction,
+                               Func<List<AccountMenuItem>> getAccounts = null,
+                               Action<string> onSwitchAccount = null)
+        {
+            _showWindowAction = showWindowAction;
+            _getAccounts = getAccounts ?? (() => new List<AccountMenuItem>());
+            _onSwitchAccount = onSwitchAccount;
+        }
+
+        public void Initialize()
+        {
+            _cachedIcon = CreateDefaultIcon();
+
+            _menu = new ContextMenuStrip();
+            _menu.Font = new Font("Segoe UI", 9);
+
+            // 打开主界面
+            var openItem = _menu.Items.Add("打开管理窗口");
+            openItem.Click += (s, e) => _showWindowAction?.Invoke();
+
+            _notifyIcon = new NotifyIcon
+            {
+                Icon = _cachedIcon,
+                Text = Strings.AppTitle,
+                Visible = true,
+                ContextMenuStrip = _menu
+            };
+
+            _notifyIcon.Click += (s, e) =>
+            {
+                // 左键打开
+                if (e is MouseEventArgs me && me.Button == MouseButtons.Left)
+                    _showWindowAction?.Invoke();
+            };
+            _notifyIcon.DoubleClick += (s, e) => _showWindowAction?.Invoke();
+
+            // 初始构建菜单
+            RebuildMenu();
+        }
+
+        public void UpdateVisibleAccounts(List<string> visibleIds)
+        {
+            _visibleIds = visibleIds ?? new List<string>();
+            RebuildMenu();
+        }
+
+        private void RebuildMenu()
+        {
+            if (_notifyIcon == null || _menu == null) return;
+            while (_menu.Items.Count > 1) _menu.Items.RemoveAt(1);
+
+            var accounts = _getAccounts() ?? new List<AccountMenuItem>();
+            if (accounts.Count == 0) return;
+
+            _menu.Items.Add(new ToolStripSeparator());
+
+            // 只显示未生效账号（生效区内的不显示）
+            var unlisted = accounts.Skip(PluginConfig.MaxVisibleAccounts).ToList();
+
+            if (unlisted.Count > 0)
+            {
+                var h = _menu.Items.Add("— 未加入希沃列表（点击切换） —");
+                h.Enabled = false;
+                foreach (var a in unlisted)
+                {
+                    var cnt = a.RequestCount > 0 ? $" ({a.RequestCount}次)" : "";
+                    var item = _menu.Items.Add($"{a.DisplayName}{cnt}");
+                    var cid = a.Id;
+                    item.Click += (s, e) => _onSwitchAccount?.Invoke(cid);
+                }
+            }
+
+            _menu.Items.Add(new ToolStripSeparator());
+            var overlay = _menu.Items.Add("显示遮罩");
+            overlay.Click += (s, e) => _onSwitchAccount?.Invoke("__OVERLAY__");
+            var restart = _menu.Items.Add("重启程序");
+            restart.Click += (s, e) => _onSwitchAccount?.Invoke("__RESTART__");
+            var exit = _menu.Items.Add("退出程序");
+            exit.Click += (s, e) => _onSwitchAccount?.Invoke("__EXIT__");
+        }
+
+        public void UpdateTrayText(string text)
+        {
+            if (_notifyIcon != null)
+                _notifyIcon.Text = text;
+        }
+
+        public void SetStatusText(string statusMessage)
+        {
+            if (_notifyIcon != null)
+            {
+                _notifyIcon.BalloonTipTitle = Strings.AppTitle;
+                _notifyIcon.BalloonTipText = statusMessage;
+                _notifyIcon.ShowBalloonTip(3000);
+            }
+        }
+
+        private static Icon CreateDefaultIcon()
+        {
+            using var image = new Bitmap(16, 16);
+            using var g = Graphics.FromImage(image);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+
+            // 蓝色渐变背景圆角方形
+            var rect = new Rectangle(0, 0, 16, 16);
+            using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
+                rect, Color.FromArgb(0, 122, 255), Color.FromArgb(0, 60, 180),
+                System.Drawing.Drawing2D.LinearGradientMode.ForwardDiagonal))
+            {
+                g.FillEllipse(brush, new Rectangle(1, 1, 14, 14));
+            }
+
+            // 白色 "S" 字母
+            using (var font = new Font("Segoe UI", 7, FontStyle.Bold))
+            {
+                var size = g.MeasureString("S", font);
+                g.DrawString("S", font, Brushes.White,
+                    (16 - size.Width) / 2f + 0.5f,
+                    (16 - size.Height) / 2f - 0.5f);
+            }
+
+            var hicon = image.GetHicon();
+            try
+            {
+                using (var tempIcon = Icon.FromHandle(hicon))
+                using (var ms = new MemoryStream())
+                {
+                    tempIcon.Save(ms);
+                    ms.Position = 0;
+                    return new Icon(ms);
+                }
+            }
+            finally
+            {
+                if (hicon != IntPtr.Zero)
+                    DestroyIcon(hicon);
+            }
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DestroyIcon(IntPtr hIcon);
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (_notifyIcon != null)
+            {
+                _notifyIcon.Visible = false;
+                _notifyIcon.Dispose();
+            }
+            _cachedIcon?.Dispose();
+            _menu?.Dispose();
+        }
+    }
+
+    public class AccountMenuItem
+    {
+        public string Id { get; set; }
+        public string DisplayName { get; set; }
+        public int RequestCount { get; set; }
+        public DateTime? LastRequestAtUtc { get; set; }
+    }
+}

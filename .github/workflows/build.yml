@@ -1,0 +1,34 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore SeewoAutoLogin.csproj
+
+      - name: Build (Release)
+        run: dotnet build SeewoAutoLogin.csproj -c Release --no-restore
+
+      - name: Publish single-file (win-x64)
+        run: dotnet publish SeewoAutoLogin.csproj -c Release -r win-x64 --self-contained false -o bin\Release\net8.0-windows10.0.19041.0\publish --no-restore
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeewoAutoLogin-win-x64
+          path: bin\Release\net8.0-windows10.0.19041.0\publish
