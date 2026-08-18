@@ -19,8 +19,8 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore
-        run: dotnet restore SeewoAutoLogin.csproj
+      - name: Restore (win-x64)
+        run: dotnet restore SeewoAutoLogin.csproj -r win-x64
 
       - name: Publish single-file (win-x64)
         run: dotnet publish SeewoAutoLogin.csproj -c Release -r win-x64 --self-contained false -o bin\Release\net8.0-windows10.0.19041.0\publish --no-restore
