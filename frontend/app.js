@@ -43,6 +43,7 @@ function handleCSharpMessage(msg) {
       if (msg.autoStart!==undefined) document.getElementById('autoStartCheck').checked = msg.autoStart;
       if (msg.minimizeToTray!==undefined) document.getElementById('minimizeToTrayCheck').checked = msg.minimizeToTray;
       if (msg.startMinimized!==undefined) document.getElementById('startMinimizedCheck').checked = msg.startMinimized;
+      if (msg.autoShowOverlay!==undefined) document.getElementById('autoShowOverlayCheck').checked = msg.autoShowOverlay;
       break;
     case 'unlock-status': document.getElementById('unlockStatus').textContent = msg.text; break;
     case 'unlock-success': hideLock(); break;
@@ -208,6 +209,7 @@ document.addEventListener('change', function(e) {
     case 'autoStartCheck': send({type:'update-setting', key:'autoStart', value:e.target.checked}); break;
     case 'minimizeToTrayCheck': send({type:'update-setting', key:'minimizeToTray', value:e.target.checked}); break;
     case 'startMinimizedCheck': send({type:'update-setting', key:'startMinimized', value:e.target.checked}); break;
+    case 'autoShowOverlayCheck': send({type:'update-setting', key:'autoShowOverlay', value:e.target.checked}); break;
     case 'rotationGroupSize': send({type:'update-setting', key:'userListRotationGroupSize', value:parseInt(e.target.value)}); break;
     case 'particleToggle': toggleParticles(e.target.checked); break;
   }

@@ -20,6 +20,8 @@ namespace SeewoAutoLogin
         public bool AutoStartEnabled { get; set; } = true;
         public bool MinimizeToTray { get; set; } = true;
         public bool StartMinimized { get; set; } = true;
+        /// <summary>希沃打开但未登录时是否自动显示切换遮罩（全局控制，默认关闭）</summary>
+        public bool AutoShowOverlay { get; set; }
     }
 
     public class SeewoAccount

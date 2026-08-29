@@ -3,14 +3,14 @@
 
 [Setup]
 AppName=希沃自动登录
-AppVersion=1.7.8
+AppVersion=1.7.9
 AppPublisher=SeewoAutoLogin
 AppPublisherURL=https://github.com/CJKmkp/SeewoAutoLogin
 DefaultDirName={autopf}\SeewoAutoLogin
 DefaultGroupName=希沃自动登录
 DisableProgramGroupPage=yes
 OutputDir=.\publish
-OutputBaseFilename=SeewoAutoLogin_Setup_v1.7.8
+OutputBaseFilename=SeewoAutoLogin_Setup_v1.7.9
 Compression=lzma
 SolidCompression=yes
 UninstallDisplayIcon={app}\SeewoAutoLogin.exe

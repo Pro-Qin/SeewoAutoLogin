@@ -215,44 +215,47 @@ namespace SeewoAutoLogin
                 instanceMutex?.Dispose();
             }
 
-            // 检测管理员权限，非管理员自动提权重启
+            // 检测管理员权限，非管理员自动提权重启。
+            // 提权是 SSO 快捷登录能被希沃识别的前提：hosts 映射（local.id.seewo.com → 127.0.0.1）
+            // 与 HttpListener 的非 localhost 前缀 URL ACL 都需要管理员权限。
+            // 因此 UAC 被拒时不再静默降级运行，而是明确告知后果并让用户选择重试或降级。
             if (!e.Args.Contains("--elevated"))
             {
                 try
                 {
-                    using var identity = WindowsIdentity.GetCurrent();
-                    var principal = new WindowsPrincipal(identity);
-                    if (!principal.IsInRole(WindowsBuiltInRole.Administrator))
+                    if (!IsAdministrator())
                     {
                         WriteDiagnosticLog("[Elevate] 非管理员权限，请求提权重启");
-                        var exePath = Process.GetCurrentProcess().MainModule?.FileName;
-                        if (!string.IsNullOrEmpty(exePath))
+                        if (TryElevate())
                         {
-                            var psi = new ProcessStartInfo
-                            {
-                                FileName = exePath,
-                                Arguments = "--elevated",
-                                UseShellExecute = true,
-                                Verb = "runas"
-                            };
-                            try
-                            {
-                                Process.Start(psi);
-                            }
-                            catch (Exception ex)
-                            {
-                                WriteDiagnosticLog($"[Elevate] 提权失败（用户取消或系统限制），以当前权限运行: {ex.Message}");
-                                // 用户可能取消了 UAC，继续以当前权限运行
-                                goto continueStartup;
-                            }
                             _isExiting = true;
                             Shutdown();
                             return;
                         }
-                        else
+
+                        // UAC 被拒：说明后果，给出重试/降级选择，不静默降级
+                        WriteDiagnosticLog("[Elevate] 用户取消 UAC 或提权失败");
+                        var choice = MessageBox.Show(
+                            "希沃快捷登录需要管理员权限才能正常工作（写入 hosts 映射、监听本地 SSO 网关）。\n\n" +
+                            "当前以普通权限运行将导致希沃白板无法识别到快捷登录/账号列表入口。\n\n" +
+                            "是否重试以管理员身份运行？\n" +
+                            "  · 是   → 重新请求管理员权限\n" +
+                            "  · 否   → 仍以普通权限运行（不推荐，SSO 快捷登录可能失效）",
+                            "需要管理员权限",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Warning);
+
+                        if (choice == MessageBoxResult.Yes)
                         {
-                            WriteDiagnosticLog("[Elevate] 无法获取可执行文件路径，跳过提权");
+                            // 重试提权；若仍失败则退出（降级运行对 SSO 无意义）
+                            TryElevate();
+                            _isExiting = true;
+                            Shutdown();
+                            return;
                         }
+
+                        // 用户选择降级运行：降级模式下 SSO 可能不可用，记录日志
+                        WriteDiagnosticLog("[Elevate] 用户选择降级运行（SSO 快捷登录可能不可用）");
                     }
                 }
                 catch (Exception ex)
@@ -262,20 +265,10 @@ namespace SeewoAutoLogin
             }
             else
             {
-                // 验证 --elevated 后是否真的具有管理员权限（仅记录日志，不弹窗）
-                try
-                {
-                    using var identity = WindowsIdentity.GetCurrent();
-                    var principal = new WindowsPrincipal(identity);
-                    if (!principal.IsInRole(WindowsBuiltInRole.Administrator))
-                    {
-                        WriteDiagnosticLog("[Elevate] --elevated 后仍未获得管理员权限，以降级模式运行");
-                    }
-                }
-                catch { }
+                // 已带 --elevated：验证是否真的获得管理员权限（仅记录日志，不弹窗）
+                if (!IsAdministrator())
+                    WriteDiagnosticLog("[Elevate] 提权重启后仍未获得管理员权限，以降级模式运行");
             }
-
-        continueStartup:
 
             // 注册全局异常处理器
             AppDomain.CurrentDomain.UnhandledException += (_, args) =>
@@ -406,6 +399,56 @@ namespace SeewoAutoLogin
             _instanceMutex?.Dispose();
             base.OnExit(e);
         }
+
+        #region Elevation
+
+        /// <summary>当前是否具有管理员权限</summary>
+        private static bool IsAdministrator()
+        {
+            try
+            {
+                using var identity = WindowsIdentity.GetCurrent();
+                return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 以管理员身份（runas）重启当前程序，参数追加 --elevated。
+        /// 返回 true 表示已成功拉起提权进程（当前进程应随后退出）。
+        /// </summary>
+        private bool TryElevate()
+        {
+            try
+            {
+                var exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    WriteDiagnosticLog("[Elevate] 无法获取可执行文件路径，跳过提权");
+                    return false;
+                }
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = "--elevated",
+                    UseShellExecute = true,
+                    Verb = "runas"
+                };
+                Process.Start(psi);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Elevate] 提权失败（用户取消或系统限制）: {ex.Message}");
+                return false;
+            }
+        }
+
+        #endregion
 
         #region Account Management
 

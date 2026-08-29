@@ -69,7 +69,13 @@ namespace SeewoAutoLogin
         {
             if (IsRunning) return;
 
-            EnsureHostsMapping();
+            if (!EnsureHostsMapping())
+            {
+                // 主机映射缺失/写入失败会导致希沃请求 local.id.seewo.com 时被解析到真实服务器，
+                // 从而看不到本机 SSO 快捷登录入口。这里明确抛出，交由上层提示用户。
+                throw new InvalidOperationException(
+                    "无法将 local.id.seewo.com 映射到 127.0.0.1（hosts 写入失败）。请以管理员权限运行本程序。");
+            }
             ResetListener();
 
             try
@@ -177,19 +183,45 @@ namespace SeewoAutoLogin
                    host == "::1" || host == "[::1]" || host == SeeSoLocalHost;
         }
 
-        private static void EnsureHostsMapping()
+        private bool EnsureHostsMapping()
         {
             try
             {
                 var hostsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
                     "drivers", "etc", "hosts");
-                if (!File.Exists(hostsPath)) return;
+                if (!File.Exists(hostsPath))
+                {
+                    Log("hosts 文件不存在，无法建立 local.id.seewo.com 映射");
+                    return false;
+                }
+
                 var content = File.ReadAllText(hostsPath);
-                if (content.Contains(SeeSoLocalHost)) return;
+                // 校验是否存在映射行（允许前后空白，但不匹配被注释掉的 # 行）
+                var mappingLine = $"{SeeSoLocalHost}";
+                var exists = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(line =>
+                    {
+                        var trimmed = line.Trim();
+                        if (trimmed.StartsWith("#")) return false;
+                        return trimmed.EndsWith(mappingLine, StringComparison.OrdinalIgnoreCase)
+                               && trimmed.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+                    });
+
+                if (exists) return true;
+
+                // 已存在但被注释或指向其它 IP → 尝试写入正确映射
                 File.AppendAllText(hostsPath,
                     Environment.NewLine + "127.0.0.1 " + SeeSoLocalHost + Environment.NewLine);
+
+                // 重新读取校验写入是否成功
+                var recheck = File.ReadAllText(hostsPath);
+                return recheck.Contains("127.0.0.1 " + SeeSoLocalHost, StringComparison.OrdinalIgnoreCase);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log($"写入 local.id.seewo.com 映射失败: {ex.GetType().Name} - {ex.Message}");
+                return false;
+            }
         }
 
         public void Stop()

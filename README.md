@@ -12,7 +12,8 @@
 - 账号密码 DPAPI 加密落盘；扫码令牌 DPAPI 加密存储（`%LOCALAPPDATA%\SeewoAutoLogin\Sessions`）
 - 应用设置密码保护（进入设置/托盘切换账号需验证）
 - 托盘常驻、开机自启（`--minimized`）、单实例、自动 UAC 提权
-- WebView2 管理界面、SeewoOverlay 悬浮窗（未登录自动遮罩、一键切换账号并重启希沃）
+- WebView2 管理界面、SeewoOverlay 悬浮窗（一键切换账号并重启希沃）
+- 遮罩显示管理：设置界面可控制「希沃打开但未登录时自动显示切换遮罩」（默认关闭），托盘/设置独立手动「显示遮罩」
 - 一键诊断、日志查看器、配置导出/导入、中英文界面
 
 ## 构建
@@ -32,8 +33,10 @@ dotnet publish SeewoAutoLogin.csproj -c Release -r win-x64 --self-contained fals
 
 ## 安装 / 卸载
 
-- 安装：运行 `SeewoAutoLogin_Setup_v1.7.8.exe`（Inno Setup 打包，需要管理员权限）。
+- 安装：运行 `SeewoAutoLogin_Setup_v1.7.9.exe`（Inno Setup 打包，需要管理员权限）。
 - 卸载：控制面板卸载程序卸载。卸载时会以 `--uninstall` 启动应用，自动清理 hosts 中的 `local.id.seewo.com` 映射与本应用数据目录。
+
+> 运行时自动 UAC 提权：希沃快捷登录依赖 hosts 映射与本地 SSO 网关，需要管理员权限。程序非管理员启动时会自动提权重启；若拒绝 UAC 会说明后果，可重试或以降级模式运行（降级下 SSO 快捷登录可能失效）。
 
 ## 数据与安全
 

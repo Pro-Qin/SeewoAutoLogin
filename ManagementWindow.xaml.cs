@@ -161,6 +161,7 @@ namespace SeewoAutoLogin
                     case "refresh-debug": await SendSeewoStatus(); break;
                     case "move-to-active": HandleMoveToActive(root); break;
                     case "move-to-inactive": HandleMoveToInactive(root); break;
+                    case "toggle-overlay": _app.ToggleOverlay(); break;
                 }
             }
             catch (Exception ex) { Debug.WriteLine($"[WebView] msg error: {ex.Message}"); }
@@ -291,6 +292,7 @@ namespace SeewoAutoLogin
                 case "userListRotationGroupSize": _app.Config.UserListRotationGroupSize = SeewoUserListRotationService.NormalizeGroupSize(val.GetInt32()); break;
                 case "minimizeToTray": _app.Config.MinimizeToTray = val.GetBoolean(); break;
                 case "startMinimized": _app.Config.StartMinimized = val.GetBoolean(); break;
+                case "autoShowOverlay": _app.Config.AutoShowOverlay = val.GetBoolean(); break;
                 case "autoStart": if (val.GetBoolean()) AutoStartService.Enable(); else AutoStartService.Disable(); break;
             }
             _app.SaveConfig();
@@ -478,7 +480,8 @@ namespace SeewoAutoLogin
                 rotationGroupSize = SeewoUserListRotationService.NormalizeGroupSize(_app.Config.UserListRotationGroupSize),
                 autoStart = AutoStartService.IsEnabled,
                 minimizeToTray = _app.Config.MinimizeToTray,
-                startMinimized = _app.Config.StartMinimized
+                startMinimized = _app.Config.StartMinimized,
+                autoShowOverlay = _app.Config.AutoShowOverlay
             });
         }
 
@@ -546,24 +549,28 @@ namespace SeewoAutoLogin
             {
                 await SendSeewoStatus();
 
-                // 自动遮罩逻辑
-                var proc = System.Diagnostics.Process.GetProcessesByName("EasiNote").FirstOrDefault();
-                bool running = proc != null && proc.MainWindowHandle != IntPtr.Zero;
-                bool loggedIn = false;
-                if (running)
-                    loggedIn = _app.Config.Accounts.Any(a => _app.AuthService != null && _app.AuthService.IsSessionFor(a));
+                // 自动遮罩逻辑：受全局开关 AutoShowOverlay 控制（默认关闭）。
+                // 关闭时不干预手动（托盘）显示的遮罩。
+                if (_app.Config.AutoShowOverlay)
+                {
+                    var proc = System.Diagnostics.Process.GetProcessesByName("EasiNote").FirstOrDefault();
+                    bool running = proc != null && proc.MainWindowHandle != IntPtr.Zero;
+                    bool loggedIn = false;
+                    if (running)
+                        loggedIn = _app.Config.Accounts.Any(a => _app.AuthService != null && _app.AuthService.IsSessionFor(a));
 
-                if (running && !loggedIn)
-                {
-                    // 希沃打开但未登录 → 自动显示遮罩
-                    if (_app.CurrentOverlay == null || !_app.CurrentOverlay.IsVisible)
-                        _app.ToggleOverlay();
-                }
-                else if (!running || loggedIn)
-                {
-                    // 希沃关闭或已登录 → 关闭遮罩
-                    if (_app.CurrentOverlay != null && _app.CurrentOverlay.IsVisible)
-                        _app.CurrentOverlay.Close();
+                    if (running && !loggedIn)
+                    {
+                        // 希沃打开但未登录 → 自动显示遮罩
+                        if (_app.CurrentOverlay == null || !_app.CurrentOverlay.IsVisible)
+                            _app.ToggleOverlay();
+                    }
+                    else if (!running || loggedIn)
+                    {
+                        // 希沃关闭或已登录 → 关闭遮罩
+                        if (_app.CurrentOverlay != null && _app.CurrentOverlay.IsVisible)
+                            _app.CurrentOverlay.Close();
+                    }
                 }
             };
             _seewoMonitorTimer.Start();

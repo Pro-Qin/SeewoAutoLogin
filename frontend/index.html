@@ -191,9 +191,17 @@
         <div class="card">
           <h2 class="card-title">显示</h2>
           <label class="checkbox-row">
+            <input type="checkbox" id="autoShowOverlayCheck">
+            <span>希沃打开但未登录时自动显示切换遮罩</span>
+          </label>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">关闭后仅在托盘菜单「显示遮罩」手动触发</div>
+          <label class="checkbox-row">
             <input type="checkbox" id="particleToggle" checked>
             <span>粒子背景</span>
           </label>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn btn-secondary" onclick="send({type:'toggle-overlay'})">显示切换遮罩</button>
+          </div>
         </div>
         <div class="card">
           <h2 class="card-title">Debug</h2>
@@ -215,7 +223,7 @@
             <h1 class="gradient-title" style="font-size:22px;font-weight:bold;margin:0">Seewo Autologin</h1>
             <p style="color:#d7d7d7;font-size:13px;margin:6px 0 0 0">希沃白板 SSO 快捷登录服务</p>
             <hr class="divider" style="margin:24px 0">
-            <p style="font-size:12px;color:#d7d7d7;margin:4px 0">版本: 1.7.8</p>
+            <p style="font-size:12px;color:#d7d7d7;margin:4px 0">版本: 1.7.9</p>
             <p style="font-size:12px;color:#d7d7d7;margin:4px 0">原作者：CJKmkp</p>
             <p style="font-size:12px;color:#d7d7d7;margin:4px 0">重构作者：Qin_zzq</p>
             <p style="font-size:11px;color:rgba(255,255,255,0.4);margin:2px 0">LLM 辅助编程</p>
