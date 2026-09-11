@@ -50,6 +50,14 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
+          # 安装包版本号与 csproj 保持一致（发布流程同样处理，避免安装包名与版本号不一致）
+          [xml]$csproj = Get-Content SeewoAutoLogin.csproj
+          $version = ($csproj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "无法从 SeewoAutoLogin.csproj 读取 <Version>" }
+          $iss = Get-Content setup.iss -Raw
+          if ($iss -notmatch '#define AppVersion "') { throw "setup.iss 未找到 AppVersion 定义" }
+          Set-Content -Path setup.iss -Value ($iss -replace '#define AppVersion "[^"]*"', ('#define AppVersion "' + $version + '"')) -NoNewline -Encoding UTF8
+          Select-String -Path setup.iss -Pattern '#define AppVersion'
           # 占位文件用于验证「内置 WebView2」分支能否编译；真实离线安装器（约 203MB）只在发布流程下载
           New-Item -ItemType Directory -Force -Path publish | Out-Null
           Set-Content -Path "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" -Value "placeholder"

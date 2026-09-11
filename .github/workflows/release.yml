@@ -38,6 +38,19 @@ jobs:
             Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/ChineseSimplified.isl" -OutFile $dest
           }
 
+      - name: Sync installer version from csproj
+        shell: pwsh
+        run: |
+          [xml]$csproj = Get-Content SeewoAutoLogin.csproj
+          $version = ($csproj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "无法从 SeewoAutoLogin.csproj 读取 <Version>" }
+          Write-Host "csproj version: $version"
+          $iss = Get-Content setup.iss -Raw
+          if ($iss -notmatch '#define AppVersion "') { throw "setup.iss 未找到 AppVersion 定义" }
+          $updated = $iss -replace '#define AppVersion "[^"]*"', ('#define AppVersion "' + $version + '"')
+          Set-Content -Path setup.iss -Value $updated -NoNewline -Encoding UTF8
+          Select-String -Path setup.iss -Pattern '#define AppVersion'
+
       - name: Build installer (Inno Setup)
         shell: pwsh
         run: |
