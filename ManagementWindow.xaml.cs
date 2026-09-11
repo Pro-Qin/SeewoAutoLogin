@@ -9,6 +9,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace SeewoAutoLogin
@@ -24,6 +26,11 @@ namespace SeewoAutoLogin
         private DateTimeOffset _qrExpiresAt;
         private bool _webViewReady;
         private bool _unlocked;
+        private bool _webViewInitialized;
+        private bool _autoInstallAttempted;
+        private bool _skipIntro;
+        private readonly TaskCompletionSource<bool> _contentReady =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public ManagementWindow()
         {
@@ -49,39 +56,334 @@ namespace SeewoAutoLogin
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
+            Loaded -= OnLoaded; // 窗口重新显示时不重复初始化
+
+            // 开场动画与 WebView2 初始化并行：动画遮罩先盖住窗口，界面在背后加载
+            var intro = PlayIntroIfNeededAsync();
             try
             {
-                await WebView.EnsureCoreWebView2Async();
-                WebView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-                WebView.CoreWebView2.Settings.IsScriptEnabled = true;
-                WebView.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = true;
-                WebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
-                WebView.CoreWebView2.DOMContentLoaded += OnDomContentLoaded;
-
-                // 组合前端资源：HTML + CSS + JS
-                var html = GetEmbedded("SeewoAutoLogin.frontend.index.html");
-                var css = GetEmbedded("SeewoAutoLogin.frontend.styles.css");
-                var js = GetEmbedded("SeewoAutoLogin.frontend.app.js");
-
-                // 构建完整 HTML
-                var fullHtml = html.Replace("</head>", "<style>" + css + "</style></head>");
-                fullHtml = fullHtml.Replace("</body>", "<script>" + js + "</script></body>");
-
-                WebView.CoreWebView2.NavigateToString(fullHtml);
+                await InitializeWebViewAsync();
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ManagementWindow] 初始化失败: {ex.Message}");
-                MessageBox.Show($"WebView2 初始化失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                _app?.WriteDiagnosticLog($"[WebView2] 初始化失败: {ex}");
+                ShowStatusPanel("界面初始化失败",
+                    $"WebView2 初始化失败：{ex.Message}\n\n可点击「重新检测」重试，或「查看日志」了解详情。",
+                    showRetry: true, showInstall: !WebView2Runtime.IsInstalled, showDownload: true);
+            }
+
+            await intro;
+        }
+
+        #region WebView2 初始化
+
+        private async Task InitializeWebViewAsync()
+        {
+            if (_webViewInitialized) { HideStatusPanel(); return; }
+
+            var runtimeVersion = WebView2Runtime.GetInstalledVersion();
+            _app?.WriteDiagnosticLog($"[WebView2] 运行时版本: {runtimeVersion ?? "<未安装>"}");
+
+            // 缺运行时：按既定策略自动静默安装（用户零操作），失败再给出手动入口
+            if (string.IsNullOrWhiteSpace(runtimeVersion) && !await TryAutoInstallRuntimeAsync()) return;
+
+            ShowStatus("正在加载界面…", "正在启动 WebView2 并准备前端资源…", busy: true);
+
+            // 用户数据目录固定在 LOCALAPPDATA：安装到 Program Files 时也能正常创建
+            var environment = await WebView2Runtime.GetEnvironmentAsync();
+            await WebView.EnsureCoreWebView2Async(environment);
+
+            var core = WebView.CoreWebView2;
+            core.Settings.IsScriptEnabled = true;
+            core.Settings.AreDefaultScriptDialogsEnabled = true;
+            core.Settings.AreDevToolsEnabled = false;
+            core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+            core.WebMessageReceived += OnWebMessageReceived;
+            core.DOMContentLoaded += OnDomContentLoaded;
+            core.NavigationCompleted += OnNavigationCompleted;
+            core.ProcessFailed += OnProcessFailed;
+
+            // 深色底：避免 WebView2 首帧闪白
+            WebView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 28, 28, 30);
+            WebView.Visibility = Visibility.Visible;
+
+            try
+            {
+                // 前端资源落盘 + 虚拟主机映射：比 NavigateToString 拼接大字符串更快、无 2MB 上限
+                var root = WebContentProvisioner.Provision();
+                core.SetVirtualHostNameToFolderMapping(WebContentProvisioner.VirtualHostName, root,
+                    CoreWebView2HostResourceAccessKind.Allow);
+                core.Navigate(WebContentProvisioner.EntryUrl);
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[WebView2] 本地资源释放失败，回退 NavigateToString: {ex.Message}");
+                core.NavigateToString(BuildInlineHtml());
+            }
+
+            _webViewInitialized = true;
+        }
+
+        /// <summary>运行时缺失时的自动静默安装（只自动尝试一次，失败后交给用户点按钮）。</summary>
+        private async Task<bool> TryAutoInstallRuntimeAsync()
+        {
+            if (_autoInstallAttempted)
+            {
+                ShowStatusPanel("缺少 WebView2 运行时",
+                    "未检测到 WebView2 运行时，界面无法加载。\n可点击「自动安装组件」重试，或「手动下载」安装官方运行时后点击「重新检测」。",
+                    showRetry: true, showInstall: true, showDownload: true);
+                return false;
+            }
+
+            _autoInstallAttempted = true;
+            _app?.WriteDiagnosticLog("[WebView2] 未检测到运行时，自动开始静默安装");
+            ShowStatus("缺少 WebView2 运行时组件",
+                "正在自动下载并安装（官方安装器约 150KB，组件在线下载），请稍候…", busy: true);
+
+            if (await RunInstallAsync()) return true;
+
+            _app?.WriteDiagnosticLog("[WebView2] 自动安装未成功");
+            ShowStatusPanel("WebView2 自动安装失败",
+                "无法自动安装 WebView2 运行时（可能网络受限或安装被系统阻止）。\n请在「手动下载」安装官方运行时后，点击「重新检测」。",
+                showRetry: true, showInstall: true, showDownload: true);
+            return false;
+        }
+
+        private async Task<bool> RunInstallAsync()
+        {
+            var progress = new Progress<string>(text => StatusDetail.Text = text);
+            try
+            {
+                return await WebView2Runtime.InstallAsync(progress, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[WebView2] 安装运行时失败: {ex.Message}");
+                return false;
             }
         }
 
+        private async Task RetryInitializeAsync()
+        {
+            WebView2Runtime.ResetEnvironment();
+            try
+            {
+                await InitializeWebViewAsync();
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[WebView2] 重试初始化失败: {ex}");
+                ShowStatusPanel("界面初始化失败",
+                    $"WebView2 初始化失败：{ex.Message}",
+                    showRetry: true, showInstall: !WebView2Runtime.IsInstalled, showDownload: true);
+            }
+        }
+
+        private void OnProcessFailed(object sender, CoreWebView2ProcessFailedEventArgs e)
+        {
+            _app?.WriteDiagnosticLog($"[WebView2] 浏览器进程异常: kind={e.ProcessFailedKind}; reason={e.Reason}; exit={e.ExitCode}");
+            if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
+            {
+                ShowStatusPanel("界面进程已退出",
+                    "WebView2 浏览器进程意外退出，点击「重新检测」可重新加载界面。",
+                    showRetry: true);
+            }
+        }
+
+        private void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (e.IsSuccess) return;
+            _app?.WriteDiagnosticLog($"[WebView2] 页面加载失败: {e.WebErrorStatus}");
+            ShowStatusPanel("界面加载失败",
+                $"前端资源加载失败（{e.WebErrorStatus}），点击「重新检测」重试。",
+                showRetry: true);
+        }
+
+        #endregion
+
+        #region 加载 / 兜底面板
+
+        private void ShowStatus(string title, string detail, bool busy,
+            bool showRetry = false, bool showInstall = false, bool showDownload = false)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowStatus(title, detail, busy, showRetry, showInstall, showDownload)));
+                return;
+            }
+
+            StatusTitle.Text = title;
+            StatusDetail.Text = detail;
+            StatusProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+            InstallButton.Visibility = showInstall ? Visibility.Visible : Visibility.Collapsed;
+            RetryButton.Visibility = showRetry ? Visibility.Visible : Visibility.Collapsed;
+            DownloadButton.Visibility = showDownload ? Visibility.Visible : Visibility.Collapsed;
+            StatusButtons.Visibility = busy ? Visibility.Collapsed : Visibility.Visible;
+            StatusPanel.Visibility = Visibility.Visible;
+        }
+
+        private void ShowStatusPanel(string title, string detail,
+            bool showRetry = false, bool showInstall = false, bool showDownload = false)
+            => ShowStatus(title, detail, busy: false, showRetry: showRetry, showInstall: showInstall,
+                showDownload: showDownload);
+
+        private void HideStatusPanel() => StatusPanel.Visibility = Visibility.Collapsed;
+
+        private async void InstallButton_Click(object sender, RoutedEventArgs e)
+        {
+            InstallButton.IsEnabled = false;
+            try
+            {
+                ShowStatus("正在安装 WebView2 运行时", "正在下载并静默安装，请稍候…", busy: true);
+                if (await RunInstallAsync())
+                {
+                    _app?.WriteDiagnosticLog("[WebView2] 运行时安装成功，重新加载界面");
+                    await RetryInitializeAsync();
+                }
+                else
+                {
+                    ShowStatusPanel("WebView2 安装未成功",
+                        "安装未完成。请确认网络可用，或「手动下载」官方运行时安装后再点击「重新检测」。",
+                        showRetry: true, showInstall: true, showDownload: true);
+                }
+            }
+            finally
+            {
+                InstallButton.IsEnabled = true;
+            }
+        }
+
+        private async void RetryButton_Click(object sender, RoutedEventArgs e)
+        {
+            _autoInstallAttempted = false; // 重新检测时允许再次自动安装
+            await RetryInitializeAsync();
+        }
+
+        private void DownloadButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = WebView2Runtime.ManualDownloadUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[WebView2] 打开下载页失败: {ex.Message}");
+            }
+        }
+
+        private void LogButton_Click(object sender, RoutedEventArgs e)
+        {
+            try { new LogViewerWindow { Owner = this }.ShowDialog(); } catch { }
+        }
+
+        #endregion
+
+        #region 开场动画
+
+        /// <summary>
+        /// 每个进程只在第一次打开主界面时播放：
+        /// 标题+副标题渐显并自大缩小 → 向左渐隐 → 遮罩渐隐露出主界面。点击可跳过。
+        /// </summary>
+        private async Task PlayIntroIfNeededAsync()
+        {
+            if (_app == null || _app.IntroPlayed)
+            {
+                IntroOverlay.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            _app.IntroPlayed = true;
+            IntroOverlay.Opacity = 1;
+            IntroBox.Opacity = 0;
+            IntroScale.ScaleX = 1.7;
+            IntroScale.ScaleY = 1.7;
+            IntroTranslate.X = 0;
+            IntroOverlay.Visibility = Visibility.Visible;
+            IntroOverlay.MouseLeftButtonDown += (s, e) => _skipIntro = true;
+
+            var easeOut = new CubicEase { EasingMode = EasingMode.EaseOut };
+            var easeIn = new CubicEase { EasingMode = EasingMode.EaseIn };
+            try
+            {
+                // 1. 渐显 + 从大缩小
+                await Task.WhenAll(
+                    AnimateAsync(IntroBox, UIElement.OpacityProperty, 0, 1, 650, easeOut),
+                    AnimateAsync(IntroScale, ScaleTransform.ScaleXProperty, 1.7, 1, 650, easeOut),
+                    AnimateAsync(IntroScale, ScaleTransform.ScaleYProperty, 1.7, 1, 650, easeOut));
+
+                if (!_skipIntro) await Task.Delay(220);
+                if (_skipIntro) { await EndIntroAsync(); return; }
+
+                // 2. 向左渐隐
+                await Task.WhenAll(
+                    AnimateAsync(IntroBox, UIElement.OpacityProperty, 1, 0, 450, easeIn),
+                    AnimateAsync(IntroTranslate, TranslateTransform.XProperty, 0, -180, 450, easeIn));
+
+                // 3. 等界面就绪（最多再等 2.5s）后遮罩渐隐
+                await Task.WhenAny(_contentReady.Task, Task.Delay(2500));
+                await EndIntroAsync();
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Intro] 开场动画异常: {ex.Message}");
+                IntroOverlay.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private async Task EndIntroAsync()
+        {
+            try
+            {
+                await AnimateAsync(IntroOverlay, UIElement.OpacityProperty, 1, 0, 380,
+                    new CubicEase { EasingMode = EasingMode.EaseOut });
+            }
+            catch
+            {
+            }
+            IntroOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private static Task AnimateAsync(UIElement target, DependencyProperty property, double from, double to,
+            double milliseconds, IEasingFunction easing)
+            => AnimateCore(property, from, to, milliseconds, easing,
+                (p, a) => target.BeginAnimation(p, a, HandoffBehavior.SnapshotAndReplace));
+
+        private static Task AnimateAsync(Animatable target, DependencyProperty property, double from, double to,
+            double milliseconds, IEasingFunction easing)
+            => AnimateCore(property, from, to, milliseconds, easing,
+                (p, a) => target.BeginAnimation(p, a, HandoffBehavior.SnapshotAndReplace));
+
+        private static Task AnimateCore(DependencyProperty property, double from, double to,
+            double milliseconds, IEasingFunction easing, Action<DependencyProperty, DoubleAnimation> apply)
+        {
+            var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var animation = new DoubleAnimation(from, to, new Duration(TimeSpan.FromMilliseconds(milliseconds)))
+            {
+                EasingFunction = easing ?? new CubicEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.HoldEnd
+            };
+            animation.Completed += (s, e) => completion.TrySetResult(true);
+            apply(property, animation);
+            return completion.Task;
+        }
+
+        #endregion
+
         private async void OnDomContentLoaded(object sender, object e)
         {
+            if (_webViewReady) return;
             _webViewReady = true;
+            _contentReady.TrySetResult(true);
+            HideStatusPanel();
+
             await SendToJs(new
             {
                 type = "init",
+                version = AppVersion,
                 accounts = GetAccountList(),
                 needsPassword = _app.Config.UsePluginPassword && !string.IsNullOrEmpty(_app.Config.PluginPasswordHash)
             });
@@ -90,7 +392,94 @@ namespace SeewoAutoLogin
             await SendSeewoStatus();
             UpdateGatewayStatus();
             StartSeewoMonitor();
+
+            // 启动时自动检查更新（仅一次，失败静默）
+            if (_app.Config.AutoCheckUpdate) await HandleCheckUpdateAsync(manual: false);
         }
+
+        private static string AppVersion
+        {
+            get
+            {
+                var version = Assembly.GetExecutingAssembly().GetName().Version;
+                return version == null ? "1.8.0" : $"{version.Major}.{version.Minor}.{version.Build}";
+            }
+        }
+
+        #region 更新检查
+
+        private bool _updateChecked;
+
+        private async Task HandleCheckUpdateAsync(bool manual)
+        {
+            if (manual) await SendToJs(new { type = "update-status", text = "正在检查更新…", state = "" });
+            if (!manual && _updateChecked) return;
+            _updateChecked = true;
+
+            var current = AppVersion;
+            try
+            {
+                var info = await UpdateChecker.CheckLatestAsync(_app.Config.UpdateSource, _app.WriteDiagnosticLog,
+                    CancellationToken.None);
+                var hasUpdate = UpdateChecker.CompareVersions(info.Version, current) > 0;
+
+                if (hasUpdate)
+                {
+                    _app.WriteDiagnosticLog($"[Update] 发现新版本 {info.Tag}（当前 {current}）；更新源={info.Source}");
+                    var notes = string.IsNullOrWhiteSpace(info.Notes) ? "" : "\n\n" + info.Notes.Trim();
+                    await SendToJs(new
+                    {
+                        type = "update-status",
+                        state = "new",
+                        hasUpdate = true,
+                        latest = info.Version,
+                        downloadUrl = string.IsNullOrEmpty(info.SetupUrl) ? info.PageUrl : info.SetupUrl,
+                        pageUrl = info.PageUrl,
+                        text = $"发现新版本 v{info.Version}（当前 v{current}）\n更新源：{info.Source}{notes}"
+                    });
+                    _app.TrayIcon?.SetStatusText($"发现新版本 v{info.Version}");
+                }
+                else
+                {
+                    await SendToJs(new
+                    {
+                        type = "update-status",
+                        state = "ok",
+                        hasUpdate = false,
+                        latest = info.Version,
+                        pageUrl = info.PageUrl,
+                        text = $"已是最新版本（v{current}）\n更新源：{info.Source}"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _app.WriteDiagnosticLog($"[Update] 检查更新失败: {ex.Message}");
+                await SendToJs(new
+                {
+                    type = "update-status",
+                    state = "error",
+                    hasUpdate = false,
+                    text = manual ? $"检查更新失败：{ex.Message}" : ""
+                });
+            }
+        }
+
+        private void HandleOpenUpdatePage(JsonElement root)
+        {
+            var url = root.TryGetProperty("url", out var element) ? element.GetString() : null;
+            if (string.IsNullOrWhiteSpace(url)) url = UpdateChecker.ReleasesPageUrl;
+            try
+            {
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _app.WriteDiagnosticLog($"[Update] 打开发布页失败: {ex.Message}");
+            }
+        }
+
+        #endregion
 
         #region Embedded Resource
 
@@ -102,6 +491,16 @@ namespace SeewoAutoLogin
             using var s = asm.GetManifestResourceStream(full);
             using var r = new StreamReader(s);
             return r.ReadToEnd();
+        }
+
+        /// <summary>兜底：本地资源释放失败时，仍用 NavigateToString 内联 HTML/CSS/JS。</summary>
+        private string BuildInlineHtml()
+        {
+            var html = GetEmbedded("SeewoAutoLogin.frontend.index.html");
+            var css = GetEmbedded("SeewoAutoLogin.frontend.styles.css");
+            var js = GetEmbedded("SeewoAutoLogin.frontend.app.js");
+            var full = html.Replace("</head>", "<style>" + css + "</style></head>");
+            return full.Replace("</body>", "<script>" + js + "</script></body>");
         }
 
         #endregion
@@ -162,6 +561,8 @@ namespace SeewoAutoLogin
                     case "move-to-active": HandleMoveToActive(root); break;
                     case "move-to-inactive": HandleMoveToInactive(root); break;
                     case "toggle-overlay": _app.ToggleOverlay(); break;
+                    case "check-update": await HandleCheckUpdateAsync(manual: true); break;
+                    case "open-update-page": HandleOpenUpdatePage(root); break;
                 }
             }
             catch (Exception ex) { Debug.WriteLine($"[WebView] msg error: {ex.Message}"); }
@@ -293,6 +694,7 @@ namespace SeewoAutoLogin
                 case "minimizeToTray": _app.Config.MinimizeToTray = val.GetBoolean(); break;
                 case "startMinimized": _app.Config.StartMinimized = val.GetBoolean(); break;
                 case "autoShowOverlay": _app.Config.AutoShowOverlay = val.GetBoolean(); break;
+                case "autoCheckUpdate": _app.Config.AutoCheckUpdate = val.GetBoolean(); break;
                 case "autoStart": if (val.GetBoolean()) AutoStartService.Enable(); else AutoStartService.Disable(); break;
             }
             _app.SaveConfig();
@@ -481,7 +883,8 @@ namespace SeewoAutoLogin
                 autoStart = AutoStartService.IsEnabled,
                 minimizeToTray = _app.Config.MinimizeToTray,
                 startMinimized = _app.Config.StartMinimized,
-                autoShowOverlay = _app.Config.AutoShowOverlay
+                autoShowOverlay = _app.Config.AutoShowOverlay,
+                autoCheckUpdate = _app.Config.AutoCheckUpdate
             });
         }
 

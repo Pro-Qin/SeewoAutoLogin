@@ -11,6 +11,7 @@ let state = { currentPage:'accounts', accounts:[], selectedId:null, config:{}, q
 
 // ===== Navigation =====
 function navigate(page) {
+  closeFab();
   state.currentPage = page; state.selectedId = null;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + page));
@@ -24,6 +25,7 @@ function handleCSharpMessage(msg) {
   switch (msg.type) {
     case 'init':
       state.accounts = msg.accounts || []; renderAccounts(); updateStatusBar();
+      if (msg.version) setVersion(msg.version);
       if (msg.needsPassword) showLock();
       break;
     case 'account-list':
@@ -44,6 +46,7 @@ function handleCSharpMessage(msg) {
       if (msg.minimizeToTray!==undefined) document.getElementById('minimizeToTrayCheck').checked = msg.minimizeToTray;
       if (msg.startMinimized!==undefined) document.getElementById('startMinimizedCheck').checked = msg.startMinimized;
       if (msg.autoShowOverlay!==undefined) document.getElementById('autoShowOverlayCheck').checked = msg.autoShowOverlay;
+      if (msg.autoCheckUpdate!==undefined) document.getElementById('autoCheckUpdateCheck').checked = msg.autoCheckUpdate;
       break;
     case 'unlock-status': document.getElementById('unlockStatus').textContent = msg.text; break;
     case 'unlock-success': hideLock(); break;
@@ -61,8 +64,82 @@ function handleCSharpMessage(msg) {
       statusHtml += ' · '+ (msg.lastRefresh||'');
       ss.innerHTML = statusHtml;
       break;
+    case 'update-status': renderUpdateStatus(msg); break;
+    case 'version': setVersion(msg.current); break;
   }
 }
+
+// ===== 版本 / 更新检查 =====
+function setVersion(version) {
+  if (!version) return;
+  const el = document.getElementById('appVersion');
+  if (el) el.textContent = version;
+}
+function checkUpdate() {
+  ['updateStatus','settingsUpdateStatus'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = '正在检查更新…'; el.className = 'update-status'; }
+  });
+  const btn = document.getElementById('checkUpdateBtn');
+  if (btn) btn.disabled = true;
+  send({type:'check-update'});
+  // 手动检查时给出反馈超时兜底
+  setTimeout(function() {
+    const el = document.getElementById('updateStatus');
+    if (el && el.textContent === '正在检查更新…') {
+      el.textContent = '检查超时，请检查网络或稍后重试';
+      el.className = 'update-status error';
+      if (btn) btn.disabled = false;
+    }
+  }, 20000);
+}
+function openUpdatePage() { send({type:'open-update-page', url: window.__updateUrl || ''}); }
+function renderUpdateStatus(msg) {
+  const text = msg.text || '';
+  const kind = msg.state || '';
+  ['updateStatus','settingsUpdateStatus'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = text; el.className = 'update-status ' + kind; }
+  });
+  const btn = document.getElementById('checkUpdateBtn');
+  if (btn) btn.disabled = false;
+  const dl = document.getElementById('downloadUpdateBtn');
+  if (dl) dl.style.display = msg.downloadUrl || msg.pageUrl ? '' : 'none';
+  window.__updateUrl = msg.downloadUrl || msg.pageUrl || '';
+  const badge = document.getElementById('updateBadge');
+  if (badge) {
+    if (msg.hasUpdate && msg.latest) {
+      badge.textContent = '发现新版本 v' + String(msg.latest).replace(/^v/i, '');
+      badge.style.display = '';
+    } else if (msg.state === 'ok') {
+      badge.style.display = 'none';
+    }
+  }
+}
+
+// ===== FAB：新增账号（加号旋转 45° + 二级菜单）=====
+function toggleFab(e) {
+  if (e) e.stopPropagation();
+  const group = document.getElementById('fabGroup');
+  const btn = document.getElementById('fabBtn');
+  if (!group || !btn) return;
+  const open = !group.classList.contains('open');
+  group.classList.toggle('open', open);
+  btn.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function closeFab() {
+  const group = document.getElementById('fabGroup');
+  const btn = document.getElementById('fabBtn');
+  if (group) group.classList.remove('open');
+  if (btn) { btn.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
+}
+function fabNavigate(page) { closeFab(); navigate(page); }
+document.addEventListener('click', function(e) {
+  const group = document.getElementById('fabGroup');
+  if (group && group.classList.contains('open') && !group.contains(e.target)) closeFab();
+});
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeFab(); });
 
 // ===== Status Bar =====
 function updateStatusBar() {
@@ -210,6 +287,7 @@ document.addEventListener('change', function(e) {
     case 'minimizeToTrayCheck': send({type:'update-setting', key:'minimizeToTray', value:e.target.checked}); break;
     case 'startMinimizedCheck': send({type:'update-setting', key:'startMinimized', value:e.target.checked}); break;
     case 'autoShowOverlayCheck': send({type:'update-setting', key:'autoShowOverlay', value:e.target.checked}); break;
+    case 'autoCheckUpdateCheck': send({type:'update-setting', key:'autoCheckUpdate', value:e.target.checked}); break;
     case 'rotationGroupSize': send({type:'update-setting', key:'userListRotationGroupSize', value:parseInt(e.target.value)}); break;
     case 'particleToggle': toggleParticles(e.target.checked); break;
   }

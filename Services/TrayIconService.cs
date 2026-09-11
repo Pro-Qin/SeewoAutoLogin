@@ -33,7 +33,7 @@ namespace SeewoAutoLogin.Services
 
         public void Initialize()
         {
-            _cachedIcon = CreateDefaultIcon();
+            _cachedIcon = LoadAppIcon() ?? CreateFallbackIcon();
 
             _menu = new ContextMenuStrip();
             _menu.Font = new Font("Segoe UI", 9);
@@ -119,7 +119,35 @@ namespace SeewoAutoLogin.Services
             }
         }
 
-        private static Icon CreateDefaultIcon()
+        /// <summary>
+        /// 从嵌入的应用图标（多尺寸 ico）中按系统 DPI 选出最合适的一帧，托盘显示更清晰。
+        /// 取不到时回退到运行时绘制。
+        /// </summary>
+        private static Icon LoadAppIcon()
+        {
+            try
+            {
+                var assembly = typeof(TrayIconService).Assembly;
+                var name = assembly.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("app.ico", StringComparison.OrdinalIgnoreCase));
+                if (name == null) return null;
+                using var stream = assembly.GetManifestResourceStream(name);
+                if (stream == null) return null;
+
+                using var buffer = new MemoryStream();
+                stream.CopyTo(buffer);
+                buffer.Position = 0;
+
+                var size = SystemInformation.SmallIconSize;
+                return new Icon(buffer, new Size(size.Width, size.Height));
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Icon CreateFallbackIcon()
         {
             using var image = new Bitmap(16, 16);
             using var g = Graphics.FromImage(image);

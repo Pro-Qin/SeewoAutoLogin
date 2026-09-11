@@ -9,7 +9,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>SeewoAutoLogin</AssemblyName>
     <RootNamespace>SeewoAutoLogin</RootNamespace>
-    <Version>1.7.9</Version>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+    <Version>1.8.0</Version>
     <Company>SeewoAutoLogin</Company>
     <Description>希沃自动登录 - 独立版</Description>
 
@@ -31,6 +32,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="frontend\**\*" />
+    <EmbeddedResource Include="Resources\app.ico" />
   </ItemGroup>
 
 </Project>

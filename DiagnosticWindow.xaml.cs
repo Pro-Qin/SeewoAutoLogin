@@ -53,6 +53,9 @@ namespace SeewoAutoLogin
 
             // 5. 日志
             CheckLogs();
+
+            // 6. WebView2 运行时（主界面依赖）
+            CheckWebView2();
         }
 
         private void AddResult(string icon, string title, string detail, string status)
@@ -135,6 +138,26 @@ namespace SeewoAutoLogin
             }
             else
                 AddResult("⚠️", "账号配置", "暂无账号，SSO 网关无法提供登录", "fail");
+        }
+
+        private void CheckWebView2()
+        {
+            try
+            {
+                var version = SeewoAutoLogin.Services.WebView2Runtime.GetInstalledVersion();
+                if (!string.IsNullOrWhiteSpace(version))
+                    AddResult("✅", "WebView2 运行时", $"版本 {version}", "pass");
+                else
+                    AddResult("❌", "WebView2 运行时", "未安装（主界面会自动静默安装，失败时可手动安装）", "fail");
+
+                var folder = SeewoAutoLogin.Services.WebView2Runtime.UserDataFolder;
+                System.IO.Directory.CreateDirectory(folder);
+                AddResult("✅", "WebView2 数据目录", folder, "pass");
+            }
+            catch (Exception ex)
+            {
+                AddResult("⚠️", "WebView2 运行时", $"检测失败: {ex.Message}", "fail");
+            }
         }
 
         private void CheckLogs()

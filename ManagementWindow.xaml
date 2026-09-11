@@ -5,8 +5,115 @@
     Title="Seewo Autologin"
     Width="864" Height="600"
     MinWidth="780" MinHeight="540"
+    Background="#1C1C1E"
     WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <LinearGradientBrush x:Key="IntroTitleBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FFFFFF" Offset="0"/>
+            <GradientStop Color="#409CFF" Offset="1"/>
+        </LinearGradientBrush>
+
+        <Style x:Key="StatusButton" TargetType="Button">
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="MinWidth" Value="98"/>
+            <Setter Property="Margin" Value="5,0"/>
+            <Setter Property="Padding" Value="16,0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Background" Value="#3A3A3C"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#4A4A4C"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="StatusPrimaryButton" TargetType="Button" BasedOn="{StaticResource StatusButton}">
+            <Setter Property="Background" Value="#007AFF"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1A88FF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
     <Grid>
-        <wv2:WebView2 x:Name="WebView" />
+        <!-- 主界面：WebView2 承载前端 -->
+        <wv2:WebView2 x:Name="WebView" Visibility="Collapsed"/>
+
+        <!-- 加载 / 兜底面板：WebView2 不可用时替代白屏，给出可操作的修复入口 -->
+        <Grid x:Name="StatusPanel" Background="#1C1C1E">
+            <StackPanel MaxWidth="560" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock x:Name="StatusTitle"
+                           Text="正在加载界面…"
+                           FontSize="20" FontWeight="SemiBold"
+                           FontFamily="Microsoft YaHei UI"
+                           Foreground="#FFFFFF" TextAlignment="Center"/>
+                <TextBlock x:Name="StatusDetail"
+                           Margin="0,12,0,0"
+                           FontSize="13" FontFamily="Microsoft YaHei UI"
+                           Foreground="#A1A1A6" TextAlignment="Center"
+                           TextWrapping="Wrap" LineHeight="21"/>
+                <ProgressBar x:Name="StatusProgress"
+                             Margin="0,24,0,0" Height="4"
+                             IsIndeterminate="True"
+                             Foreground="#007AFF" Background="#2C2C2E" BorderThickness="0"/>
+                <StackPanel x:Name="StatusButtons"
+                            Orientation="Horizontal" HorizontalAlignment="Center"
+                            Margin="0,26,0,0" Visibility="Collapsed">
+                    <Button x:Name="InstallButton" Content="自动安装组件"
+                            Style="{StaticResource StatusPrimaryButton}" Click="InstallButton_Click"/>
+                    <Button x:Name="RetryButton" Content="重新检测"
+                            Style="{StaticResource StatusButton}" Click="RetryButton_Click"/>
+                    <Button x:Name="DownloadButton" Content="手动下载"
+                            Style="{StaticResource StatusButton}" Click="DownloadButton_Click"/>
+                    <Button x:Name="LogButton" Content="查看日志"
+                            Style="{StaticResource StatusButton}" Click="LogButton_Click"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- 开场动画遮罩：标题+副标题渐显并自大缩小，再向左渐隐，最后遮罩渐隐露出主界面 -->
+        <Grid x:Name="IntroOverlay" Background="#1C1C1E" Visibility="Collapsed">
+            <StackPanel x:Name="IntroBox"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        RenderTransformOrigin="0.5,0.5">
+                <StackPanel.RenderTransform>
+                    <TransformGroup>
+                        <ScaleTransform x:Name="IntroScale" ScaleX="1" ScaleY="1"/>
+                        <TranslateTransform x:Name="IntroTranslate" X="0"/>
+                    </TransformGroup>
+                </StackPanel.RenderTransform>
+                <TextBlock Text="Seewo Autologin"
+                           FontSize="44" FontWeight="Bold"
+                           FontFamily="Segoe UI"
+                           Foreground="{StaticResource IntroTitleBrush}"
+                           TextAlignment="Center"/>
+                <TextBlock Text="Made by Qin_zzq"
+                           Margin="0,12,0,0"
+                           FontSize="14" FontFamily="Segoe UI"
+                           Foreground="#8E8E93"
+                           TextAlignment="Center"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

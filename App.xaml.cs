@@ -34,6 +34,9 @@ namespace SeewoAutoLogin
         /// </summary>
         internal bool IsExiting => _isExiting;
 
+        /// <summary>主界面开场动画是否已播放（每个进程只播放一次）</summary>
+        internal bool IntroPlayed { get; set; }
+
         public PluginConfig Config => _config;
         public SeewoAuthService AuthService => _authService;
         public QrLoginCoordinator QrLoginCoordinator => _qrLoginCoordinator;
@@ -289,6 +292,10 @@ namespace SeewoAutoLogin
             {
                 WriteDiagnosticLog($"托盘初始化失败: {ex.Message}");
             }
+
+            // WebView2 预热：提前在后台创建运行时环境与浏览器进程，缩短主界面首次加载的等待
+            // （托盘常驻场景同样预热，用户点开主界面时无需再等浏览器进程启动）
+            Services.WebView2Runtime.Prewarm(WriteDiagnosticLog);
 
             // 首次启动显示欢迎界面
             if (_config.IsFirstLaunch)
