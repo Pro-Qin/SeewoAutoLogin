@@ -32,3 +32,18 @@ jobs:
         with:
           name: SeewoAutoLogin-win-x64
           path: bin\Release\net8.0-windows10.0.19041.0\publish
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Validate installer scripts (light + bundled WebView2)
+        shell: pwsh
+        run: |
+          $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
+          # 占位文件用于验证「内置 WebView2」分支能否编译；真实离线安装器（约 203MB）只在发布流程下载
+          New-Item -ItemType Directory -Force -Path publish | Out-Null
+          Set-Content -Path "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" -Value "placeholder"
+          iscc setup.iss
+          iscc /DBundleWebView2=1 setup.iss
+          Get-ChildItem publish | Select-Object Name, Length

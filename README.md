@@ -37,11 +37,26 @@ dotnet build SeewoAutoLogin.csproj -c Release
 dotnet publish SeewoAutoLogin.csproj -c Release -r win-x64 --self-contained false -o bin\Release\net8.0-windows10.0.19041.0\publish
 ```
 
-依赖：WebView2 运行时（缺失时程序会自行安装）。打包发布由 GitHub Actions 完成：推送 `v*` 标签即触发 `.github/workflows/release.yml` 编译安装包并创建 Release。
+依赖：WebView2 运行时。轻量安装包在缺失时由程序自动下载安装；**内置 WebView2 版**把官方离线运行时安装器打进安装包，安装时检测到缺失才静默安装（适合断网或无法联网下载运行时的机器）。打包发布由 GitHub Actions 完成：推送 `v*` 标签即触发 `.github/workflows/release.yml` 编译两种安装包并创建 Release。
+
+内置版安装包也可本地编译（需已安装 Inno Setup）：
+
+```powershell
+# 先把官方离线运行时安装器放到 publish\（约 203MB）
+Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2124701" -OutFile publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe
+iscc /DBundleWebView2=1 setup.iss
+```
 
 ## 安装 / 卸载
 
-- 安装：运行 `SeewoAutoLogin_Setup_v1.8.0.exe`（Inno Setup 打包，需要管理员权限）。
+Release 提供两种安装包，功能完全一致，区别只是 WebView2 运行时怎么来：
+
+| 安装包 | 体积 | 适用场景 |
+|---|---|---|
+| `SeewoAutoLogin_Setup_v1.8.1.exe` | 约 8MB | 能联网：缺运行时由程序自动下载并静默安装 |
+| `SeewoAutoLogin_Setup_v1.8.1_WithWebView2.exe` | 约 210MB | 断网 / 内网机器：安装时离线装好 WebView2，杜绝运行时缺失导致的白屏 |
+
+- 安装：运行上述任一个安装包（Inno Setup 打包，需要管理员权限）。
 - 卸载：控制面板卸载程序卸载。卸载时会以 `--uninstall` 启动应用，自动清理 hosts 中的 `local.id.seewo.com` 映射与本应用数据目录。
 
 > 运行时自动 UAC 提权：希沃快捷登录依赖 hosts 映射与本地 SSO 网关，需要管理员权限。程序非管理员启动时会自动提权重启；若拒绝 UAC 会说明后果，可重试或以降级模式运行（降级下 SSO 快捷登录可能失效）。

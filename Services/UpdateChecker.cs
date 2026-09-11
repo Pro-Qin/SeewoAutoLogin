@@ -135,6 +135,7 @@ namespace SeewoAutoLogin.Services
 
             if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
             {
+                var setupAssets = new List<KeyValuePair<string, string>>();
                 foreach (var asset in assets.EnumerateArray())
                 {
                     var name = asset.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? "" : "";
@@ -145,13 +146,20 @@ namespace SeewoAutoLogin.Services
 
                     if (name.StartsWith("SeewoAutoLogin_Setup", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (string.IsNullOrEmpty(info.SetupUrl)) info.SetupUrl = download;
+                        setupAssets.Add(new KeyValuePair<string, string>(name, download));
                     }
                     else if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(info.ExeUrl))
                     {
                         info.ExeUrl = download;
                     }
                 }
+
+                // 多个安装包时优先选「未内置 WebView2」的轻量版（体积小得多），内置版留在发布页给需要的用户
+                var preferred = setupAssets.FirstOrDefault(
+                    asset => asset.Key.IndexOf("WithWebView2", StringComparison.OrdinalIgnoreCase) < 0);
+                if (string.IsNullOrEmpty(preferred.Value))
+                    preferred = setupAssets.Count > 0 ? setupAssets[0] : default;
+                if (!string.IsNullOrEmpty(preferred.Value)) info.SetupUrl = preferred.Value;
             }
 
             // API 未返回资源（或被镜像裁剪）时按发布规则推导安装包直链

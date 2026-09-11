@@ -44,6 +44,20 @@ jobs:
           $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
           iscc setup.iss
 
+      - name: Download offline WebView2 runtime installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path publish | Out-Null
+          $out = "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2124701" -OutFile $out
+          Get-Item $out | Select-Object Name, Length
+
+      - name: Build installer with bundled WebView2 (Inno Setup)
+        shell: pwsh
+        run: |
+          $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
+          iscc /DBundleWebView2=1 setup.iss
+
       - name: Show artifacts
         shell: pwsh
         run: Get-ChildItem publish | Select-Object Name, Length
