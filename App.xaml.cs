@@ -61,6 +61,9 @@ namespace SeewoAutoLogin
 
         public App()
         {
+            // 网络出口决策（系统代理/直连回退）也写进日志，便于排查“登录失败 / 登录信息过期”。
+            NetworkRoute.DiagnosticMessage += WriteDiagnosticLog;
+
             _authService = new SeewoAuthService();
             _authService.DiagnosticMessage += WriteDiagnosticLog;
             _qrLoginClient = new SeewoQrLoginClient();

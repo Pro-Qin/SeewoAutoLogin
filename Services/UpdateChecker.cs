@@ -207,7 +207,9 @@ namespace SeewoAutoLogin.Services
 
         private static HttpClient CreateClient()
         {
-            var handler = new HttpClientHandler { UseProxy = true, Proxy = WebRequest.DefaultWebProxy };
+            var handler = new HttpClientHandler();
+            // 代理软件未运行但系统里残留代理设置时，检查更新会整体失败；这里自动回退直连。
+            NetworkRoute.ConfigureHandler(handler, new Uri("https://api.github.com/"));
             var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("SeewoAutoLogin");
             client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");

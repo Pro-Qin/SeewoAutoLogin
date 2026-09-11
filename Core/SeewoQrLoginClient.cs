@@ -33,6 +33,8 @@ namespace SeewoAutoLogin
                 UseCookies = true,
                 AllowAutoRedirect = false
             };
+            // 代理软件没运行时，系统里残留的代理设置会让所有请求直接被拒绝，这里自动判断并改为直连。
+            NetworkRoute.ConfigureHandler(handler, Authority);
             _http = new HttpClient(handler)
             {
                 BaseAddress = Authority,

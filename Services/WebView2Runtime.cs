@@ -176,7 +176,9 @@ namespace SeewoAutoLogin.Services
         private static async Task DownloadFileAsync(string url, string destination, IProgress<string> progress,
             CancellationToken cancellationToken)
         {
-            using var handler = new HttpClientHandler { UseProxy = true, Proxy = WebRequest.DefaultWebProxy };
+            using var handler = new HttpClientHandler();
+            // 代理软件未运行但系统里残留代理设置时会导致下载必然失败；这里自动回退直连。
+            NetworkRoute.ConfigureHandler(handler, new Uri(url));
             using var client = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(10) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("SeewoAutoLogin");
 

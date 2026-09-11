@@ -16,6 +16,7 @@ namespace SeewoAutoLogin
     {
         private HttpListener _listener;
         private CancellationTokenSource _cts;
+        private readonly SemaphoreSlim _loginGate = new SemaphoreSlim(1, 1);
         private readonly SeewoAuthService _authService;
         private readonly Func<PluginConfig> _getConfig;
         private readonly Func<SeewoAccount, bool> _tryRestoreQrSession;
@@ -340,53 +341,64 @@ namespace SeewoAutoLogin
                         return;
                     }
 
-                    SeewoLoginResult loginResult;
-                    if (string.IsNullOrEmpty(account.Password))
+                    // 希沃短时间会并发发起多个 SSOLOGIN 请求，而 authService 只持有一份 token / userInfo，
+                    // 并发登录会互相覆盖（A 的请求可能拿到 B 的 token），客户端就表现为「登录信息过期」。
+                    // 这里串行化登录/换发过程，保证每个请求返回的 token 都属于它自己的账号。
+                    await _loginGate.WaitAsync().ConfigureAwait(false);
+                    try
                     {
-                        if (!_authService.IsSessionFor(account))
-                            _tryRestoreQrSession?.Invoke(account);
-
-                        if (_authService.IsSessionFor(account))
+                        SeewoLoginResult loginResult;
+                        if (string.IsNullOrEmpty(account.Password))
                         {
-                            loginResult = await _authService.ExchangeCurrentTokenAsync();
-                            if (!loginResult.Success)
+                            if (!_authService.IsSessionFor(account))
+                                _tryRestoreQrSession?.Invoke(account);
+
+                            if (_authService.IsSessionFor(account))
                             {
-                                resp.StatusCode = 401;
-                                await WriteJson(resp, new { message = "qr_token_invalid", statusCode = "401", detail = loginResult.ErrorMessage });
-                                Log($"SSOLOGIN/{userId}: Token 换发失败，需要重新扫码; reason={loginResult.ErrorMessage}");
-                                return;
+                                loginResult = await _authService.ExchangeCurrentTokenAsync();
+                                if (!loginResult.Success)
+                                {
+                                    resp.StatusCode = 401;
+                                    await WriteJson(resp, new { message = "qr_token_invalid", statusCode = "401", detail = loginResult.ErrorMessage });
+                                    Log($"SSOLOGIN/{userId}: Token 换发失败，需要重新扫码; reason={loginResult.ErrorMessage}");
+                                    return;
+                                }
+                                _onQrTokenValidated?.Invoke(account, loginResult.Token);
+                                Log($"SSOLOGIN/{userId}: Token 换发成功，已更新持久化 Token");
                             }
-                            _onQrTokenValidated?.Invoke(account, loginResult.Token);
-                            Log($"SSOLOGIN/{userId}: Token 换发成功，已更新持久化 Token");
+                            else
+                            {
+                                loginResult = _authService.GetCurrentLoginResult();
+                            }
                         }
                         else
                         {
-                            loginResult = _authService.GetCurrentLoginResult();
+                            loginResult = await _authService.LoginAsync(account.Username, account.DecryptedPassword);
                         }
-                    }
-                    else
-                    {
-                        loginResult = await _authService.LoginAsync(account.Username, account.DecryptedPassword);
-                    }
 
-                    if (!loginResult.Success)
-                    {
-                        resp.StatusCode = 401;
-                        await WriteJson(resp, new { message = "login_failed", statusCode = "401", detail = loginResult.ErrorMessage });
-                        Log($"SSOLOGIN/{userId}: 登录失败 - {loginResult.ErrorMessage}");
+                        if (!loginResult.Success)
+                        {
+                            resp.StatusCode = 401;
+                            await WriteJson(resp, new { message = "login_failed", statusCode = "401", detail = loginResult.ErrorMessage });
+                            Log($"SSOLOGIN/{userId}: 登录失败 - {loginResult.ErrorMessage}");
+                            return;
+                        }
+
+                        resp.Headers.Set("Set-Cookie", $"pt_token={loginResult.Token}; Path=/; HttpOnly; SameSite=Lax");
+                        resp.Headers.Set("X-Auth-Token", loginResult.Token);
+
+                        await WriteJson(resp, new { message = "success", statusCode = "200", data = new { pt_token = loginResult.Token } });
+
+                        account.UserInfo = loginResult.UserInfo;
+                        _onLoginSuccess?.Invoke(account);
+
+                        Log($"SSOLOGIN/{userId}: 登录成功 - {loginResult.UserInfo?.NickName}");
                         return;
                     }
-
-                    resp.Headers.Set("Set-Cookie", $"pt_token={loginResult.Token}; Path=/; HttpOnly; SameSite=Lax");
-                    resp.Headers.Set("X-Auth-Token", loginResult.Token);
-
-                    await WriteJson(resp, new { message = "success", statusCode = "200", data = new { pt_token = loginResult.Token } });
-
-                    account.UserInfo = loginResult.UserInfo;
-                    _onLoginSuccess?.Invoke(account);
-
-                    Log($"SSOLOGIN/{userId}: 登录成功 - {loginResult.UserInfo?.NickName}");
-                    return;
+                    finally
+                    {
+                        _loginGate.Release();
+                    }
                 }
 
                 if (req.HttpMethod == "GET" && path.Equals("/getData/SSOLOGOUT", StringComparison.OrdinalIgnoreCase))
@@ -427,7 +439,11 @@ namespace SeewoAutoLogin
             resp.Close();
         }
 
-        public void Dispose() => Stop();
+        public void Dispose()
+        {
+            Stop();
+            _loginGate.Dispose();
+        }
 
         public event Action<string> LogMessage;
         /// <summary>当向希沃返回账号列表时触发，参数为本次返回的账号 ID 列表</summary>

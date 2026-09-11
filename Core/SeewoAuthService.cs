@@ -19,7 +19,8 @@ namespace SeewoAutoLogin
         private const string AUTH_REFER = "EnAppAndroid";
         private const string USER_AGENT = "okhttp/3.12.12";
 
-        private readonly HttpClient _http;
+        private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
+
         private string _token;
         private SeewoUserInfo _userInfo;
 
@@ -27,108 +28,176 @@ namespace SeewoAutoLogin
         public string Token => _token;
         public SeewoUserInfo UserInfo => _userInfo;
 
-        public SeewoAuthService()
-        {
-            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            _http.DefaultRequestHeaders.Add("User-Agent", USER_AGENT);
-        }
-
         public async Task<SeewoLoginResult> LoginAsync(string username, string password, CancellationToken cancellationToken = default)
         {
             try
             {
-                var md5Pwd = ComputeMd5(password);
-                var traceId = Guid.NewGuid().ToString("N")[..32];
+                var response = await SendLoginRequestAsync(username, password, cancellationToken).ConfigureAwait(false);
+                DiagnosticMessage?.Invoke(
+                    $"[Login] response; transport={(response.TransportOk ? "ok" : "failed")}; " +
+                    $"status={(response.TransportOk ? response.StatusCode.ToString() : "-")}; body={SanitizeJsonForLog(response.Body)}");
 
-                var payload = new
+                if (!response.TransportOk)
+                    return new SeewoLoginResult { Success = false, ErrorMessage = NetworkRoute.DescribeFailure(response) };
+
+                if (!response.IsSuccess)
                 {
-                    username = username,
-                    password = md5Pwd,
-                    captcha = (string)null,
-                    phoneCountryCode = ""
-                };
-
-                var json = JsonSerializer.Serialize(payload);
-                var request = new HttpRequestMessage(HttpMethod.Post, LOGIN_URL)
-                {
-                    Content = new StringContent(json, Encoding.UTF8, "application/json")
-                };
-                request.Headers.Add("X-APM-TraceId", traceId);
-                request.Headers.Add("Cookie", "x-auth-app=EasiNote5; x-auth-token=");
-
-                var response = await _http.SendAsync(request, cancellationToken);
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
+                    var httpMessage = ReadApiMessage(response.Body);
                     return new SeewoLoginResult
                     {
                         Success = false,
-                        ErrorMessage = $"HTTP {(int)response.StatusCode}"
+                        ErrorMessage = string.IsNullOrWhiteSpace(httpMessage) ? $"HTTP {response.StatusCode}" : httpMessage
                     };
                 }
 
-                using var doc = JsonDocument.Parse(body);
-                var root = doc.RootElement;
+                var result = ParseLoginBody(response.Body);
+                if (!result.Success) return result;
 
-                if (root.TryGetProperty("code", out var codeEl) && codeEl.GetInt32() != 0)
-                {
-                    var msg = root.TryGetProperty("msg", out var msgEl) ? msgEl.GetString() : "未知错误";
-                    return new SeewoLoginResult { Success = false, ErrorMessage = msg };
-                }
-
-                var token = root.GetProperty("data").GetProperty("token").GetString();
-                if (string.IsNullOrEmpty(token))
-                {
-                    return new SeewoLoginResult { Success = false, ErrorMessage = "未获取到 token" };
-                }
-
-                _token = token;
-                await FetchUserInfoAsync(cancellationToken);
-
-                return new SeewoLoginResult
-                {
-                    Success = true,
-                    Token = token,
-                    UserInfo = _userInfo
-                };
+                _token = result.Token;
+                await FetchUserInfoAsync(cancellationToken).ConfigureAwait(false);
+                result.UserInfo = _userInfo;
+                return result;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 return new SeewoLoginResult { Success = false, ErrorMessage = "已取消" };
             }
-            catch (TaskCanceledException)
-            {
-                return new SeewoLoginResult { Success = false, ErrorMessage = "请求超时" };
-            }
             catch (Exception ex)
             {
-                return new SeewoLoginResult { Success = false, ErrorMessage = ex.Message };
+                return new SeewoLoginResult { Success = false, ErrorMessage = FriendlyMessage(ex) };
             }
+        }
+
+        /// <summary>发送密码登录请求（不修改实例状态，可被并发调用）。</summary>
+        private static Task<HttpTextResponse> SendLoginRequestAsync(string username, string password, CancellationToken cancellationToken)
+        {
+            var md5Pwd = ComputeMd5(password);
+            var traceId = Guid.NewGuid().ToString("N")[..32];
+
+            var json = JsonSerializer.Serialize(new
+            {
+                username = username,
+                password = md5Pwd,
+                captcha = (string)null,
+                phoneCountryCode = ""
+            });
+
+            return NetworkRoute.SendTextAsync(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, LOGIN_URL)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+                request.Headers.TryAddWithoutValidation("User-Agent", USER_AGENT);
+                request.Headers.TryAddWithoutValidation("X-APM-TraceId", traceId);
+                request.Headers.TryAddWithoutValidation("Cookie", "x-auth-app=EasiNote5; x-auth-token=");
+                return request;
+            }, RequestTimeout, "密码登录", cancellationToken);
+        }
+
+        /// <summary>
+        /// 解析登录响应。希沃登录失败时返回的是 {"error_code":4908,"message":"账户不存在"}，
+        /// 既没有 code 也没有 data；旧实现直接 GetProperty("data") 会抛 KeyNotFoundException，
+        /// 界面上只能看到 “The given key was not present in the dictionary.”。
+        /// </summary>
+        private static SeewoLoginResult ParseLoginBody(string body)
+        {
+            JsonElement root;
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                root = document.RootElement.Clone();
+            }
+            catch
+            {
+                return new SeewoLoginResult { Success = false, ErrorMessage = "登录接口返回了无法解析的数据" };
+            }
+
+            var errorCode = GetJsonInt(root, "error_code") ?? GetJsonInt(root, "code");
+            if (errorCode.HasValue && errorCode.Value != 0)
+            {
+                return new SeewoLoginResult
+                {
+                    Success = false,
+                    ErrorMessage = ReadApiMessage(root) ?? $"登录失败（错误码 {errorCode.Value}）"
+                };
+            }
+
+            if (TryGetJsonObject(root, "data", out var data))
+            {
+                var token = GetJsonString(data, "token");
+                if (!string.IsNullOrWhiteSpace(token))
+                    return new SeewoLoginResult { Success = true, Token = token };
+            }
+
+            var rootToken = GetJsonString(root, "token");
+            if (!string.IsNullOrWhiteSpace(rootToken))
+                return new SeewoLoginResult { Success = true, Token = rootToken };
+
+            return new SeewoLoginResult
+            {
+                Success = false,
+                ErrorMessage = ReadApiMessage(root) ?? "登录接口未返回登录令牌，请检查账号与密码"
+            };
+        }
+
+        private static string ReadApiMessage(string body)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                return ReadApiMessage(document.RootElement);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string ReadApiMessage(JsonElement root)
+        {
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            var message = GetJsonString(root, "message");
+            if (string.IsNullOrWhiteSpace(message)) message = GetJsonString(root, "msg");
+            return string.IsNullOrWhiteSpace(message) ? null : message;
+        }
+
+        private static string FriendlyMessage(Exception ex)
+        {
+            if (ex is TaskCanceledException || ex is OperationCanceledException) return "请求超时";
+            if (ex is HttpRequestException) return $"网络请求失败：{ex.Message}";
+            return ex.Message;
         }
 
         public async Task<SeewoUserInfo> FetchUserInfoAsync(CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrEmpty(_token)) return null;
+            if (string.IsNullOrWhiteSpace(_token)) return null;
 
             try
             {
-                var request = new HttpRequestMessage(HttpMethod.Get, USER_INFO_URL);
-                request.Headers.Add("X-auth-refer", "EnAppAndroid");
-                request.Headers.Add("X-Crypto-Version", "1");
-                request.Headers.Add("Cookie", $"x-auth-app=EasiNoteAndroid; x-auth-token={_token}");
+                var token = _token;
+                var response = await NetworkRoute.SendTextAsync(() =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, USER_INFO_URL);
+                    request.Headers.TryAddWithoutValidation("User-Agent", USER_AGENT);
+                    request.Headers.TryAddWithoutValidation("X-auth-refer", AUTH_REFER);
+                    request.Headers.TryAddWithoutValidation("X-Crypto-Version", "1");
+                    request.Headers.TryAddWithoutValidation("Cookie", $"x-auth-app={AUTH_APP}; x-auth-token={token}");
+                    return request;
+                }, RequestTimeout, "用户信息", cancellationToken).ConfigureAwait(false);
 
-                var response = await _http.SendAsync(request, cancellationToken);
-                if (!response.IsSuccessStatusCode) return null;
+                if (!response.IsSuccess) return null;
 
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                using var doc = JsonDocument.Parse(body);
+                using var doc = JsonDocument.Parse(response.Body);
                 var root = doc.RootElement;
 
-                if (root.TryGetProperty("code", out var codeEl) && codeEl.GetInt32() != 0)
+                var errorCode = GetJsonInt(root, "error_code") ?? GetJsonInt(root, "code");
+                if (errorCode.HasValue && errorCode.Value != 0)
                     return null;
 
-                var data = root.GetProperty("data");
+                if (!TryGetJsonObject(root, "data", out var data))
+                    return null;
+
                 _userInfo = new SeewoUserInfo
                 {
                     NickName = GetJsonString(data, "nickName"),
@@ -230,27 +299,40 @@ namespace SeewoAutoLogin
 
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, TOKEN_EXCHANGE_URL + Uri.EscapeDataString(oldToken) + "/exchange");
-                request.Headers.TryAddWithoutValidation("x-auth-app", "EasiNote5");
-                request.Headers.TryAddWithoutValidation("Cookie", "x-auth-app=EasiNote5");
-                request.Headers.TryAddWithoutValidation("Accept", "application/json");
-                using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-                var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                DiagnosticMessage?.Invoke($"[TokenExchange] response; status={(int)response.StatusCode}; content-type={response.Content.Headers.ContentType?.MediaType ?? "<missing>"}; body={SanitizeJsonForLog(body)}");
-                if (!response.IsSuccessStatusCode)
+                var response = await NetworkRoute.SendTextAsync(() =>
                 {
-                    DiagnosticMessage?.Invoke($"[TokenExchange] result=http-error; status={(int)response.StatusCode}");
-                    return new SeewoLoginResult { Success = false, ErrorMessage = $"HTTP {(int)response.StatusCode}" };
+                    var request = new HttpRequestMessage(HttpMethod.Get, TOKEN_EXCHANGE_URL + Uri.EscapeDataString(oldToken) + "/exchange");
+                    request.Headers.TryAddWithoutValidation("User-Agent", USER_AGENT);
+                    request.Headers.TryAddWithoutValidation("x-auth-app", "EasiNote5");
+                    request.Headers.TryAddWithoutValidation("Cookie", "x-auth-app=EasiNote5");
+                    request.Headers.TryAddWithoutValidation("Accept", "application/json");
+                    return request;
+                }, RequestTimeout, "Token 换发", cancellationToken).ConfigureAwait(false);
+
+                var body = response.Body ?? "";
+                DiagnosticMessage?.Invoke(
+                    $"[TokenExchange] response; transport={(response.TransportOk ? "ok" : "failed")}; " +
+                    $"status={(response.TransportOk ? response.StatusCode.ToString() : "-")}; body={SanitizeJsonForLog(body)}");
+
+                if (!response.TransportOk)
+                {
+                    DiagnosticMessage?.Invoke("[TokenExchange] result=transport-error");
+                    return new SeewoLoginResult { Success = false, ErrorMessage = NetworkRoute.DescribeFailure(response) };
+                }
+
+                if (!response.IsSuccess)
+                {
+                    DiagnosticMessage?.Invoke($"[TokenExchange] result=http-error; status={response.StatusCode}");
+                    return new SeewoLoginResult { Success = false, ErrorMessage = $"HTTP {response.StatusCode}" };
                 }
 
                 using var document = JsonDocument.Parse(body);
                 var root = document.RootElement;
-                var data = root.TryGetProperty("data", out var dataElement) && dataElement.ValueKind == JsonValueKind.Object
-                    ? dataElement : root;
+                var data = TryGetJsonObject(root, "data", out var dataElement) ? dataElement : root;
                 var newToken = GetJsonString(data, "token");
                 if (string.IsNullOrWhiteSpace(newToken))
                 {
-                    var message = GetJsonString(root, "message") ?? GetJsonString(root, "msg") ?? "Token 换发失败";
+                    var message = ReadApiMessage(root) ?? "Token 换发失败";
                     DiagnosticMessage?.Invoke("[TokenExchange] result=invalid; new-token-present=false");
                     return new SeewoLoginResult { Success = false, ErrorMessage = message };
                 }
@@ -338,8 +420,39 @@ namespace SeewoAutoLogin
 
         private static string GetJsonString(JsonElement el, string name)
         {
-            return el.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String
+            return TryGetJsonProperty(el, name, out var prop) && prop.ValueKind == JsonValueKind.String
                 ? prop.GetString() : "";
+        }
+
+        private static int? GetJsonInt(JsonElement element, string name)
+        {
+            if (!TryGetJsonProperty(element, name, out var value)) return null;
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
+            if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number)) return number;
+            return null;
+        }
+
+        private static bool TryGetJsonObject(JsonElement element, string name, out JsonElement value)
+        {
+            if (TryGetJsonProperty(element, name, out value) && value.ValueKind == JsonValueKind.Object) return true;
+            value = default;
+            return false;
+        }
+
+        /// <summary>大小写不敏感且不会在非对象上抛异常的属性读取。</summary>
+        private static bool TryGetJsonProperty(JsonElement element, string name, out JsonElement value)
+        {
+            value = default;
+            if (element.ValueKind != JsonValueKind.Object) return false;
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static string ComputeMd5(string input)
@@ -351,7 +464,7 @@ namespace SeewoAutoLogin
 
         public void Dispose()
         {
-            _http?.Dispose();
+            // 每个请求使用独立的 HttpClient（见 NetworkRoute），无需长期持有的连接池。
         }
     }
 
