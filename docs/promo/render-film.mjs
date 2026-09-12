@@ -5,7 +5,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const FPS = 30, DURATION = 15.0;
+const HTML = process.argv[2] || 'film.html';        // 用法：node render-film.mjs film-fast.html 16.1
+const FPS = 30, DURATION = parseFloat(process.argv[3] || '15.0');
 const W = 1280, H = 720;
 const FRAMES = join(HERE, 'frames');
 const PORT = 9333;
@@ -14,7 +15,7 @@ const EDGE = process.env.EDGE_PATH || 'C:/Program Files (x86)/Microsoft/Edge/App
 rmSync(FRAMES, { recursive: true, force: true });
 mkdirSync(FRAMES, { recursive: true });
 
-const target = 'file:///' + join(HERE, 'film.html').replace(/\\/g, '/');
+const target = 'file:///' + join(HERE, HTML).replace(/\\/g, '/');
 const edge = spawn(EDGE, [
   '--headless=new', '--disable-gpu', '--hide-scrollbars', '--mute-audio',
   '--remote-debugging-port=' + PORT,

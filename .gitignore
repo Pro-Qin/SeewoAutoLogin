@@ -24,4 +24,4 @@ Desktop.ini
 # 宣传片渲染中间产物（可用 make-music.py / render-film.mjs 重新生成）
 docs/promo/frames/
 docs/promo/.edge-profile/
-docs/promo/music.wav
+docs/promo/*.wav
