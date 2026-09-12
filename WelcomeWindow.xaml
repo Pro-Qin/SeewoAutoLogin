@@ -30,13 +30,18 @@
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <!-- 深色主题：选中=主色文字 + 15% 主色底；悬停=白字 + 10% 白底。
+                                 原先用 #E8F4FD/#F0F0F0 浅色底配浅色文字，在深色背景上几乎看不清。 -->
+                            <!-- 顺序很重要：靠后的触发器优先级更高，选中态必须放在悬停态之后，
+                                 否则鼠标停在当前标签上时会被悬停样式盖掉，看不出哪个是选中项。 -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                <Setter Property="Background" Value="#1AFFFFFF"/>
+                            </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                <Setter Property="Background" Value="#E8F4FD"/>
+                                <Setter Property="Background" Value="#2675C72A"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#F0F0F0"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

@@ -334,6 +334,7 @@
           <div style="display:flex;gap:8px;justify-content:center">
             <button class="btn btn-secondary" id="checkUpdateBtn" onclick="checkUpdate()">检查更新</button>
             <button class="btn btn-primary" id="downloadUpdateBtn" style="display:none" onclick="openUpdatePage()">下载新版本</button>
+            <button class="btn btn-secondary" id="cancelDownloadBtn" style="display:none">取消下载</button>
           </div>
           <div id="updateStatus" class="update-status"></div>
         </div>
@@ -362,8 +363,9 @@
     <div class="tour-media" id="tourMedia"></div>
     <div class="tour-actions">
       <button class="btn btn-secondary btn-small" id="tourSkipBtn">跳过教程</button>
-      <span class="tour-hint" id="tourHint">点击任意位置继续</span>
-      <button class="btn btn-primary btn-small" id="tourNextBtn" style="display:none">下一步</button>
+      <span class="tour-hint" id="tourHint">点击任意地方继续</span>
+      <button class="btn btn-secondary btn-small" id="tourPrevBtn" style="display:none">上一步</button>
+      <button class="btn btn-primary btn-small" id="tourNextBtn">下一步</button>
     </div>
   </div>
 </div>

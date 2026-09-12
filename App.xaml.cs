@@ -384,8 +384,10 @@ namespace SeewoAutoLogin
             }
 
             // 首次启动显示欢迎界面（放在网关启动之后：即使用户停留在欢迎界面，希沃侧快捷登录也已可用）
+            var welcomeShown = false;
             if (_config.IsFirstLaunch)
             {
+                welcomeShown = true;
                 try
                 {
                     var welcome = new WelcomeWindow();
@@ -414,8 +416,9 @@ namespace SeewoAutoLogin
                 }
             }
 
-            // 显示主窗口（除非设置了启动隐藏或传了 --minimized）
-            bool startMinimized = e.Args.Contains("--minimized") || _config.StartMinimized;
+            // 显示主窗口（除非设置了启动隐藏或传了 --minimized）。
+            // 例外：刚走完首次引导时一定显示 —— 否则用户答完教程询问后什么都看不到，会以为程序没启动。
+            bool startMinimized = !welcomeShown && (e.Args.Contains("--minimized") || _config.StartMinimized);
             if (startMinimized)
             {
                 try { _trayIcon?.SetStatusText(Strings.StartMinimized); } catch { }

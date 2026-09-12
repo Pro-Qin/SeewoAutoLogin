@@ -102,7 +102,12 @@ function handleCSharpMessage(raw) {
     case 'backups': renderBackups(msg); break;
     case 'toast': showToast(msg.text, msg.level); break;
     case 'start-tour': startTour(); break;
-    case 'update-progress': renderUpdateProgress(msg); break;
+    case 'update-progress': {
+      renderUpdateProgress(msg);
+      const cb = document.getElementById('cancelDownloadBtn');
+      if (cb) cb.disabled = false;
+      break;
+    }
     case 'factory-reset-done': {
       const st = document.getElementById('factoryResetStatus');
       if (st) st.textContent = '已恢复出厂设置，正在自动重启…';
@@ -157,9 +162,19 @@ function renderUpdateProgress(msg) {
     const el = document.getElementById(id);
     if (el) { el.textContent = text; el.className = 'update-status' + (state === 'error' ? ' error' : ''); }
   });
+  const busy = (state === 'preparing' || state === 'downloading');
   const btn = document.getElementById('downloadUpdateBtn');
-  if (btn) btn.disabled = (state === 'preparing' || state === 'downloading');
+  if (btn) btn.disabled = busy;
+  // 下载过程中给出取消入口，避免用户只能干等
+  const cancelBtn = document.getElementById('cancelDownloadBtn');
+  if (cancelBtn) cancelBtn.style.display = busy ? '' : 'none';
 }
+bindClick('cancelDownloadBtn', function () {
+  send({ type: 'cancel-download' });
+  const cancelBtn = document.getElementById('cancelDownloadBtn');
+  if (cancelBtn) cancelBtn.disabled = true;
+  showToast('正在取消下载…', 'info');
+});
 function renderUpdateStatus(msg) {
   const text = msg.text || '';
   const kind = msg.state || '';
@@ -202,6 +217,8 @@ function closeFab() {
 }
 function fabNavigate(page) { closeFab(); navigate(page); }
 document.addEventListener('click', function(e) {
+  // 教程进行中由教程自己控制加号菜单的展开状态，避免点「下一步」时被这里顺手收起
+  if (window.__tourActive) return;
   const group = document.getElementById('fabGroup');
   if (group && group.classList.contains('open') && !group.contains(e.target)) closeFab();
 });
@@ -745,20 +762,27 @@ bindClick('actMoveDown', function() { moveSelected(1); });
 const TOUR_PAD = 10;
 const TOUR_STEPS = [
   {
-    step: '第 1 步 · 共 4 步',
+    step: '第 1 步 · 共 5 步',
     title: '平时从任务栏托盘打开它',
     html: '软件启动后会缩到右下角托盘。双击那个<b>蓝色闪电图标</b>（或右键它）就能随时打开这个管理界面。',
     media: 'assets/tutorial-tray.png',
     mediaClass: 'tray'
   },
   {
-    step: '第 2 步 · 共 4 步',
-    title: '两种添加账号的方式',
-    html: '点右下角的 <b>+ 号</b>展开菜单，或者用左侧的 <b>添加账号 / 扫码登录</b>，都能把希沃账号加进来。',
-    choreo: true
+    step: '第 2 步 · 共 5 步',
+    title: '方式一：右下角的 + 号',
+    html: '点右下角的 <b>+ 号</b>会展开两个入口：<b>密码添加</b>（账号密码登录）和 <b>扫码添加</b>（希沃 App 扫码）。',
+    focus: '#fabBtn, #fabMenu',
+    openFab: true
   },
   {
-    step: '第 3 步 · 共 4 步',
+    step: '第 3 步 · 共 5 步',
+    title: '方式二：左侧侧边栏',
+    html: '左侧的 <b>添加账号</b> 与 <b>扫码登录</b> 是同样的两个入口，挑顺手的一种用就行。',
+    focus: '#navAdd, #navQr'
+  },
+  {
+    step: '第 4 步 · 共 5 步',
     title: '添加后，希沃会变成这样',
     html: '打开希沃白板的登录界面，账号头像会直接排在这里，<b>点一下头像就能登录</b>，不用再输账号密码。',
     media: 'assets/tutorial-seewo.png',
@@ -766,7 +790,7 @@ const TOUR_STEPS = [
     wide: true
   },
   {
-    step: '第 4 步 · 共 4 步',
+    step: '第 5 步 · 共 5 步',
     title: '可以开始用了',
     html: '教程随时能在「<b>设置 → 帮助与维护</b>」里重看一遍。',
     last: true
@@ -886,42 +910,41 @@ function tourRenderStep(i) {
   }
 
   card.classList.toggle('wide', !!s.wide);
-  if (s.last) {
-    if (nextBtn) { nextBtn.style.display = ''; nextBtn.textContent = '完成教学'; }
-    if (hint) { hint.textContent = ''; hint.classList.remove('pulse'); }
-  } else {
-    if (nextBtn) nextBtn.style.display = 'none';
-    if (hint) { hint.textContent = '点击任意地方继续'; hint.classList.add('pulse'); }
+
+  // 导航按钮：第一步不显示「上一步」，最后一步把「下一步」换成「完成教学」
+  const prevBtn = tourEl('tourPrevBtn');
+  if (prevBtn) prevBtn.style.display = i > 0 ? '' : 'none';
+  if (nextBtn) nextBtn.textContent = s.last ? '完成教学' : '下一步';
+  if (hint) {
+    hint.textContent = s.last ? '' : '点击任意地方继续';
+    hint.classList.toggle('pulse', !s.last);
   }
+
+  // 只在需要展示加号菜单的步骤展开它，切走后自动收起
+  const group = document.getElementById('fabGroup');
+  if (group) group.classList.toggle('open', !!s.openFab);
 
   // 内容变了，先隐藏卡片量好尺寸，再定位淡入
   card.classList.remove('show');
-  requestAnimationFrame(function () {
-    if (s.choreo) tourRunChoreography();
-    else tourSpotlight(null);
-  });
-}
-
-// 第 2 步的编排：先展开加号菜单并聚焦，再平滑滑到侧边栏的两个入口
-function tourRunChoreography() {
-  const group = document.getElementById('fabGroup');
-  if (group) group.classList.add('open');
-
   clearTimeout(tourTimer);
-  tourTimer = setTimeout(function () {
-    tourSpotlight('#fabBtn, #fabMenu');
-  }, 360);
-
-  tourTimer = setTimeout(function () {
-    tourSpotlight('#navAdd, #navQr');
-  }, 2500);
+  requestAnimationFrame(function () {
+    if (!s.focus) { tourSpotlight(null); return; }
+    // 菜单有展开动画，等它稳定后再测量，否则框选范围会按收起状态计算
+    tourTimer = setTimeout(function () { tourSpotlight(s.focus); }, s.openFab ? 520 : 60);
+  });
 }
 
 function startTour() {
   const ov = tourEl('tourOverlay');
   if (!ov) return;
+
+  // 加号悬浮按钮只属于账号列表页：在设置页直接开教程会框不到它（元素不参与布局）。
+  // 教程统一在主界面（账号列表）演示，点「显示使用教程」时先切过去。
+  if (typeof navigate === 'function') navigate('accounts');
+
   if (ov.hidden) ov.hidden = false;
   document.body.classList.add('tour-open');
+  window.__tourActive = true;
   tourRenderStep(0);
   send({ type: 'tour-started' });
 }
@@ -932,10 +955,16 @@ function tourNext() {
   tourRenderStep(tourIndex + 1);
 }
 
+function tourPrev() {
+  if (tourIndex <= 0) return;
+  tourRenderStep(tourIndex - 1);
+}
+
 function endTour(completed) {
   clearTimeout(tourTimer);
   tourTimer = null;
   tourIndex = -1;
+  window.__tourActive = false;
 
   const ov = tourEl('tourOverlay');
   if (ov) ov.hidden = true;
@@ -956,8 +985,13 @@ function endTour(completed) {
   if (!ov) return;
 
   ov.addEventListener('click', function (e) {
-    if (e.target && e.target.closest && (e.target.closest('#tourSkipBtn') || e.target.closest('#tourNextBtn'))) return;
+    if (e.target && e.target.closest &&
+        (e.target.closest('#tourSkipBtn') || e.target.closest('#tourNextBtn') || e.target.closest('#tourPrevBtn'))) return;
     tourNext();
+  });
+  bindClick('tourPrevBtn', function (e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    tourPrev();
   });
   bindClick('tourSkipBtn', function (e) {
     if (e && e.stopPropagation) e.stopPropagation();
@@ -965,12 +999,14 @@ function endTour(completed) {
   });
   bindClick('tourNextBtn', function (e) {
     if (e && e.stopPropagation) e.stopPropagation();
-    endTour(true);
+    // 每一步都显示「下一步」；到第 5 步时 tourNext() 内部会以“完成”收尾
+    tourNext();
   });
   document.addEventListener('keydown', function (e) {
     if (tourIndex < 0) return;
     if (e.key === 'Escape') { e.preventDefault(); endTour(false); }
-    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tourNext(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); tourPrev(); }
+    else if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); tourNext(); }
   });
   window.addEventListener('resize', function () {
     if (tourIndex >= 0) tourRenderStep(tourIndex);

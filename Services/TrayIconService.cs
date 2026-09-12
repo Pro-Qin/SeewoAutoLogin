@@ -95,15 +95,13 @@ namespace SeewoAutoLogin.Services
             }
 
             var accounts = _getAccounts() ?? new List<AccountMenuItem>();
-            if (accounts.Count == 0) return;
-
-            _menu.Items.Add(new ToolStripSeparator());
 
             // 只显示未生效账号（生效区内的不显示）
             var unlisted = accounts.Skip(PluginConfig.MaxVisibleAccounts).ToList();
 
             if (unlisted.Count > 0)
             {
+                _menu.Items.Add(new ToolStripSeparator());
                 var h = _menu.Items.Add("— 未加入希沃列表（点击切换） —");
                 h.Enabled = false;
                 foreach (var a in unlisted)
@@ -115,6 +113,7 @@ namespace SeewoAutoLogin.Services
                 }
             }
 
+            // 下面这几个入口与有没有账号无关，必须始终存在（否则空账号时连退出都点不到）
             _menu.Items.Add(new ToolStripSeparator());
             var overlay = _menu.Items.Add("显示遮罩");
             overlay.Click += (s, e) => _onSwitchAccount?.Invoke("__OVERLAY__");

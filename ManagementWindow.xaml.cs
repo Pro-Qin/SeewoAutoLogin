@@ -426,6 +426,8 @@ namespace SeewoAutoLogin
         private bool _updateChecked;
         /// <summary>最近一次检查到的更新信息（下载时复用其直链与校验值）</summary>
         private UpdateInfo _latestUpdate;
+        /// <summary>当前更新包下载的取消源（供界面「取消下载」使用）</summary>
+        private CancellationTokenSource _downloadCts;
 
         private async Task HandleCheckUpdateAsync(bool manual)
         {
@@ -517,6 +519,11 @@ namespace SeewoAutoLogin
                 return;
             }
 
+            // 每次下载配一个独立的取消源，界面上的「取消下载」会取消它
+            _downloadCts?.Dispose();
+            _downloadCts = new CancellationTokenSource();
+            var token = _downloadCts.Token;
+
             try
             {
                 await SendToJs(new { type = "update-progress", state = "preparing", text = "正在挑选最快的下载源…" });
@@ -537,7 +544,9 @@ namespace SeewoAutoLogin
                     info.Sha256,
                     progress,
                     message => _app.WriteDiagnosticLog($"[Update] {message}"),
-                    CancellationToken.None);
+                    token);
+
+                if (token.IsCancellationRequested) return; // 取消后不要接着启动安装程序
 
                 _app.WriteDiagnosticLog($"[Update] 安装包已下载并校验通过: {localPath}");
                 await SendToJs(new { type = "update-progress", state = "done", text = "下载完成，正在启动安装程序…" });
@@ -546,6 +555,14 @@ namespace SeewoAutoLogin
             }
             catch (Exception ex)
             {
+                // 用户主动取消不被当成失败，也不回退到发布页
+                if (token.IsCancellationRequested)
+                {
+                    _app.WriteDiagnosticLog("[Update] 用户取消了更新包下载");
+                    await SendToJs(new { type = "update-progress", state = "cancelled", text = "已取消下载" });
+                    return;
+                }
+
                 _app.WriteDiagnosticLog($"[Update] 下载失败: {ex.Message}");
                 await SendToJs(new
                 {
@@ -554,6 +571,30 @@ namespace SeewoAutoLogin
                     text = "下载失败：" + ex.Message + "（已为你打开发布页，可手动下载）"
                 });
                 OpenExternal(UpdateChecker.ReleasesPageUrl);
+            }
+            finally
+            {
+                _downloadCts?.Dispose();
+                _downloadCts = null;
+            }
+        }
+
+        /// <summary>取消正在进行的更新包下载</summary>
+        private void HandleCancelDownload()
+        {
+            try
+            {
+                if (_downloadCts == null || _downloadCts.IsCancellationRequested)
+                {
+                    _app.WriteDiagnosticLog("[Update] 当前没有正在进行的下载");
+                    return;
+                }
+                _downloadCts.Cancel();
+                _app.WriteDiagnosticLog("[Update] 收到取消下载请求");
+            }
+            catch (Exception ex)
+            {
+                _app.WriteDiagnosticLog($"[Update] 取消下载失败: {ex.Message}");
             }
         }
 
@@ -667,9 +708,11 @@ namespace SeewoAutoLogin
                     case "list-backups": await SendBackups(); break;
                     case "restore-backup": await HandleRestoreBackupAsync(root); break;
                     case "tour-started": _app.WriteDiagnosticLog("[Tour] 用户开始观看使用教程"); break;
+                    case "tour-debug": _app.WriteDiagnosticLog("[Tour] " + (root.TryGetProperty("text", out var dbg) ? dbg.GetString() : "")); break;
                     case "tour-done": HandleTourDone(root); break;
                     case "factory-reset": HandleFactoryReset(); break;
                     case "download-update": HandleDownloadUpdate(); break;
+                    case "cancel-download": HandleCancelDownload(); break;
                 }
             }
             catch (Exception ex) { Debug.WriteLine($"[WebView] msg error: {ex.Message}"); }

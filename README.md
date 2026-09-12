@@ -89,8 +89,8 @@ Release 提供两种安装包，功能完全一致，区别只是 WebView2 运�
 
 | 安装包 | 体积 | 适用场景 |
 |---|---|---|
-| `SeewoAutoLogin_Setup_v1.10.0.exe` | 约 8MB | 能联网：缺运行时由程序自动下载并静默安装 |
-| `SeewoAutoLogin_Setup_v1.10.0_WithWebView2.exe` | 约 210MB | 断网 / 内网机器：安装时离线装好 WebView2，杜绝运行时缺失导致的白屏 |
+| `SeewoAutoLogin_Setup_v1.10.1.exe` | 约 8MB | 能联网：缺运行时由程序自动下载并静默安装 |
+| `SeewoAutoLogin_Setup_v1.10.1_WithWebView2.exe` | 约 210MB | 断网 / 内网机器：安装时离线装好 WebView2，杜绝运行时缺失导致的白屏 |
 
 - 安装：运行上述任一个安装包（Inno Setup 打包，需要管理员权限）。
 - 卸载：控制面板卸载程序卸载。卸载时会以 `--uninstall` 启动应用，自动清理 hosts 中的 `local.id.seewo.com` 映射与本应用数据目录。
