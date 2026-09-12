@@ -485,7 +485,7 @@ namespace SeewoAutoLogin
             }
         }
 
-        private void HandleOpenUpdatePage(JsonElement root)
+        private async void HandleOpenUpdatePage(JsonElement root)
         {
             var url = root.TryGetProperty("url", out var element) ? element.GetString() : null;
             // 该 URL 来自前端消息且会用 ShellExecute 打开，必须校验协议与主机，避免被篡改成 file:// 或 UNC 路径
@@ -493,16 +493,15 @@ namespace SeewoAutoLogin
             {
                 if (!string.IsNullOrWhiteSpace(url))
                     _app.WriteDiagnosticLog($"[Update] 已拦截不可信的更新地址，改用发布页: {url}");
-                url = UpdateChecker.ReleasesPageUrl;
+                // 优先用最近一次检查到的 tag 页面，直接落到对应版本
+                url = string.IsNullOrWhiteSpace(_latestUpdate?.PageUrl)
+                    ? UpdateChecker.ReleasesPageUrl
+                    : _latestUpdate.PageUrl;
             }
-            try
-            {
-                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                _app.WriteDiagnosticLog($"[Update] 打开发布页失败: {ex.Message}");
-            }
+            // github.com 在国内常打不开：先探测一个可达的镜像地址再打开
+            var target = await UpdateChecker.ResolveBestPageUrlAsync(url, _app.WriteDiagnosticLog, CancellationToken.None);
+            _app.WriteDiagnosticLog($"[Update] 打开发布页: {target}");
+            OpenExternal(target, alreadyValidated: true);
         }
 
         /// <summary>
@@ -570,7 +569,10 @@ namespace SeewoAutoLogin
                     state = "error",
                     text = "下载失败：" + ex.Message + "（已为你打开发布页，可手动下载）"
                 });
-                OpenExternal(UpdateChecker.ReleasesPageUrl);
+                var fallback = await UpdateChecker.ResolveBestPageUrlAsync(
+                    string.IsNullOrWhiteSpace(info.PageUrl) ? UpdateChecker.ReleasesPageUrl : info.PageUrl,
+                    _app.WriteDiagnosticLog, CancellationToken.None);
+                OpenExternal(fallback, alreadyValidated: true);
             }
             finally
             {
@@ -599,7 +601,7 @@ namespace SeewoAutoLogin
         }
 
         /// <summary>打开本地文件或受信任的网页；不可信地址一律回落到官方发布页</summary>
-        private void OpenExternal(string target)
+        private void OpenExternal(string target, bool alreadyValidated = false)
         {
             try
             {
@@ -609,7 +611,9 @@ namespace SeewoAutoLogin
                     return;
                 }
 
-                var url = UpdateChecker.IsTrustedDownloadUrl(target) ? target : UpdateChecker.ReleasesPageUrl;
+                var url = (alreadyValidated || UpdateChecker.IsTrustedDownloadUrl(target))
+                    ? target
+                    : UpdateChecker.ReleasesPageUrl;
                 Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
             }
             catch (Exception ex)

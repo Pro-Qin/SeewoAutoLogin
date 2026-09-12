@@ -47,6 +47,40 @@ namespace SeewoAutoLogin.Services
 
         public static string ReleasesPageUrl => $"https://github.com/{RepoOwner}/{RepoName}/releases";
 
+        /// <summary>
+        /// 解析「用哪个地址打开发布页」：国内直连 github.com 常打不开，
+        /// 复用下载加速器的探测能力优先返回可达的镜像地址，全部不可达时退回原地址。
+        /// 传入具体 tag 页面（如 .../releases/tag/v1.10.1）用户就能直接落到对应版本。
+        /// </summary>
+        public static async Task<string> ResolveBestPageUrlAsync(string officialPageUrl, Action<string> log,
+            CancellationToken cancellationToken)
+        {
+            var url = string.IsNullOrWhiteSpace(officialPageUrl) ? ReleasesPageUrl : officialPageUrl.Trim();
+            if (!IsTrustedDownloadUrl(url))
+            {
+                log?.Invoke($"[Update] 发布页地址不可信，改用官方发布页: {url}");
+                url = ReleasesPageUrl;
+            }
+
+            try
+            {
+                var ranked = await DownloadAccelerator.RankCandidatesAsync(url, log, cancellationToken)
+                    .ConfigureAwait(false);
+                if (ranked.Count > 0)
+                {
+                    if (!string.Equals(ranked[0], url, StringComparison.OrdinalIgnoreCase))
+                        log?.Invoke($"[Update] 官方地址可能打不开，改用镜像发布页: {ranked[0]}");
+                    return ranked[0];
+                }
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[Update] 发布页镜像探测失败（改用官方地址）: {ex.Message}");
+            }
+
+            return url;
+        }
+
         /// <summary>单个响应体读取上限（1MB），防止异常源返回超大内容</summary>
         private const int MaxResponseBytes = 1024 * 1024;
 

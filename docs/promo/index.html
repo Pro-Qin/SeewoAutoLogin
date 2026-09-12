@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>希沃自动登录 · 宣传片</title>
+<style>
+:root{
+  --blue:#0A84FF; --blue-deep:#0060DF; --green:#75C72A;
+  --ink:#F5F5F7; --muted:rgba(245,245,247,.62); --faint:rgba(245,245,247,.34);
+  --ease:cubic-bezier(.23,1,.32,1);
+  --font:-apple-system,"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;background:#000}
+body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+
+/* ===== 背景：深空 + 双色光晕 ===== */
+.bg{position:fixed;inset:0;z-index:0;background:
+  radial-gradient(1100px 700px at 22% 18%, rgba(10,132,255,.20), transparent 62%),
+  radial-gradient(900px 620px at 82% 84%, rgba(117,199,42,.13), transparent 60%),
+  #000;}
+.bg::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(circle at 50% 50%, transparent 52%, rgba(0,0,0,.72) 100%);}
+.grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.5;
+  background-image:radial-gradient(rgba(255,255,255,.055) 1px, transparent 1px);
+  background-size:3px 3px;}
+
+/* ===== 舞台 ===== */
+.stage{position:fixed;inset:0;z-index:2;display:grid;place-items:center;padding:6vh 7vw}
+.scene{grid-area:1/1;width:100%;max-width:1080px;opacity:0;visibility:hidden;
+  transform:translate3d(0,26px,0) scale(.985);
+  transition:opacity .62s var(--ease),transform .78s var(--ease),visibility .62s;}
+.scene.active{opacity:1;visibility:visible;transform:none}
+.scene.leaving{opacity:0;transform:translate3d(0,-22px,0) scale(1.012)}
+
+/* 场景内元素逐行升起 */
+.scene .rise{opacity:0;transform:translate3d(0,22px,0);}
+.scene.active .rise{animation:rise .82s var(--ease) both}
+@keyframes rise{to{opacity:1;transform:none}}
+.scene.active .rise:nth-child(1){animation-delay:.10s}
+.scene.active .rise:nth-child(2){animation-delay:.20s}
+.scene.active .rise:nth-child(3){animation-delay:.30s}
+.scene.active .rise:nth-child(4){animation-delay:.40s}
+.scene.active .rise:nth-child(5){animation-delay:.50s}
+.scene.active .rise:nth-child(6){animation-delay:.60s}
+.scene.active .rise.d1{animation-delay:.55s}
+.scene.active .rise.d2{animation-delay:.72s}
+.scene.active .rise.d3{animation-delay:.88s}
+
+/* ===== 排版 ===== */
+.eyebrow{font-size:clamp(12px,1.05vw,15px);letter-spacing:.18em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:18px}
+.display{font-size:clamp(34px,5.4vw,76px);font-weight:700;letter-spacing:-.022em;line-height:1.06}
+.display .grad{background:linear-gradient(96deg,#7FC4FF 0%,#0A84FF 42%,#75C72A 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.head{font-size:clamp(26px,3.6vw,50px);font-weight:650;letter-spacing:-.018em;line-height:1.14}
+.sub{margin-top:22px;font-size:clamp(15px,1.5vw,21px);line-height:1.62;color:var(--muted);max-width:34ch}
+.sub.wide{max-width:52ch}
+.muted{color:var(--muted)}
+.tiny{margin-top:26px;font-size:clamp(12px,1.05vw,14px);color:var(--faint);letter-spacing:.02em}
+
+/* ===== 品牌开场 ===== */
+.brand{display:flex;flex-direction:column;align-items:center;text-align:center}
+.mark{width:clamp(84px,9.5vw,132px);height:clamp(84px,9.5vw,132px);border-radius:26%;
+  display:grid;place-items:center;
+  background:linear-gradient(150deg,#4FA9FF,#0A84FF 52%,#0057C8);
+  box-shadow:0 26px 70px rgba(10,132,255,.42),0 0 0 1px rgba(255,255,255,.10) inset;}
+.mark svg{width:56%;height:56%;filter:drop-shadow(0 2px 8px rgba(0,0,0,.35))}
+.scene.active .mark{animation:markIn 1.15s var(--ease) both}
+@keyframes markIn{from{opacity:0;transform:translate3d(0,26px,0) scale(.86)}to{opacity:1;transform:none}}
+.wordmark{margin-top:34px;font-size:clamp(28px,3.6vw,50px);font-weight:680;letter-spacing:-.02em}
+.tagline{margin-top:14px;font-size:clamp(14px,1.35vw,18px);color:var(--muted)}
+
+/* ===== 卡片 / 列表 ===== */
+.grid{display:grid;gap:14px;margin-top:34px}
+.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{padding:20px 22px;border-radius:18px;background:rgba(28,28,32,.72);
+  border:1px solid rgba(255,255,255,.075);backdrop-filter:blur(14px);}
+.card h4{font-size:clamp(14px,1.3vw,17px);font-weight:620;letter-spacing:-.01em;margin-bottom:7px}
+.card p{font-size:clamp(12px,1.08vw,14px);line-height:1.6;color:var(--muted)}
+.card .k{font-size:clamp(24px,2.9vw,38px);font-weight:700;letter-spacing:-.02em;
+  background:linear-gradient(96deg,#8FCBFF,#0A84FF);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* 头像行（演示希沃登录界面） */
+.avatars{display:flex;gap:26px;margin-top:38px;flex-wrap:wrap}
+.who{display:flex;flex-direction:column;align-items:center;gap:12px;width:96px}
+.who .ring{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;
+  font-size:26px;font-weight:600;color:#fff;
+  background:linear-gradient(150deg,#4FA9FF,#0A84FF);
+  box-shadow:0 10px 26px rgba(10,132,255,.32)}
+.who.alt .ring{background:linear-gradient(150deg,#3A3A3E,#26262A);color:var(--faint);
+  box-shadow:none;border:1px dashed rgba(255,255,255,.16)}
+.who span{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.scene.active .who{animation:rise .7s var(--ease) both}
+.scene.active .who:nth-child(1){animation-delay:.42s}
+.scene.active .who:nth-child(2){animation-delay:.50s}
+.scene.active .who:nth-child(3){animation-delay:.58s}
+.scene.active .who:nth-child(4){animation-delay:.66s}
+.scene.active .who:nth-child(5){animation-delay:.74s}
+.scene.active .who:nth-child(6){animation-delay:.82s}
+.cursor{position:relative}
+.cursor::after{content:"";position:absolute;right:-6px;bottom:-2px;width:26px;height:26px;border-radius:50%;
+  background:rgba(255,255,255,.92);box-shadow:0 4px 14px rgba(0,0,0,.5);
+  animation:tap 1.9s var(--ease) infinite}
+@keyframes tap{0%,62%{transform:scale(.5);opacity:0}70%{transform:scale(1);opacity:1}100%{transform:scale(.92);opacity:0}}
+
+/* 自检状态条（复用软件视觉） */
+.statusbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:30px}
+.st{display:flex;align-items:center;gap:9px;padding:11px 15px;border-radius:12px;
+  background:rgba(28,28,32,.78);border:1px solid rgba(255,255,255,.07);font-size:13px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px rgba(117,199,42,.6)}
+.dot.bad{background:#FF453A;box-shadow:0 0 8px rgba(255,69,58,.6)}
+.st small{color:var(--faint)}
+
+/* 结尾 */
+.end{display:flex;flex-direction:column;align-items:center;text-align:center}
+.cta{margin-top:34px;display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.btn{padding:13px 26px;border-radius:999px;font-size:15px;font-weight:560;text-decoration:none;
+  transition:transform .25s var(--ease),box-shadow .25s var(--ease),background .25s ease}
+.btn.primary{background:var(--blue);color:#fff;box-shadow:0 12px 32px rgba(10,132,255,.36)}
+.btn.ghost{background:rgba(255,255,255,.07);color:var(--ink);border:1px solid rgba(255,255,255,.12)}
+.btn:hover{transform:translateY(-2px)}
+.btn:active{transform:scale(.97)}
+
+/* ===== HUD ===== */
+.progress{position:fixed;left:0;top:0;height:2px;width:100%;z-index:6;background:rgba(255,255,255,.07)}
+.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,#0A84FF,#75C72A);
+  transition:width .45s linear}
+.hud{position:fixed;left:0;right:0;bottom:22px;z-index:6;display:flex;justify-content:center;
+  gap:8px;align-items:center;font-size:12px;color:var(--faint);opacity:.9}
+.hud button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--muted);
+  font:inherit;padding:6px 13px;border-radius:999px;cursor:pointer;transition:background .2s ease,color .2s ease}
+.hud button:hover{background:rgba(255,255,255,.12);color:var(--ink)}
+.hud .sep{width:1px;height:16px;background:rgba(255,255,255,.12)}
+.chapter{position:fixed;right:26px;top:22px;z-index:6;font-size:12px;color:var(--faint);
+  letter-spacing:.14em}
+
+@media (max-width:760px){
+  .grid.c3{grid-template-columns:1fr} .grid.c2{grid-template-columns:1fr}
+  .avatars{gap:16px} .who{width:76px} .who .ring{width:60px;height:60px;font-size:21px}
+}
+@media (prefers-reduced-motion:reduce){
+  .scene,.scene .rise,.scene .who,.mark{transition:none!important;animation:none!important;opacity:1!important;transform:none!important}
+  .cursor::after{animation:none;opacity:.8}
+}
+</style>
+</head>
+<body>
+<div class="bg"></div><div class="grain"></div>
+<div class="progress"><i id="bar"></i></div>
+<div class="chapter" id="chapter"></div>
+
+<main class="stage" id="stage">
+
+  <!-- 0 · 品牌 -->
+<section class="scene brand">
+  <div class="mark"><svg viewBox="0 0 24 24" fill="#fff"><path d="M13.4 2 5 13.2h5.3L9.8 22l8.6-11.4h-5.5L13.4 2z"/></svg></div>
+  <div class="wordmark">希沃自动登录</div>
+  <div class="tagline">Seewo AutoLogin · 为希沃白板提供 SSO 快捷登录</div>
+</section>
+
+  <!-- 1 · 痛点 -->
+<section class="scene">
+  <div class="eyebrow rise">上课之前</div>
+  <h1 class="display rise">先输一遍<span class="muted">账号密码</span></h1>
+  <p class="sub rise">手机号、密码、验证码。多位老师共用一台班班设备，一个人一套账号，一节课重复一次。</p>
+  <div class="tiny rise">这件事，每天都在发生。</div>
+</section>
+
+  <!-- 2 · 解决 -->
+<section class="scene">
+  <div class="eyebrow rise">现在</div>
+  <h1 class="display rise">打开希沃，<span class="grad">点头像就进</span></h1>
+  <p class="sub rise">账号头像直接排在登录界面，点一下完成登录 —— 不用输密码，不用等验证码。</p>
+  <div class="avatars">
+    <div class="who cursor"><div class="ring">秦</div><span>秦老师</span></div>
+    <div class="who"><div class="ring" style="background:linear-gradient(150deg,#7FD14A,#4FA31A)">李</div><span>李老师</span></div>
+    <div class="who"><div class="ring" style="background:linear-gradient(150deg,#FFB340,#E08200)">王</div><span>王老师</span></div>
+    <div class="who alt"><div class="ring">+</div><span>更多</span></div>
+  </div>
+</section>
+
+  <!-- 3 · 多账号 -->
+<section class="scene">
+  <div class="eyebrow rise">账号管理</div>
+<h2 class="head rise">谁上这节课，谁排在最前面</h2>
+  <p class="sub rise">生效区最多 6 个账号直达希沃；其余账号留在备用区，托盘右键一键切换、随时提上来。</p>
+  <div class="grid c3">
+    <div class="card rise d1"><h4>分组管理</h4><p>生效区 / 备用区两栏，拖动排序、备注与标签一目了然。</p></div>
+    <div class="card rise d2"><h4>列表轮换</h4><p>多账号场景下按组轮换展示，避免总排在最后的账号被冷落。</p></div>
+    <div class="card rise d3"><h4>账号巡检</h4><p>一键校验每个账号的密码与令牌，失效的直接标红并说明原因。</p></div>
+  </div>
+</section>
+
+  <!-- 4 · 扫码 -->
+<section class="scene">
+  <div class="eyebrow rise">两种添加方式</div>
+  <h2 class="head rise">密码添加，或者扫码添加</h2>
+  <p class="sub rise">用希沃官方 App 或微信扫一扫即可登录并保存令牌，到期自动续期，不用反复扫码。</p>
+  <div class="grid c2">
+    <div class="card rise d1"><h4>扫码登录</h4><p>120 秒倒计时，过期、拒绝、网络异常都有明确状态提示。</p></div>
+    <div class="card rise d2"><h4>批量导入</h4><p>粘贴多行「账号,密码」一次导入，开学前几分钟配好全班设备。</p></div>
+  </div>
+</section>
+
+  <!-- 5 · 自检 -->
+<section class="scene">
+  <div class="eyebrow rise">本地 SSO 网关</div>
+  <h2 class="head rise">状态一眼看清，坏了点一下就好</h2>
+  <p class="sub rise">网关、hosts 映射、管理员权限、希沃进程四项实时自检；异常会直接点名，并能一键修复。</p>
+  <div class="statusbar">
+    <div class="st rise d1"><span class="dot"></span>SSO 网关 <small>:24300</small></div>
+    <div class="st rise d1"><span class="dot"></span>hosts 映射</div>
+    <div class="st rise d2"><span class="dot"></span>管理员权限</div>
+    <div class="st rise d2"><span class="dot"></span>希沃进程</div>
+    <div class="st rise d3"><span class="dot bad"></span>一键修复</div>
+  </div>
+</section>
+
+  <!-- 6 · 安全 -->
+<section class="scene">
+  <div class="eyebrow rise">凭据与隐私</div>
+  <h2 class="head rise">密码只留在这台电脑上</h2>
+  <p class="sub rise">账号密码用 Windows DPAPI 加密落盘，设置口令用 PBKDF2 加盐哈希；网关只服务本机回环，局域网里伪造请求会被直接拒绝。</p>
+  <div class="grid c3">
+    <div class="card rise d1"><h4>DPAPI 加密</h4><p>密文与当前 Windows 账户绑定，拷走文件也解不开。</p></div>
+    <div class="card rise d2"><h4>仅本机可用</h4><p>非回环来源一律 403，账号列表与令牌不会外泄。</p></div>
+    <div class="card rise d3"><h4>更新可校验</h4><p>下载按网络择优换源，逐字节校验 SHA256，不匹配自动重下。</p></div>
+  </div>
+</section>
+
+  <!-- 7 · 轻量与体验 -->
+<section class="scene">
+  <div class="eyebrow rise">安装与启动</div>
+  <h2 class="head rise">轻装，安静，开机就在</h2>
+  <div class="grid c3">
+    <div class="card rise d1"><div class="k">8 MB</div><h4>轻量安装包</h4><p>App 本体只有几 MB，WebView2 运行时直接复用系统自带的。</p></div>
+    <div class="card rise d2"><div class="k">0 次</div><h4>开机不再弹 UAC</h4><p>自启用最高权限计划任务，开机后台待命，希沃随时可用。</p></div>
+    <div class="card rise d3"><div class="k">30 秒</div><h4>内置使用教程</h4><p>聚光灯手把手演示，随时可在设置里重看。</p></div>
+  </div>
+</section>
+
+  <!-- 8 · 结尾 -->
+<section class="scene end">
+  <div class="mark" style="width:76px;height:76px"><svg viewBox="0 0 24 24" fill="#fff"><path d="M13.4 2 5 13.2h5.3L9.8 22l8.6-11.4h-5.5L13.4 2z"/></svg></div>
+  <h2 class="head rise" style="margin-top:30px">希沃自动登录</h2>
+  <p class="sub rise" style="text-align:center">开源 · GPL-3.0 · 一分钟装好，下节课就能用</p>
+  <div class="cta rise">
+    <a class="btn primary" href="https://github.com/Pro-Qin/SeewoAutoLogin/releases/latest" target="_blank" rel="noopener">下载最新版本</a>
+    <a class="btn ghost" href="https://github.com/Pro-Qin/SeewoAutoLogin" target="_blank" rel="noopener">查看源码</a>
+  </div>
+  <div class="tiny rise">Seewo AutoLogin · Made by Qin_zzq</div>
+</section>
+
+</main>
+
+<div class="hud">
+  <button id="btnPlay">暂停</button>
+  <button id="btnPrev">上一个</button>
+  <button id="btnNext">下一个</button>
+  <span class="sep"></span>
+  <button id="btnReplay">重播</button>
+  <span>空格 播放/暂停 · ←/→ 切换</span>
+</div>
+
+<script>
+(function(){
+  var scenes = Array.prototype.slice.call(document.querySelectorAll(".scene"));
+  var bar = document.getElementById("bar");
+  var chapter = document.getElementById("chapter");
+  var DUR = [3400, 4400, 5200, 5600, 5200, 5600, 6000, 5400, 0];  // 末场不自动前进
+  var idx = 0, playing = true, timer = null, t0 = 0;
+
+  function paint(){
+    bar.style.width = (scenes.length < 2 ? 100 : (idx / (scenes.length - 1)) * 100) + "%";
+    chapter.textContent = (idx + 1) + " / " + scenes.length;
+  }
+
+  function show(i, dir){
+    if (i < 0 || i >= scenes.length) return;
+    var cur = scenes[idx];
+    idx = i;
+    scenes.forEach(function(s, k){
+      if (k === i) { s.classList.add("active"); s.classList.remove("leaving"); }
+      else if (s === cur && dir !== 0) { s.classList.remove("active"); s.classList.add("leaving"); }
+      else { s.classList.remove("active","leaving"); }
+    });
+    paint();
+    schedule();
+  }
+
+  function schedule(){
+    if (timer) { clearTimeout(timer); timer = null; }
+    var ms = DUR[idx] || 0;
+    if (!playing || !ms) return;
+    t0 = Date.now();
+    timer = setTimeout(function(){ show(idx + 1, 1); }, ms);
+  }
+
+  function next(){ if (idx < scenes.length - 1) show(idx + 1, 1); else show(0, 1); }
+  function prev(){ if (idx > 0) show(idx - 1, -1); }
+  function toggle(){
+    playing = !playing;
+    document.getElementById("btnPlay").textContent = playing ? "暂停" : "播放";
+    if (playing) {
+      var remain = (DUR[idx] || 0) - (Date.now() - t0);
+      if (idx < scenes.length - 1) timer = setTimeout(function(){ show(idx + 1, 1); }, Math.max(400, remain));
+    } else if (timer) { clearTimeout(timer); timer = null; }
+  }
+  function replay(){ playing = true; document.getElementById("btnPlay").textContent = "暂停"; show(0, 0); }
+
+  document.getElementById("btnNext").addEventListener("click", next);
+  document.getElementById("btnPrev").addEventListener("click", prev);
+  document.getElementById("btnPlay").addEventListener("click", toggle);
+  document.getElementById("btnReplay").addEventListener("click", replay);
+
+  document.addEventListener("keydown", function(e){
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); next(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
+    else if (e.key === "r" || e.key === "R") { replay(); }
+  });
+
+  // 支持 ?scene=N 直接停在某一屏（方便截图、分享单页），此时不自动播放
+  var jump = new URLSearchParams(location.search).get("scene");
+  if (jump !== null && jump !== "") {
+    var n = parseInt(jump, 10);
+    if (!isNaN(n) && n >= 0 && n < scenes.length) {
+      playing = false;
+      document.getElementById("btnPlay").textContent = "播放";
+      show(n, 0);
+      return;
+    }
+  }
+
+  show(0, 0);
+})();
+</script>
+</body>
+</html>
