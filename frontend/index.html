@@ -69,6 +69,18 @@
       <!-- ===== ACCOUNTS PAGE (two-column) ===== -->
       <div id="page-accounts" class="page active">
         <div style="max-width:900px;margin:0 auto">
+          <!-- Self-Check Bar -->
+          <div class="selfcheck-bar" id="selfcheckBar">
+            <div class="selfcheck-items" id="selfcheckItems">
+              <span class="selfcheck-item" id="sc-gateway"><i class="sc-dot"></i><span class="sc-label">SSO 网关</span><span class="sc-sub">检测中…</span></span>
+              <span class="selfcheck-item" id="sc-hosts"><i class="sc-dot"></i><span class="sc-label">hosts 映射</span><span class="sc-sub">检测中…</span></span>
+              <span class="selfcheck-item" id="sc-admin"><i class="sc-dot"></i><span class="sc-label">管理员权限</span><span class="sc-sub">检测中…</span></span>
+              <span class="selfcheck-item" id="sc-seewo"><i class="sc-dot"></i><span class="sc-label">希沃进程</span><span class="sc-sub">检测中…</span></span>
+            </div>
+            <span class="selfcheck-summary" id="healthSummary"></span>
+            <span class="selfcheck-spacer"></span>
+            <button class="btn btn-secondary btn-small" id="repairBtn" title="尝试修复 SSO 网关与 hosts 映射">一键修复</button>
+          </div>
           <!-- Action Bar -->
           <div class="action-bar">
             <button class="btn btn-secondary action-btn" id="actEditName" disabled onclick="actEditName()">
@@ -78,11 +90,12 @@
             <button class="btn btn-secondary action-btn" id="actEditTags" disabled onclick="actEditTags()">标签</button>
             <button class="btn btn-secondary action-btn" id="actSetActive" disabled onclick="actSetActive()">设为当前</button>
             <button class="btn btn-danger action-btn" id="actDelete" disabled onclick="actDelete()">删除</button>
+            <button class="btn btn-secondary action-btn" id="actHealthCheck" title="检测每个账号的登录态是否仍然有效">健康巡检</button>
             <span style="flex:1"></span>
-            <button class="btn btn-secondary action-btn" onclick="send({type:'move-up', id:selectedId})" id="actMoveUp" disabled title="上移">
+            <button class="btn btn-secondary action-btn" id="actMoveUp" disabled title="上移">
               <svg width="12" height="12" viewBox="0 0 10 10" fill="currentColor"><path d="M2 7l3-3 3 3-1 1-2-2-2 2-1-1z"/></svg>
             </button>
-            <button class="btn btn-secondary action-btn" onclick="send({type:'move-down', id:selectedId})" id="actMoveDown" disabled title="下移">
+            <button class="btn btn-secondary action-btn" id="actMoveDown" disabled title="下移">
               <svg width="12" height="12" viewBox="0 0 10 10" fill="currentColor"><path d="M8 3l-3 3-3-3 1-1 2 2 2-2 1 1z"/></svg>
             </button>
           </div>
@@ -91,7 +104,7 @@
             <div class="column active-col">
               <div class="column-header">
                 <span>正在生效 <span class="badge-num" id="activeCount">0</span></span>
-                <span class="column-sub">展示给希沃 · 最多6个</span>
+                <span class="column-sub" id="activeLimitHint">展示给希沃 · 最多6个</span>
               </div>
               <div id="activeList" class="column-list"></div>
             </div>
@@ -164,6 +177,16 @@
           </div>
           <div id="loginStatus" class="status-msg" style="margin-top:0"></div>
           <button class="btn btn-primary" onclick="handleLogin()" style="width:160px;display:block;margin:0 auto">登录并保存</button>
+
+          <!-- 批量导入 -->
+          <div class="batch-import" id="batchImportSection">
+            <div class="batch-import-title">批量导入</div>
+            <textarea id="batchImportText" class="input batch-textarea" rows="6" spellcheck="false" placeholder="每行一个账号，格式 账号,密码 或 账号,密码,备注"></textarea>
+            <div class="batch-import-actions">
+              <button class="btn btn-primary" id="batchImportBtn">批量导入</button>
+            </div>
+            <div id="batchImportResult" class="batch-result"></div>
+          </div>
         </div>
       </div>
 
@@ -241,12 +264,18 @@
           </div>
         </div>
         <div class="card">
+          <h2 class="card-title">配置备份</h2>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">查看应用保存的配置备份，可恢复到指定时间点（恢复会覆盖当前配置）</div>
+          <button class="btn btn-secondary" id="listBackupsBtn">查看备份</button>
+          <div id="backupList" class="backup-list"></div>
+        </div>
+        <div class="card">
           <h2 class="card-title">更新</h2>
           <label class="checkbox-row">
             <input type="checkbox" id="autoCheckUpdateCheck">
             <span>启动时自动检查更新</span>
           </label>
-          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">默认使用 GitHub 镜像源，主源失败会自动切换备用源</div>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">默认使用 GitHub 官方接口（api.github.com），失败时回退 jsDelivr 只读取版本号；下载地址会校验来源，非官方地址不会被打开</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button class="btn btn-secondary" onclick="checkUpdate()">立即检查更新</button>
             <button class="btn btn-secondary" onclick="send({type:'open-update-page', url:''})">打开发布页</button>
@@ -313,6 +342,8 @@
     <div id="unlockStatus" style="font-size:12px;color:#ff4b4b;margin-top:12px"></div>
   </div>
 </div>
+<!-- Toast 容器 -->
+<div id="toastContainer" class="toast-container"></div>
 <script src="app.js" defer></script>
 </body>
 </html>

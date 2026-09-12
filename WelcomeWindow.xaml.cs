@@ -61,8 +61,11 @@ namespace SeewoAutoLogin
                 // XAML 解析期间 Checked 事件可能早于提示控件创建，这里做保护
                 if (AutoStartStateText == null) return;
 
+                var modeText = Services.AutoStartService.IsAdministrator()
+                    ? "计划任务·最高权限，开机自动运行且不再弹 UAC"
+                    : "注册表启动项，开机首次启动需要授权一次";
                 AutoStartStateText.Text = AutoStartCheckBox.IsChecked == true
-                    ? "当前：将开启开机自启（点击「开始使用」后生效，之后可在「设置 → 常规」中修改）"
+                    ? $"当前：将开启开机自启（{modeText}；点击「开始使用」后生效，之后可在「设置 → 常规」中修改）"
                     : "当前：不开机自启（仍可手动打开本程序，之后可在「设置 → 常规」中修改）";
             }
             catch (Exception ex)
@@ -71,7 +74,7 @@ namespace SeewoAutoLogin
             }
         }
 
-        /// <summary>把欢迎界面的选择写入注册表（HKCU Run）与配置。</summary>
+        /// <summary>把欢迎界面的选择写入系统（优先最高权限计划任务，失败回退注册表启动项）与配置。</summary>
         private void ApplyAutoStartChoice()
         {
             try
@@ -79,10 +82,19 @@ namespace SeewoAutoLogin
                 var enabled = AutoStartCheckBox.IsChecked == true;
                 if (_app?.Config != null) _app.Config.AutoStartEnabled = enabled;
 
-                if (enabled) Services.AutoStartService.Enable();
-                else Services.AutoStartService.Disable();
-
-                _app?.WriteDiagnosticLog($"[FirstLaunch] 开机自启: {(enabled ? "已开启" : "已关闭")}");
+                if (enabled)
+                {
+                    var ok = Services.AutoStartService.Enable(out var error, out var mode);
+                    _app?.WriteDiagnosticLog($"[FirstLaunch] 开机自启: {(ok ? "已开启" : "开启失败")}; mode={mode}; {error}");
+                    if (!ok) _app?.NotifyInfo("开机自启未开启", "写入开机自启失败：" + error);
+                    else if (!string.IsNullOrEmpty(error)) _app?.WriteDiagnosticLog($"[FirstLaunch] {error}");
+                }
+                else
+                {
+                    var ok = Services.AutoStartService.Disable(out var error);
+                    _app?.WriteDiagnosticLog($"[FirstLaunch] 开机自启: {(ok ? "已关闭" : "关闭失败")}; {error}");
+                }
+                _app?.SaveConfig();
             }
             catch (Exception ex)
             {
@@ -94,6 +106,9 @@ namespace SeewoAutoLogin
         {
             try
             {
+                // XAML 解析期间该事件可能早于控件创建触发，必须判空（否则每次启动都会记录一次异常日志）
+                if (AgreementPage == null || CreditsPage == null || GuidePage == null) return;
+
                 AgreementPage.Visibility = Visibility.Collapsed;
                 CreditsPage.Visibility = Visibility.Collapsed;
                 GuidePage.Visibility = Visibility.Collapsed;
@@ -122,6 +137,7 @@ namespace SeewoAutoLogin
         {
             try
             {
+                if (StartButton == null || AgreeCheckBox == null) return;
                 StartButton.IsEnabled = AgreeCheckBox.IsChecked == true;
             }
             catch (Exception ex)

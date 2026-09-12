@@ -63,6 +63,7 @@ namespace SeewoAutoLogin
         {
             // 网络出口决策（系统代理/直连回退）也写进日志，便于排查“登录失败 / 登录信息过期”。
             NetworkRoute.DiagnosticMessage += WriteDiagnosticLog;
+            SeewoAccount.DiagnosticSink = WriteDiagnosticLog;
 
             _authService = new SeewoAuthService();
             _authService.DiagnosticMessage += WriteDiagnosticLog;
@@ -93,12 +94,28 @@ namespace SeewoAutoLogin
                 GetVisibleAccounts,
                 account => { account.UserInfo = _authService.UserInfo; SaveConfig(); },
                 OnQrTokenValidated, _userListRotation, SaveConfig);
+            _gateway.Port = Math.Clamp(_config.SsoGatewayPort <= 0 ? 24300 : _config.SsoGatewayPort, 1024, 65535);
+            _gateway.ConfirmStopEasiAgent = (pid, path) => Dispatcher.Invoke(() =>
+                MessageBox.Show(
+                    $"本地 SSO 网关端口被希沃 EasiAgent 占用（pid={pid}）。\n\n" +
+                    "结束它可以立刻让快捷登录生效，但可能中断正在进行的希沃操作。\n\n" +
+                    "  · 是   → 结束 EasiAgent 并使用该端口\n" +
+                    "  · 否   → 不结束任何进程，自动改用备用端口（希沃可能仍请求原端口）",
+                    Strings.AppTitle, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes);
+            _gateway.PortChanged += port =>
+            {
+                _config.SsoGatewayPort = port;
+                SaveConfig();
+            };
             _gateway.LogMessage += msg => WriteDiagnosticLog(msg);
             _gateway.AccountsServed += ids =>
             {
-                _trayIcon.UpdateVisibleAccounts(ids);
-                // 网关服务了账号后，通知管理窗口刷新请求计数展示
-                _mainWindow?.Dispatcher.BeginInvoke(new Action(() => _mainWindow.NotifyAccountsServed()));
+                // 该回调来自网关的 HTTP 线程：托盘菜单是 WinForms 控件（主窗口是 WPF），统一回到 UI 线程再更新
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try { _trayIcon.UpdateVisibleAccounts(ids); } catch { }
+                    try { _mainWindow?.NotifyAccountsServed(); } catch { }
+                }));
             };
 
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -128,14 +145,9 @@ namespace SeewoAutoLogin
         {
             base.OnStartup(e);
 
-            // 卸载清理：setup.iss 的 UninstallRun 会调用 --uninstall
-            if (e.Args.Contains("--uninstall"))
-            {
-                try { CleanupForUninstall(); }
-                catch (Exception ex) { WriteDiagnosticLog($"[Uninstall] 清理失败: {ex.Message}"); }
-                Shutdown();
-                return;
-            }
+            // 卸载清理：setup.iss 的 UninstallRun 会调用 --uninstall。
+            // 注意：必须放在单实例判定之后执行，否则运行中的实例会把配置/日志重新写回，导致清理不干净。
+            var isUninstall = e.Args.Contains("--uninstall");
 
             // 检测是否已有实例在运行（互斥锁）
             bool isFirstInstance;
@@ -146,7 +158,23 @@ namespace SeewoAutoLogin
             }
             catch { isFirstInstance = true; }
 
-            if (!isFirstInstance)
+            if (!isFirstInstance && isUninstall)
+            {
+                // 卸载流程：静默结束所有实例（含提权实例），不弹任何对话框
+                try
+                {
+                    foreach (var proc in Process.GetProcessesByName("SeewoAutoLogin")
+                        .Where(p => p.Id != Environment.ProcessId))
+                    {
+                        try { proc.Kill(); proc.WaitForExit(3000); } catch { }
+                    }
+                }
+                catch (Exception ex) { WriteDiagnosticLog($"[Uninstall] 结束旧实例失败: {ex.Message}"); }
+
+                instanceMutex?.Dispose();
+                instanceMutex = new Mutex(true, InstanceMutexName, out isFirstInstance);
+            }
+            else if (!isFirstInstance)
             {
                 try
                 {
@@ -209,6 +237,15 @@ namespace SeewoAutoLogin
                 {
                     WriteDiagnosticLog($"[Instance] 实例检测异常: {ex.Message}");
                 }
+            }
+
+            if (isUninstall)
+            {
+                try { CleanupForUninstall(); }
+                catch (Exception ex) { WriteDiagnosticLog($"[Uninstall] 清理失败: {ex.Message}"); }
+                _isExiting = true;
+                Shutdown();
+                return;
             }
 
             // 保存互斥锁引用，确保在进程退出前不释放
@@ -331,6 +368,34 @@ namespace SeewoAutoLogin
                 }
             }
 
+            // 开机自启自愈：配置要求自启、但系统里没有启动项（被杀软清理、程序换目录、旧版本从未写入）时自动重建
+            try
+            {
+                if (_config.AutoStartEnabled)
+                {
+                    var autoStartModeNow = Services.AutoStartService.CurrentMode();
+                    // 缺失或指向旧路径（换目录/被杀软清理）→ 重建
+                    var needsRebuild = !Services.AutoStartService.IsEnabledForCurrentPath();
+                    // 旧版本与安装包写入的是 HKCU 启动项（每次开机都要授权一次）；
+                    // 管理员运行时顺带升级为「最高权限计划任务」，实现开机免 UAC
+                    var needsUpgrade = autoStartModeNow == "registry" && Services.AutoStartService.IsAdministrator();
+
+                    if (needsRebuild || needsUpgrade)
+                    {
+                        if (Services.AutoStartService.Enable(out var autoStartError, out var autoStartMode))
+                            WriteDiagnosticLog(needsUpgrade
+                                ? $"[AutoStart] 已将注册表启动项升级为计划任务; mode={autoStartMode}"
+                                : $"[AutoStart] 自启缺失或指向旧路径，已按配置重建; mode={autoStartMode}");
+                        else
+                            WriteDiagnosticLog($"[AutoStart] 自启重建失败: {autoStartError}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[AutoStart] 自启自检异常: {ex.Message}");
+            }
+
             // 启动 SSO 网关
             try
             {
@@ -340,11 +405,12 @@ namespace SeewoAutoLogin
             }
             catch (Exception ex)
             {
+                var hint = IsAdministrator()
+                    ? "常见原因：端口 24300 被其它程序占用、hosts 文件无法写入。\n可在主界面顶部状态栏点击「一键修复」重试。"
+                    : "当前以普通权限运行，本地 SSO 网关需要管理员权限。\n请以管理员身份重新运行本程序。";
                 NotifyError("SSO 网关错误",
-                    $"SSO 网关启动失败: {ex.Message}\n\n" +
-                    $"希沃自动登录功能可能无法正常工作。\n" +
-                    $"请检查端口 24300 是否被其他程序占用，\n" +
-                    $"或以管理员权限重新运行此应用。");
+                    $"{ex.Message}\n\n" +
+                    $"希沃自动登录功能可能无法正常工作。\n{hint}");
             }
 
             // 显示主窗口（除非设置了启动隐藏或传了 --minimized）
@@ -528,16 +594,33 @@ namespace SeewoAutoLogin
         /// <summary>切换遮罩层显示/隐藏（仅由托盘触发；遮罩自带 20s 自动关闭）</summary>
         public void ToggleOverlay()
         {
-            if (_overlay != null && _overlay.IsVisible)
+            try
             {
-                _overlay.Close();
-                _overlay = null;
+                if (_overlay != null && _overlay.IsVisible)
+                {
+                    var closing = _overlay;
+                    _overlay = null;
+                    closing.Close();
+                    return;
+                }
+
+                // 账号不足时遮罩会在构造阶段自行 Close，这里提前判断，避免“Show 已关闭窗口”抛异常
+                var unlistedCount = Math.Max(0, _config.Accounts.Count - PluginConfig.MaxVisibleAccounts);
+                if (unlistedCount == 0)
+                {
+                    NotifyInfo(Strings.AppTitle, $"当前 {_config.Accounts.Count} 个账号都已在希沃生效区（上限 {PluginConfig.MaxVisibleAccounts} 个），无需切换遮罩。");
+                    return;
+                }
+
+                var overlay = new SeewoOverlay();
+                overlay.Closed += (_, _) => { if (ReferenceEquals(_overlay, overlay)) _overlay = null; };
+                _overlay = overlay;
+                overlay.Show();
             }
-            else
+            catch (Exception ex)
             {
-                _overlay = new SeewoOverlay();
-                _overlay.Closed += (_, _) => { if (_overlay != null && !_overlay.IsVisible) _overlay = null; };
-                _overlay.Show();
+                WriteDiagnosticLog($"[Overlay] 显示切换遮罩失败: {ex.GetType().Name} - {ex.Message}");
+                NotifyError("显示遮罩失败", "无法显示账号切换遮罩：\n" + ex.Message);
             }
         }
 
@@ -558,34 +641,76 @@ namespace SeewoAutoLogin
             _trayIcon.UpdateVisibleAccounts(new List<string>());
         }
 
-        /// <summary>托盘切换账号属于配置变更：启用密码保护时要求先验证密码</summary>
+        /// <summary>托盘切换账号属于配置变更：启用密码保护时要求先验证密码（返回 true 表示应拒绝执行）</summary>
         private bool RequiresPasswordUnlock()
         {
             if (!_config.UsePluginPassword || string.IsNullOrEmpty(_config.PluginPasswordHash))
                 return false;
+
+            if (Services.PasswordService.IsLockedOut(out var secondsRemaining))
+            {
+                NotifyError(Strings.AppTitle, $"密码错误次数过多，请在 {secondsRemaining} 秒后重试。");
+                return true;
+            }
+
             try
             {
-                var dlg = new TextInputDialog(Strings.AppTitle, Strings.EnterPassword)
+                // 注意：isPassword 必须通过构造函数传入，用对象初始化器赋值不会切换输入框可见性（会导致明文回显 + 校验恒失败）
+                var owner = _mainWindow != null && _mainWindow.IsLoaded ? _mainWindow : null;
+                var dlg = new TextInputDialog(Strings.AppTitle, Strings.EnterPassword, "", isPassword: true)
                 {
-                    Owner = _mainWindow,
-                    IsPassword = true
+                    Owner = owner
                 };
                 if (dlg.ShowDialog() != true) return true; // 取消 = 不执行
-                return !VerifyPluginPassword(dlg.InputText, _config.PluginPasswordHash, _config.PluginPasswordSalt);
+                return !VerifyPluginPassword(dlg.InputText);
             }
             catch (Exception ex)
             {
                 WriteDiagnosticLog($"[Tray] 密码验证对话框异常: {ex.GetType().Name}");
-                return false; // 弹窗失败时不阻塞托盘切换
+                return true; // fail-closed：校验过程出错时按“需要解锁”处理，不允许静默绕过
             }
         }
 
-        private static bool VerifyPluginPassword(string password, string expectedHash, string salt)
+        /// <summary>校验应用设置口令（PBKDF2 + DPAPI；兼容旧的单轮 SHA-256 并在成功时自动升级）</summary>
+        internal bool VerifyPluginPassword(string password)
         {
-            if (string.IsNullOrEmpty(password) || string.IsNullOrEmpty(expectedHash)) return false;
-            using var sha = System.Security.Cryptography.SHA256.Create();
-            var hash = Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password + salt)));
-            return hash == expectedHash;
+            var ok = Services.PasswordService.Verify(
+                password, _config.PluginPasswordHash, _config.PluginPasswordSalt, out var upgraded);
+            if (ok && upgraded)
+            {
+                try
+                {
+                    Services.PasswordService.Create(password, out var hash, out var salt);
+                    _config.PluginPasswordHash = hash;
+                    _config.PluginPasswordSalt = salt;
+                    SaveConfig();
+                    WriteDiagnosticLog("[Security] 设置口令哈希已升级为 PBKDF2 + 加盐 + DPAPI 保护");
+                }
+                catch (Exception ex)
+                {
+                    WriteDiagnosticLog($"[Security] 口令哈希升级失败: {ex.Message}");
+                }
+            }
+            return ok;
+        }
+
+        /// <summary>设置/清除应用设置口令（hash 由 PasswordService 生成，落盘前已用 DPAPI 包裹）</summary>
+        internal void SetPluginPassword(string password)
+        {
+            if (string.IsNullOrEmpty(password))
+            {
+                _config.UsePluginPassword = false;
+                _config.PluginPasswordHash = "";
+                _config.PluginPasswordSalt = "";
+            }
+            else
+            {
+                Services.PasswordService.Create(password, out var hash, out var salt);
+                _config.UsePluginPassword = true;
+                _config.PluginPasswordHash = hash;
+                _config.PluginPasswordSalt = salt;
+            }
+            SaveConfig();
         }
 
         private SeewoAccount FindMatchingAccount(SeewoUserInfo userInfo)
@@ -631,6 +756,166 @@ namespace SeewoAutoLogin
             var restored = _authService.IsSessionFor(account);
             WriteDiagnosticLog($"[Session] 扫码会话恢复; account-id={account.Id}; restored={restored}");
             return restored;
+        }
+
+        #endregion
+
+        #region Self Check / Health / Batch Import
+
+        /// <summary>自检状态（供主界面状态栏展示）</summary>
+        internal object BuildSelfCheckStatus() => new
+        {
+            gatewayRunning = _gateway?.IsRunning == true,
+            gatewayPort = _gateway?.Port ?? 0,
+            hostsOk = Services.HostsFileService.HasLoopbackMapping(),
+            hostsState = Services.HostsFileService.DescribeState(),
+            isAdmin = IsAdministrator(),
+            seewoRunning = Process.GetProcessesByName("EasiNote").Length > 0,
+            autoStartEnabled = Services.AutoStartService.IsEnabled,
+            autoStartMode = Services.AutoStartService.CurrentMode(),
+            autoStartText = Services.AutoStartService.DescribeState(),
+            lastBackup = Services.ConfigBackupService.DescribeLatest(),
+            maxVisibleAccounts = PluginConfig.MaxVisibleAccounts
+        };
+
+        /// <summary>一键修复：重写 hosts 映射并重启 SSO 网关</summary>
+        internal async Task<string> RepairSsoAsync()
+        {
+            var messages = new List<string>();
+
+            if (Services.HostsFileService.EnsureLoopbackMapping(out var hostsError))
+                messages.Add("hosts 映射已修复");
+            else
+                messages.Add("hosts 修复失败：" + hostsError);
+
+            try
+            {
+                if (_gateway.IsRunning) _gateway.Stop();
+                await Task.Run(() => _gateway.Start()).ConfigureAwait(true);
+                messages.Add($"SSO 网关已启动（端口 {_gateway.Port}）");
+            }
+            catch (Exception ex)
+            {
+                messages.Add("网关启动失败：" + ex.Message);
+            }
+
+            if (!IsAdministrator())
+                messages.Add("当前不是管理员权限，hosts 与网关可能无法生效");
+
+            var summary = string.Join("；", messages);
+            WriteDiagnosticLog("[SelfCheck] 一键修复: " + summary);
+            return summary;
+        }
+
+        /// <summary>账号健康巡检：逐个验证密码/扫码令牌是否仍然有效</summary>
+        internal async Task RunHealthCheckAsync()
+        {
+            WriteDiagnosticLog("[Health] 开始账号健康巡检");
+            foreach (var account in _config.Accounts.ToList())
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(account.Password))
+                    {
+                        var password = account.DecryptedPassword;
+                        if (string.IsNullOrEmpty(password))
+                        {
+                            account.HealthState = "bad";
+                            account.HealthMessage = "本地凭据无法解密，请重新录入密码";
+                        }
+                        else
+                        {
+                            var result = await _authService.LoginAsync(account.Username, password).ConfigureAwait(true);
+                            account.HealthState = result.Success ? "ok" : "bad";
+                            account.HealthMessage = result.Success ? "密码有效" : (result.ErrorMessage ?? "登录失败");
+                        }
+                    }
+                    else if (!string.IsNullOrWhiteSpace(account.QrCredentialId))
+                    {
+                        if (TryRestoreQrSession(account))
+                        {
+                            var result = await _authService.ExchangeCurrentTokenAsync().ConfigureAwait(true);
+                            account.HealthState = result.Success ? "ok" : "bad";
+                            account.HealthMessage = result.Success ? "扫码令牌有效" : (result.ErrorMessage ?? "令牌已失效，需要重新扫码");
+                        }
+                        else
+                        {
+                            account.HealthState = "bad";
+                            account.HealthMessage = "扫码凭据不可用，需要重新扫码";
+                        }
+                    }
+                    else
+                    {
+                        account.HealthState = "unknown";
+                        account.HealthMessage = "没有可校验的凭据";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    account.HealthState = "unknown";
+                    account.HealthMessage = ex.Message;
+                }
+                account.LastHealthCheckAtUtc = DateTime.UtcNow;
+            }
+            SaveConfig();
+            WriteDiagnosticLog($"[Health] 巡检完成：{_config.Accounts.Count(a => a.HealthState == "ok")} 个正常，" +
+                               $"{_config.Accounts.Count(a => a.HealthState == "bad")} 个异常");
+        }
+
+        /// <summary>批量导入账号：每行 “账号,密码[,备注]”</summary>
+        internal (int added, int failed, List<string> messages) BatchImport(string text)
+        {
+            var added = 0;
+            var failed = 0;
+            var messages = new List<string>();
+
+            foreach (var raw in (text ?? "").Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0) continue;
+
+                var parts = line.Split(new[] { ',', '，', '\t', ';' }).Select(p => p.Trim()).ToArray();
+                if (parts.Length < 2 || parts[0].Length == 0 || parts[1].Length == 0)
+                {
+                    failed++;
+                    messages.Add($"格式错误（需要 账号,密码[,备注]）：{line}");
+                    continue;
+                }
+
+                var username = parts[0];
+                var password = parts[1];
+                var note = parts.Length >= 3 ? parts[2] : "";
+
+                if (_config.Accounts.Any(a => string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase)))
+                {
+                    failed++;
+                    messages.Add($"已存在，跳过：{username}");
+                    continue;
+                }
+
+                try
+                {
+                    var account = new SeewoAccount
+                    {
+                        Username = username,
+                        Password = Services.SecureStore.Encrypt(password),
+                        DisplayName = string.IsNullOrWhiteSpace(note) ? username : note
+                    };
+                    _config.Accounts.Add(account);
+                    if (_config.Accounts.Count == 1) _config.ActiveAccountId = account.Id;
+                    added++;
+                    messages.Add($"已导入：{username}");
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    messages.Add($"导入失败 {username}：{ex.Message}");
+                }
+            }
+
+            if (added > 0) SaveConfig();
+            WriteDiagnosticLog($"[BatchImport] 成功 {added} 个，失败 {failed} 个");
+            return (added, failed, messages);
         }
 
         #endregion
@@ -711,60 +996,118 @@ namespace SeewoAutoLogin
 
         #region Config Persistence
 
-        private string ConfigPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SeewoAutoLogin", "config.json");
+        /// <summary>配置与日志的并发保护：UI 线程与网关 HTTP 线程都会读写配置/写日志</summary>
+        private static readonly object ConfigIoLock = new object();
+        private static readonly object LogIoLock = new object();
+        private const int LogRotationBytes = 5 * 1024 * 1024;
+        private const int LogRetentionDays = 14;
+        private static DateTime _lastLogCleanupDate = DateTime.MinValue;
+
+        private static string AppDataDir => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SeewoAutoLogin");
+
+        private string ConfigPath => Path.Combine(AppDataDir, "config.json");
 
         public void LoadConfig()
         {
-            try
+            lock (ConfigIoLock)
             {
-                if (!File.Exists(ConfigPath))
+                var loaded = TryLoadConfigFile(ConfigPath)
+                             ?? TryLoadConfigFile(ConfigPath + ".bak")
+                             ?? TryLoadLatestBackup();
+
+                if (loaded == null)
                 {
                     _config = new PluginConfig();
                     return;
                 }
-                var json = File.ReadAllText(ConfigPath);
-                var loaded = JsonSerializer.Deserialize<PluginConfig>(json);
-                if (loaded != null)
+
+                loaded.Accounts ??= new List<SeewoAccount>();
+                loaded.Accounts.RemoveAll(a => a == null);
+                _config = loaded;
+
+                // 启动时迁移旧配置：明文/旧格式密码统一转为带前缀的 DPAPI 密文
+                try
                 {
-                    loaded.Accounts ??= new System.Collections.Generic.List<SeewoAccount>();
-                    _config = loaded;
-                    // 启动时迁移旧配置：明文/旧格式密码统一转为带前缀的 DPAPI 密文
-                    try
-                    {
-                        if (EnsurePasswordsEncrypted()) SaveConfig();
-                    }
-                    catch (Exception ex)
-                    {
-                        WriteDiagnosticLog($"[Config] 密码加密失败（配置未写入明文）: {ex.Message}");
-                    }
+                    if (EnsurePasswordsEncrypted()) SaveConfig();
                 }
+                catch (Exception ex)
+                {
+                    WriteDiagnosticLog($"[Config] 密码加密失败（配置未写入明文）: {ex.Message}");
+                }
+            }
+        }
+
+        private PluginConfig TryLoadConfigFile(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return null;
+                var json = File.ReadAllText(path);
+                var loaded = JsonSerializer.Deserialize<PluginConfig>(json);
+                if (loaded == null) WriteDiagnosticLog($"[Config] 配置解析结果为空: {path}");
+                return loaded;
             }
             catch (Exception ex)
             {
-                WriteDiagnosticLog($"加载配置失败: {ex.Message}");
-                _config = new PluginConfig();
+                WriteDiagnosticLog($"[Config] 配置读取失败({Path.GetFileName(path)}): {ex.Message}");
+                return null;
             }
+        }
+
+        private PluginConfig TryLoadLatestBackup()
+        {
+            try
+            {
+                var latest = Services.ConfigBackupService.List().FirstOrDefault();
+                if (latest == null) return null;
+                if (!Services.ConfigBackupService.TryRead(latest.Name, out var json, out _)) return null;
+                var loaded = JsonSerializer.Deserialize<PluginConfig>(json);
+                if (loaded != null)
+                    WriteDiagnosticLog($"[Config] 主配置与 .bak 均不可用，已回退到备份 {latest.Name}");
+                return loaded;
+            }
+            catch { return null; }
         }
 
         public void SaveConfig()
         {
-            try
+            lock (ConfigIoLock)
             {
-                var dir = Path.GetDirectoryName(ConfigPath);
-                if (!Directory.Exists(dir))
-                    Directory.CreateDirectory(dir);
+                try
+                {
+                    var dir = Path.GetDirectoryName(ConfigPath);
+                    if (!Directory.Exists(dir))
+                        Directory.CreateDirectory(dir);
 
-                // 加密明文/旧格式密码；加密失败会抛异常，由外层 catch 中止本次保存，绝不把明文写盘
-                EnsurePasswordsEncrypted();
+                    // 加密明文/旧格式密码；加密失败会抛异常，由外层 catch 中止本次保存，绝不把明文写盘
+                    EnsurePasswordsEncrypted();
 
-                var json = JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(ConfigPath, json);
-            }
-            catch (Exception ex)
-            {
-                WriteDiagnosticLog($"保存配置失败: {ex.Message}");
+                    var json = JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true });
+
+                    // 原子写：先写临时文件，再替换，避免进程中断留下半截 JSON（会导致账号全部丢失）
+                    var temp = ConfigPath + ".tmp";
+                    File.WriteAllText(temp, json, new System.Text.UTF8Encoding(false));
+                    if (File.Exists(ConfigPath))
+                    {
+                        try { File.Replace(temp, ConfigPath, ConfigPath + ".bak", ignoreMetadataErrors: true); }
+                        catch
+                        {
+                            File.Copy(temp, ConfigPath, overwrite: true);
+                            try { File.Delete(temp); } catch { }
+                        }
+                    }
+                    else
+                    {
+                        File.Move(temp, ConfigPath);
+                    }
+
+                    Services.ConfigBackupService.Archive(json);
+                }
+                catch (Exception ex)
+                {
+                    WriteDiagnosticLog($"保存配置失败: {ex.Message}");
+                }
             }
         }
 
@@ -796,37 +1139,75 @@ namespace SeewoAutoLogin
         /// </summary>
         private void CleanupForUninstall()
         {
+            // 1) 结束开机自启（计划任务 + 注册表启动项），否则会残留指向已删除 exe 的启动项
             try
             {
-                var hostsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
-                    "drivers", "etc", "hosts");
-                if (File.Exists(hostsPath))
-                {
-                    var lines = File.ReadAllLines(hostsPath)
-                        .Where(l => !l.Contains("local.id.seewo.com", StringComparison.OrdinalIgnoreCase))
-                        .ToArray();
-                    File.WriteAllLines(hostsPath, lines);
-                    WriteDiagnosticLog("[Uninstall] 已移除 hosts 中的 local.id.seewo.com 映射");
-                }
+                if (Services.AutoStartService.Disable(out var autoStartError))
+                    WriteDiagnosticLog("[Uninstall] 已移除开机自启");
+                else
+                    WriteDiagnosticLog($"[Uninstall] 移除开机自启失败: {autoStartError}");
             }
             catch (Exception ex)
             {
-                WriteDiagnosticLog($"[Uninstall] 清理 hosts 失败（可能需要管理员权限）: {ex.Message}");
+                WriteDiagnosticLog($"[Uninstall] 移除开机自启异常: {ex.Message}");
             }
 
+            // 2) hosts：只删除本程序写入的行（带标记或精确匹配的旧行），按原编码原子写回
             try
             {
-                var appData = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "SeewoAutoLogin");
-                if (Directory.Exists(appData))
+                if (Services.HostsFileService.RemoveLoopbackMapping(out var hostsError))
+                    WriteDiagnosticLog($"[Uninstall] 已移除 hosts 中的 {Services.HostsFileService.HostName} 映射（原始备份：{Services.HostsFileService.BackupPath}）");
+                else
+                    WriteDiagnosticLog($"[Uninstall] 清理 hosts 失败（可能需要管理员权限）: {hostsError}");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Uninstall] 清理 hosts 异常: {ex.Message}");
+            }
+
+            // 3) 删除数据目录
+            try
+            {
+                if (Directory.Exists(AppDataDir))
                 {
-                    Directory.Delete(appData, recursive: true);
+                    Directory.Delete(AppDataDir, recursive: true);
                 }
             }
             catch (Exception ex)
             {
                 WriteDiagnosticLog($"[Uninstall] 删除数据目录失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>列出配置备份（供设置页「配置备份」区域展示）</summary>
+        internal List<Services.ConfigBackupService.BackupItem> ListConfigBackups()
+            => Services.ConfigBackupService.List();
+
+        /// <summary>从指定备份恢复配置</summary>
+        internal bool RestoreConfigBackup(string name, out string error)
+        {
+            error = null;
+            if (!Services.ConfigBackupService.TryRead(name, out var json, out error)) return false;
+            try
+            {
+                var loaded = JsonSerializer.Deserialize<PluginConfig>(json);
+                if (loaded == null)
+                {
+                    error = "备份内容无法解析";
+                    return false;
+                }
+                loaded.Accounts ??= new List<SeewoAccount>();
+                loaded.Accounts.RemoveAll(a => a == null);
+                lock (ConfigIoLock) { _config = loaded; }
+                SaveConfig();
+                WriteDiagnosticLog($"[Config] 已从备份 {name} 恢复配置（{_config.Accounts.Count} 个账号）");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                WriteDiagnosticLog($"[Config] 恢复备份失败: {ex.Message}");
+                return false;
             }
         }
 
@@ -837,8 +1218,13 @@ namespace SeewoAutoLogin
         {
             try
             {
-                var json = JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(filePath, json);
+                // 导出前同样做加密迁移：避免历史遗留的明文密码被写进导出文件
+                lock (ConfigIoLock)
+                {
+                    EnsurePasswordsEncrypted();
+                    var json = JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(filePath, json);
+                }
                 WriteDiagnosticLog($"[Config] 配置已导出到 {filePath}");
             }
             catch (Exception ex)
@@ -859,7 +1245,14 @@ namespace SeewoAutoLogin
                 var loaded = JsonSerializer.Deserialize<PluginConfig>(json);
                 if (loaded == null) return false;
                 loaded.Accounts ??= new List<SeewoAccount>();
-                _config = loaded;
+                // 校验导入内容：剔除空账号与非法 Id（Id 会进入前端 DOM 与 SSO 请求路径）
+                loaded.Accounts.RemoveAll(a => a == null || string.IsNullOrWhiteSpace(a.Id) || a.Id.Length > 64);
+                foreach (var account in loaded.Accounts)
+                {
+                    account.HealthState = "";
+                    account.HealthMessage = "";
+                }
+                lock (ConfigIoLock) { _config = loaded; }
                 SaveConfig();
                 WriteDiagnosticLog($"[Config] 已从 {filePath} 导入配置 ({_config.Accounts.Count} 个账号)");
                 return true;
@@ -877,18 +1270,57 @@ namespace SeewoAutoLogin
 
         internal void WriteDiagnosticLog(string message)
         {
+            System.Diagnostics.Debug.WriteLine($"[SeewoAutoLogin] {message}");
             try
             {
-                var baseDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "SeewoAutoLogin", "Logs");
+                var baseDir = Path.Combine(AppDataDir, "Logs");
                 var path = Path.Combine(baseDir, DateTime.Now.ToString("yyyy-MM-dd") + ".log");
                 var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [INFO] {message}{Environment.NewLine}";
-                Directory.CreateDirectory(baseDir);
-                File.AppendAllText(path, line);
+                lock (LogIoLock)
+                {
+                    Directory.CreateDirectory(baseDir);
+                    RotateLogIfNeeded(path);
+                    // FileShare.ReadWrite：网关/定时器/UI 多线程并发写日志时不再互相抛 IOException（丢日志）
+                    using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(line);
+                    stream.Write(bytes, 0, bytes.Length);
+                    CleanupOldLogs(baseDir);
+                }
             }
             catch { }
-            System.Diagnostics.Debug.WriteLine($"[SeewoAutoLogin] {message}");
+        }
+
+        /// <summary>单个日志文件超过上限后滚动为 .1.log，避免长期驻留无限增长</summary>
+        private static void RotateLogIfNeeded(string path)
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists || info.Length < LogRotationBytes) return;
+                var rolled = path + ".1";
+                if (File.Exists(rolled)) File.Delete(rolled);
+                File.Move(path, rolled);
+            }
+            catch { }
+        }
+
+        /// <summary>每天最多清理一次：删除超过保留期的日志</summary>
+        private static void CleanupOldLogs(string baseDir)
+        {
+            try
+            {
+                if (_lastLogCleanupDate == DateTime.Today) return;
+                _lastLogCleanupDate = DateTime.Today;
+                var cutoff = DateTime.Now.AddDays(-LogRetentionDays);
+                foreach (var file in new DirectoryInfo(baseDir).GetFiles("*.log*"))
+                {
+                    if (file.LastWriteTime < cutoff)
+                    {
+                        try { file.Delete(); } catch { }
+                    }
+                }
+            }
+            catch { }
         }
 
         #endregion

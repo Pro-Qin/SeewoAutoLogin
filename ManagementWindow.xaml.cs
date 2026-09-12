@@ -385,10 +385,17 @@ namespace SeewoAutoLogin
                 type = "init",
                 version = AppVersion,
                 accounts = GetAccountList(),
-                needsPassword = _app.Config.UsePluginPassword && !string.IsNullOrEmpty(_app.Config.PluginPasswordHash)
+                needsPassword = _app.Config.UsePluginPassword && !string.IsNullOrEmpty(_app.Config.PluginPasswordHash),
+                config = new
+                {
+                    maxVisibleAccounts = PluginConfig.MaxVisibleAccounts,
+                    autoStartText = AutoStartService.DescribeState(),
+                    updateSource = _app.Config.UpdateSource ?? ""
+                }
             });
-            // 同时推送设置状态和希沃状态
+            // 同时推送设置状态、自检状态和希沃状态
             await SendSettings();
+            await SendStatus();
             await SendSeewoStatus();
             UpdateGatewayStatus();
             StartSeewoMonitor();
@@ -468,7 +475,13 @@ namespace SeewoAutoLogin
         private void HandleOpenUpdatePage(JsonElement root)
         {
             var url = root.TryGetProperty("url", out var element) ? element.GetString() : null;
-            if (string.IsNullOrWhiteSpace(url)) url = UpdateChecker.ReleasesPageUrl;
+            // 该 URL 来自前端消息且会用 ShellExecute 打开，必须校验协议与主机，避免被篡改成 file:// 或 UNC 路径
+            if (string.IsNullOrWhiteSpace(url) || !UpdateChecker.IsTrustedDownloadUrl(url))
+            {
+                if (!string.IsNullOrWhiteSpace(url))
+                    _app.WriteDiagnosticLog($"[Update] 已拦截不可信的更新地址，改用发布页: {url}");
+                url = UpdateChecker.ReleasesPageUrl;
+            }
             try
             {
                 Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
@@ -563,6 +576,11 @@ namespace SeewoAutoLogin
                     case "toggle-overlay": _app.ToggleOverlay(); break;
                     case "check-update": await HandleCheckUpdateAsync(manual: true); break;
                     case "open-update-page": HandleOpenUpdatePage(root); break;
+                    case "repair-sso": await HandleRepairSsoAsync(); break;
+                    case "health-check": await HandleHealthCheckAsync(); break;
+                    case "batch-import": await HandleBatchImportAsync(root); break;
+                    case "list-backups": await SendBackups(); break;
+                    case "restore-backup": await HandleRestoreBackupAsync(root); break;
                 }
             }
             catch (Exception ex) { Debug.WriteLine($"[WebView] msg error: {ex.Message}"); }
@@ -661,14 +679,14 @@ namespace SeewoAutoLogin
         {
             var pw = root.GetProperty("password").GetString() ?? "";
             if (string.IsNullOrEmpty(pw)) return;
-            var salt = GenerateSalt(); var hash = ComputeHash(pw, salt);
-            _app.Config.PluginPasswordHash = hash; _app.Config.PluginPasswordSalt = salt; _app.SaveConfig();
+            // PBKDF2 + 加盐，哈希值本身再用 DPAPI 包裹后落盘
+            _app.SetPluginPassword(pw);
             await SendToJs(new { type = "settings", passwordSet = true });
         }
 
         private async void HandleClearPassword()
         {
-            _app.Config.PluginPasswordHash = ""; _app.Config.PluginPasswordSalt = ""; _app.SaveConfig();
+            _app.SetPluginPassword("");
             await SendToJs(new { type = "settings", passwordSet = false });
         }
 
@@ -676,8 +694,15 @@ namespace SeewoAutoLogin
         {
             var pw = root.GetProperty("password").GetString() ?? "";
             if (string.IsNullOrEmpty(pw)) { await SendToJs(new { type = "unlock-status", text = "请输入密码" }); return; }
+
+            if (Services.PasswordService.IsLockedOut(out var seconds))
+            {
+                await SendToJs(new { type = "unlock-status", text = $"错误次数过多，请 {seconds} 秒后再试" });
+                return;
+            }
+
             var ok = _app.Config.UsePluginPassword && !string.IsNullOrEmpty(_app.Config.PluginPasswordHash)
-                && VerifyPassword(pw, _app.Config.PluginPasswordHash, _app.Config.PluginPasswordSalt);
+                && _app.VerifyPluginPassword(pw);
             if (ok) { _unlocked = true; await SendToJs(new { type = "unlock-success" }); await SendSettings(); }
             else await SendToJs(new { type = "unlock-status", text = "密码错误" });
         }
@@ -696,12 +721,115 @@ namespace SeewoAutoLogin
                 case "autoShowOverlay": _app.Config.AutoShowOverlay = val.GetBoolean(); break;
                 case "autoCheckUpdate": _app.Config.AutoCheckUpdate = val.GetBoolean(); break;
                 case "autoStart":
-                    // 与欢迎界面的「开机自启」选项共用同一份状态，便于首次启动时正确回显
-                    _app.Config.AutoStartEnabled = val.GetBoolean();
-                    if (val.GetBoolean()) AutoStartService.Enable(); else AutoStartService.Disable();
-                    break;
+                    {
+                        // 与欢迎界面共用同一份状态：优先创建最高权限计划任务（开机免 UAC），失败回退注册表启动项
+                        var enabled = val.GetBoolean();
+                        _app.Config.AutoStartEnabled = enabled;
+                        if (enabled)
+                        {
+                            var ok = AutoStartService.Enable(out var error, out var mode);
+                            _app.WriteDiagnosticLog($"[AutoStart] 启用自启: ok={ok}; mode={mode}; {error}");
+                            if (!ok || !string.IsNullOrEmpty(error)) _app.TrayIcon?.SetStatusText(error);
+                            if (!ok)
+                            {
+                                // 计划任务需要管理员权限：自动询问是否提权重启（用户确认后才重启）
+                                if (!AutoStartService.IsAdministrator())
+                                {
+                                    var choice = MessageBox.Show(
+                                        "创建「最高权限计划任务」需要管理员权限，当前以普通权限运行。\n\n" +
+                                        "是否现在以管理员身份重新启动本程序？（重启后开机不再需要授权）\n\n" +
+                                        "  · 是   → 提权重启并重新尝试\n" +
+                                        "  · 否   → 暂时保持当前设置",
+                                        "需要管理员权限", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                                    if (choice == MessageBoxResult.Yes)
+                                    {
+                                        _app.Config.AutoStartEnabled = true;
+                                        _app.SaveConfig();
+                                        _app.RestartApp();
+                                        return;
+                                    }
+                                }
+                                else
+                                {
+                                    _app.NotifyError("开机自启未开启", "写入开机自启失败：" + error);
+                                }
+                            }
+                        }
+                        else if (!AutoStartService.Disable(out var offError))
+                        {
+                            _app.WriteDiagnosticLog($"[AutoStart] 停用自启失败: {offError}");
+                        }
+                        break;
+                    }
             }
             _app.SaveConfig();
+        }
+
+        /// <summary>一键修复：重写 hosts 映射 + 重启 SSO 网关，并回传最新自检状态</summary>
+        private async Task HandleRepairSsoAsync()
+        {
+            var text = await _app.RepairSsoAsync();
+            await SendToJs(new { type = "toast", text, level = "info" });
+            await SendToJs(new { type = "status", status = _app.BuildSelfCheckStatus() });
+            await RefreshAccountList();
+        }
+
+        /// <summary>账号健康巡检：逐个验证密码/扫码令牌，并把结果回传前端</summary>
+        private async Task HandleHealthCheckAsync()
+        {
+            await SendToJs(new { type = "health", running = true, results = Array.Empty<object>() });
+            try
+            {
+                await _app.RunHealthCheckAsync();
+            }
+            catch (Exception ex)
+            {
+                _app.WriteDiagnosticLog($"[Health] 巡检异常: {ex.Message}");
+            }
+
+            var results = _app.Config.Accounts.Select(a => new
+            {
+                id = a.Id,
+                state = string.IsNullOrEmpty(a.HealthState) ? "unknown" : a.HealthState,
+                message = a.HealthMessage ?? ""
+            }).ToList();
+            await SendToJs(new { type = "health", running = false, results });
+            await RefreshAccountList();
+        }
+
+        /// <summary>批量导入账号（每行 账号,密码[,备注]）</summary>
+        private async Task HandleBatchImportAsync(JsonElement root)
+        {
+            var text = root.TryGetProperty("text", out var element) ? element.GetString() : "";
+            var (added, failed, messages) = _app.BatchImport(text);
+            await SendToJs(new { type = "batch-import-result", added, failed, messages });
+            await RefreshAccountList();
+        }
+
+        /// <summary>列出配置备份</summary>
+        private async Task SendBackups()
+        {
+            var items = _app.ListConfigBackups().Select(b => new
+            {
+                name = b.Name,
+                time = b.Time.ToString("yyyy-MM-dd HH:mm"),
+                accounts = b.Accounts
+            }).ToList();
+            await SendToJs(new { type = "backups", items });
+        }
+
+        /// <summary>从备份恢复配置</summary>
+        private async Task HandleRestoreBackupAsync(JsonElement root)
+        {
+            var name = root.TryGetProperty("name", out var element) ? element.GetString() : "";
+            if (!_app.RestoreConfigBackup(name, out var error))
+            {
+                await SendToJs(new { type = "toast", text = "恢复失败：" + error, level = "error" });
+                return;
+            }
+            await SendToJs(new { type = "toast", text = $"已从备份恢复：{name}", level = "info" });
+            await SendBackups();
+            await RefreshAccountList();
         }
 
         private void HandleExportConfig()
@@ -771,6 +899,7 @@ namespace SeewoAutoLogin
         private async Task RefreshAccountList()
         {
             await SendToJs(new { type = "account-list", accounts = GetAccountList() });
+            await SendStatus();
         }
 
         private object GetAccountList()
@@ -785,7 +914,10 @@ namespace SeewoAutoLogin
                 initial = (a.DisplayName ?? a.Username ?? "S").Substring(0, 1).ToUpperInvariant(),
                 tags = a.Tags != null && a.Tags.Count > 0 ? string.Join(", ", a.Tags) : "",
                 requestCount = a.RequestCount,
-                lastRequestAtUtc = a.LastRequestAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? ""
+                lastRequestAtUtc = a.LastRequestAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
+                healthState = a.HealthState ?? "",
+                healthMessage = a.HealthMessage ?? "",
+                lastHealthCheckAtUtc = a.LastHealthCheckAtUtc?.ToLocalTime().ToString("MM-dd HH:mm") ?? ""
             }).ToList();
         }
 
@@ -885,11 +1017,21 @@ namespace SeewoAutoLogin
                 rotationEnabled = _app.Config.UserListRotationEnabled,
                 rotationGroupSize = SeewoUserListRotationService.NormalizeGroupSize(_app.Config.UserListRotationGroupSize),
                 autoStart = AutoStartService.IsEnabled,
+                autoStartText = AutoStartService.DescribeState(),
+                maxVisibleAccounts = PluginConfig.MaxVisibleAccounts,
                 minimizeToTray = _app.Config.MinimizeToTray,
                 startMinimized = _app.Config.StartMinimized,
                 autoShowOverlay = _app.Config.AutoShowOverlay,
                 autoCheckUpdate = _app.Config.AutoCheckUpdate
             });
+            await SendStatus();
+        }
+
+        /// <summary>下发自检状态：网关 / hosts 映射 / 管理员权限 / 希沃进程 / 开机自启</summary>
+        internal async Task SendStatus()
+        {
+            try { await SendToJs(new { type = "status", status = _app.BuildSelfCheckStatus() }); }
+            catch { }
         }
 
         private async Task SendSeewoStatus()
@@ -928,7 +1070,7 @@ namespace SeewoAutoLogin
                     width = rect.w,
                     height = rect.h,
                     accounts = _app.Config.Accounts.Count,
-                    active = Math.Min(6, _app.Config.Accounts.Count),
+                    active = Math.Min(PluginConfig.MaxVisibleAccounts, _app.Config.Accounts.Count),
                     lastRefresh = DateTime.Now.ToString("HH:mm:ss")
                 });
             }
@@ -987,20 +1129,7 @@ namespace SeewoAutoLogin
 
         #region Helpers
 
-        private static string GenerateSalt()
-        {
-            var b = new byte[32];
-            using var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
-            rng.GetBytes(b); return Convert.ToBase64String(b);
-        }
-
-        private static string ComputeHash(string pw, string salt)
-        {
-            using var sha = System.Security.Cryptography.SHA256.Create();
-            return Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(pw + salt)));
-        }
-
-        private static bool VerifyPassword(string pw, string hash, string salt) => ComputeHash(pw, salt) == hash;
+        // 口令哈希改由 Services.PasswordService 统一处理（PBKDF2 + 加盐 + DPAPI 保护，见 App.SetPluginPassword）
 
         #endregion
     }
