@@ -157,13 +157,17 @@ var SECTIONS = [
   ["q1",0,2],["q2",2,4],["q3",4,6],["hit",6,8],["brand",8,12],["ui1",12,14],
   ["ui2",14,16],["ui3",16,18],["seewo",18,21],["nums",21,23],["open",23,25],["end",25,30]
 ];
-var TOTAL = 30 * BEAT + 1.0;   // 主体 30 拍 + 1 秒尾音（结尾不再拖）
+var TOTAL = 30 * BEAT + 3.0;   // 主体 30 拍 + 3 秒尾音（音乐长衰减，画面同步渐隐）
 
 function clamp01(v){return v<0?0:(v>1?1:v)}
 function eo(x){return 1-Math.pow(1-x,3)}
 var CUT = 0.22;                // 快切：进场只有 0.22 秒，形成「啪」的一下
 
 function renderAt(t){
+  // 结尾长尾音期间整体渐隐（放在最前面，后面各处都能用）
+  var tailStart = 30 * BEAT;
+  var tailFade = t <= tailStart ? 1 : Math.max(0, 1 - (t - tailStart) / 2.4);
+
   // 定格闪白（第 6 拍的重击）
   var flash = document.getElementById("flash");
   var hitT = 6 * BEAT;
@@ -175,7 +179,7 @@ function renderAt(t){
   var beatPhase = (t / BEAT) % 1;
   var pulseAmp = Math.exp(-beatPhase * 7);
   pulse.style.transform = "scaleX(" + (0.25 + pulseAmp * 0.75).toFixed(3) + ")";
-  pulse.style.opacity = (0.35 + pulseAmp * 0.65).toFixed(3);
+  pulse.style.opacity = ((0.35 + pulseAmp * 0.65) * tailFade).toFixed(3);
 
   var clips = document.querySelectorAll(".clip");
   for (var i = 0; i < clips.length; i++){
@@ -190,7 +194,7 @@ function renderAt(t){
     if (t >= inT && t <= outT){
       o = Math.min(eo(clamp01((t - inT) / CUT)), eo(clamp01((outT - t) / 0.28)));
     }
-    el.style.opacity = o.toFixed(4);
+    el.style.opacity = (o * tailFade).toFixed(4);
 
     var local = t - inT;
     var pin = eo(clamp01(local / CUT));

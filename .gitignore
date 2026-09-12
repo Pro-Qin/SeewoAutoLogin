@@ -25,3 +25,6 @@ Desktop.ini
 docs/promo/frames/
 docs/promo/.edge-profile/
 docs/promo/*.wav
+
+# 宣传短片是本地产物，不入库（脚本仍保留，可随时重新生成）
+docs/promo/*.mp4

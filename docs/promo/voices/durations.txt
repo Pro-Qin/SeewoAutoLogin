@@ -1,9 +1,0 @@
-q1.wav 2.265
-q2.wav 2.053
-q3.wav 2.434
-hit.wav 1.023
-brand.wav 3.474
-feat.wav 3.713
-seewo.wav 2.886
-open.wav 2.801
-repo.wav 2.463
