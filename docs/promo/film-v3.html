@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>希沃自动登录 · 15 秒卡点短片</title>
+<style>
+:root{--blue:#0A84FF;--green:#75C72A;--red:#FF453A;--ink:#F5F5F7;--muted:rgba(245,245,247,.7);
+  --font:-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1280px;height:720px;overflow:hidden;background:#000}
+body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+.bg{position:fixed;inset:0;background:radial-gradient(820px 560px at 50% 42%,rgba(10,132,255,.15),transparent 64%),#000}
+.grid-bg{position:fixed;inset:0;opacity:.26;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:56px 56px}
+.vig{position:fixed;inset:0;background:radial-gradient(circle at 50% 50%,transparent 44%,rgba(0,0,0,.84) 100%)}
+.clip{position:fixed;inset:0;display:grid;place-items:center;padding:56px 68px;opacity:0;will-change:opacity,transform}
+.inner{width:100%;max-width:1150px}
+.flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none}
+/* 拍点脉冲条：让「卡点」看得见 */
+.pulse{position:fixed;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,#0A84FF,#75C72A);transform-origin:left center}
+
+.q{text-align:center}
+.q .tag{display:inline-block;font-size:15px;letter-spacing:.16em;color:var(--red);border:1px solid rgba(255,69,58,.5);background:rgba(255,69,58,.12);padding:5px 15px;border-radius:999px;margin-bottom:22px}
+.q .line{font-size:84px;font-weight:800;letter-spacing:-.032em;line-height:1.04}
+.q .line em{font-style:normal;color:var(--red)}
+.hit{display:grid;place-items:center}
+.hit .word{font-size:168px;font-weight:800;letter-spacing:-.045em;line-height:1}
+.hit .word span{background:linear-gradient(96deg,#7FC4FF,#0A84FF 46%,#75C72A);-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand{display:flex;flex-direction:column;align-items:center;text-align:center}
+.mark{width:120px;height:120px;border-radius:29%;display:grid;place-items:center;background:linear-gradient(150deg,#4FA9FF,#0A84FF 52%,#0057C8);box-shadow:0 26px 70px rgba(10,132,255,.5)}
+.mark svg{width:58%;height:58%}
+.word{margin-top:28px;font-size:66px;font-weight:800;letter-spacing:-.03em}
+.tagline{margin-top:10px;font-size:20px;color:var(--muted)}
+.shot{border-radius:14px;overflow:hidden;background:#111;box-shadow:0 34px 80px rgba(0,0,0,.68),0 0 0 1px rgba(255,255,255,.1)}
+.shot img{display:block;width:100%;height:auto}
+.shot .bar{height:22px;background:linear-gradient(#2A2A2E,#1E1E22);display:flex;align-items:center;gap:6px;padding:0 10px}
+.shot .bar i{width:9px;height:9px;border-radius:50%;background:#FF5F57}
+.shot .bar i:nth-child(2){background:#FEBC2E}.shot .bar i:nth-child(3){background:#28C840}
+.cap{margin-top:16px;text-align:center;font-size:27px;font-weight:680}
+.cap .grad{background:linear-gradient(96deg,#7FC4FF,#0A84FF 46%,#75C72A);-webkit-background-clip:text;background-clip:text;color:transparent}
+.nums{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.num{padding:26px 22px;border-radius:16px;background:rgba(26,26,30,.94);border:1px solid rgba(255,255,255,.1)}
+.num .k{font-size:48px;font-weight:800;letter-spacing:-.03em;background:linear-gradient(96deg,#9BD2FF,#0A84FF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.num h4{margin-top:5px;font-size:17px;font-weight:660}.num p{margin-top:5px;font-size:13.5px;color:var(--muted)}
+.open{text-align:center}
+.open .big{font-size:92px;font-weight:800;letter-spacing:-.035em}
+.open .row{margin-top:22px;display:flex;gap:13px;justify-content:center;font-size:19px;color:var(--muted)}
+.open .row b{color:var(--ink);font-weight:660}
+/* 结尾：仓库地址 + 二维码，刻意做成完全不透明高对比 */
+.end{display:flex;flex-direction:column;align-items:center;text-align:center}
+.end-row{margin-top:24px;display:flex;align-items:center;gap:30px}
+.repo{opacity:1;font-size:33px;font-weight:750;color:#fff;padding:18px 34px;border-radius:16px;
+  background:rgba(10,132,255,.2);border:2px solid rgba(122,200,255,.62);box-shadow:0 0 0 1px rgba(255,255,255,.08),0 18px 54px rgba(10,132,255,.42)}
+.qr{width:168px;height:168px;border-radius:16px;background:#fff;padding:10px;box-shadow:0 18px 46px rgba(0,0,0,.55)}
+.qr img{width:100%;height:100%;display:block}
+.cta{margin-top:22px;display:flex;gap:13px}
+.pill{padding:14px 30px;border-radius:999px;font-size:18px;font-weight:680}
+.pill.p{background:var(--blue);box-shadow:0 14px 38px rgba(10,132,255,.45)}
+.pill.g{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18)}
+.foot{margin-top:16px;font-size:14px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="bg"></div><div class="grid-bg"></div><div class="vig"></div>
+<div class="flash" id="flash"></div><div class="pulse" id="pulse"></div>
+
+<section class="clip q" data-sec="q1">
+  <div class="inner">
+    <div class="tag" data-anim="up">每天都会遇到</div>
+    <div class="line" data-anim="shake">还在<em>挨个输入</em>账号密码？</div>
+  </div>
+</section>
+<section class="clip q" data-sec="q2">
+  <div class="inner">
+    <div class="tag" data-anim="up">上课铃已经响了</div>
+    <div class="line" data-anim="shake">还在<em>等希沃</em>加载登录？</div>
+  </div>
+</section>
+<section class="clip q" data-sec="q3">
+  <div class="inner">
+    <div class="tag" data-anim="up">换间教室就得重来</div>
+    <div class="line" data-anim="shake">还在<em>一个个</em>重新登录？</div>
+  </div>
+</section>
+<section class="clip hit" data-sec="hit">
+  <div class="inner" style="text-align:center"><div class="word" data-anim="pop">停下<span>。</span></div></div>
+</section>
+<section class="clip brand" data-sec="brand">
+  <div class="inner" style="display:flex;flex-direction:column;align-items:center">
+    <div class="mark" data-anim="pop"><svg viewBox="0 0 24 24" fill="#fff"><path d="M13.4 2 5 13.2h5.3L9.8 22l8.6-11.4h-5.5L13.4 2z"/></svg></div>
+    <div class="word" data-anim="up" data-delay=".1">希沃自动登录</div>
+    <div class="tagline" data-anim="up" data-delay=".24">点头像，就进了</div>
+  </div>
+</section>
+<section class="clip" data-sec="ui1">
+  <div class="inner">
+    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-settings.png" alt=""></div>
+    <div class="cap" data-anim="up" data-delay=".05">账号、自检、教程 —— <span class="grad">一个窗口管完</span></div>
+  </div>
+</section>
+<section class="clip" data-sec="ui2">
+  <div class="inner">
+    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-tour-tray.png" alt=""></div>
+    <div class="cap" data-anim="up" data-delay=".05">内置教程，<span class="grad">30 秒上手</span></div>
+  </div>
+</section>
+<section class="clip" data-sec="ui3">
+  <div class="inner">
+    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-tour-seewo.png" alt=""></div>
+    <div class="cap" data-anim="up" data-delay=".05">配置备份 · <span class="grad">一键修复</span></div>
+  </div>
+</section>
+<section class="clip" data-sec="seewo">
+  <div class="inner">
+    <div class="shot" data-anim="zoom" style="width:780px;margin:0 auto"><img src="assets/seewo-login.png" alt=""></div>
+    <div class="cap" data-anim="up" data-delay=".05" style="font-size:30px">希沃登录界面 —— <span class="grad">点一下头像就进去</span></div>
+  </div>
+</section>
+<section class="clip" data-sec="nums">
+  <div class="inner">
+    <div class="nums">
+      <div class="num" data-anim="pop"><div class="k">8 MB</div><h4>轻量安装包</h4><p>复用系统自带运行时</p></div>
+      <div class="num" data-anim="pop" data-delay=".10"><div class="k">0 次</div><h4>开机不弹 UAC</h4><p>计划任务后台待命</p></div>
+      <div class="num" data-anim="pop" data-delay=".20"><div class="k">6 个</div><h4>账号直达希沃</h4><p>切换只要一秒</p></div>
+    </div>
+  </div>
+</section>
+<section class="clip open" data-sec="open">
+  <div class="inner">
+    <div class="big" data-anim="pop">完全开源<span style="color:var(--green)">.</span></div>
+    <div class="row" data-anim="up" data-delay=".14"><span>免费</span><span>·</span><b>无广告</b><span>·</span><b>无账号体系</b><span>·</span><b>数据只留本机</b></div>
+  </div>
+</section>
+<section class="clip end" data-sec="end">
+  <div class="inner" style="display:flex;flex-direction:column;align-items:center">
+    <div class="mark" data-anim="pop" style="width:80px;height:80px"><svg viewBox="0 0 24 24" fill="#fff"><path d="M13.4 2 5 13.2h5.3L9.8 22l8.6-11.4h-5.5L13.4 2z"/></svg></div>
+    <div class="word" data-anim="up" data-delay=".08" style="font-size:42px">希沃自动登录</div>
+    <div class="end-row">
+      <div class="repo" data-anim="pop" data-delay=".18">github.com/Pro-Qin/SeewoAutoLogin</div>
+      <div class="qr" data-anim="pop" data-delay=".30"><img src="assets/repo-qr.png" alt=""></div>
+    </div>
+    <div class="cta" data-anim="up" data-delay=".42"><span class="pill p">下载最新版本</span><span class="pill g">GPL-3.0 开源</span></div>
+    <div class="foot" data-anim="up" data-delay=".54">Made by Qin_zzq</div>
+  </div>
+</section>
+
+<script>
+// 镜头边界 = 拍点（BPM 140）。这张表与 make-music-v3.py 的 SECTIONS 完全一致，
+// 两边共用同一份时间基准，所以画面切换必然落在鼓点上。
+var BPM = 140, BEAT = 60 / BPM;
+var SECTIONS = [
+  ["q1",0,2],["q2",2,4],["q3",4,6],["hit",6,8],["brand",8,12],["ui1",12,14],
+  ["ui2",14,16],["ui3",16,18],["seewo",18,21],["nums",21,23],["open",23,25],["end",25,32]
+];
+var TOTAL = 32 * BEAT + 1.6;   // 主体 32 拍 + 尾音
+
+function clamp01(v){return v<0?0:(v>1?1:v)}
+function eo(x){return 1-Math.pow(1-x,3)}
+var CUT = 0.22;                // 快切：进场只有 0.22 秒，形成「啪」的一下
+
+function renderAt(t){
+  // 定格闪白（第 6 拍的重击）
+  var flash = document.getElementById("flash");
+  var hitT = 6 * BEAT;
+  var fv = (t >= hitT && t <= hitT + 0.16) ? 1 - (t - hitT) / 0.16 : 0;
+  flash.style.opacity = (fv * 0.6).toFixed(3);
+
+  // 底部脉冲条：每拍弹一下，肉眼可见的卡点
+  var pulse = document.getElementById("pulse");
+  var beatPhase = (t / BEAT) % 1;
+  var pulseAmp = Math.exp(-beatPhase * 7);
+  pulse.style.transform = "scaleX(" + (0.25 + pulseAmp * 0.75).toFixed(3) + ")";
+  pulse.style.opacity = (0.35 + pulseAmp * 0.65).toFixed(3);
+
+  var clips = document.querySelectorAll(".clip");
+  for (var i = 0; i < clips.length; i++){
+    var el = clips[i];
+    var sec = null;
+    for (var s = 0; s < SECTIONS.length; s++){ if (SECTIONS[s][0] === el.dataset.sec) sec = SECTIONS[s]; }
+    if (!sec) continue;
+    var inT = sec[1] * BEAT, outT = sec[2] * BEAT;
+    if (el.dataset.sec === "end") outT = TOTAL;      // 结尾一直留到片尾
+
+    var o = 0;
+    if (t >= inT && t <= outT){
+      o = Math.min(eo(clamp01((t - inT) / CUT)), eo(clamp01((outT - t) / 0.28)));
+    }
+    el.style.opacity = o.toFixed(4);
+
+    var local = t - inT;
+    var pin = eo(clamp01(local / CUT));
+    el.style.transform = "scale(" + (1.035 - pin * 0.035).toFixed(4) + ")" +
+      " translate3d(0," + ((1 - pin) * 10).toFixed(2) + "px,0)";
+
+    var kids = el.querySelectorAll("[data-anim]");
+    for (var k = 0; k < kids.length; k++){
+      var c = kids[k];
+      var delay = parseFloat(c.dataset.delay || 0);
+      var p = clamp01((local - delay) / CUT);
+      var e = eo(p);
+      var kind = c.dataset.anim, ty = 0, sc = 1, tx = 0;
+      if (kind === "up") ty = (1 - e) * 30;
+      else if (kind === "pop") sc = 0.8 + e * 0.2;
+      else if (kind === "zoom") sc = 1.1 - e * 0.1;
+      else if (kind === "cut") { ty = (1 - e) * 18; sc = 0.97 + e * 0.03; }
+      else if (kind === "shake"){ tx = Math.sin(local * 52) * (1 - e) * 14; }
+      c.style.opacity = e.toFixed(4);
+      c.style.transform = "translate3d(" + tx.toFixed(2) + "px," + ty.toFixed(2) + "px,0) scale(" + sc.toFixed(4) + ")";
+    }
+  }
+}
+window.__render = renderAt;
+window.__meta = { bpm: BPM, beat: BEAT, total: TOTAL, sections: SECTIONS };
+var q = new URLSearchParams(location.search).get("t");
+renderAt(q === null ? 0 : parseFloat(q) || 0);
+window.__ready = true;
+</script>
+</body>
+</html>
