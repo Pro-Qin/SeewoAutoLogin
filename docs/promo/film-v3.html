@@ -155,9 +155,9 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 var BPM = 140, BEAT = 60 / BPM;
 var SECTIONS = [
   ["q1",0,2],["q2",2,4],["q3",4,6],["hit",6,8],["brand",8,12],["ui1",12,14],
-  ["ui2",14,16],["ui3",16,18],["seewo",18,21],["nums",21,23],["open",23,25],["end",25,32]
+  ["ui2",14,16],["ui3",16,18],["seewo",18,21],["nums",21,23],["open",23,25],["end",25,30]
 ];
-var TOTAL = 32 * BEAT + 1.6;   // 主体 32 拍 + 尾音
+var TOTAL = 30 * BEAT + 1.0;   // 主体 30 拍 + 1 秒尾音（结尾不再拖）
 
 function clamp01(v){return v<0?0:(v>1?1:v)}
 function eo(x){return 1-Math.pow(1-x,3)}
