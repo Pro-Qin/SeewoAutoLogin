@@ -12,7 +12,8 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 .bg{position:fixed;inset:0;background:radial-gradient(820px 560px at 50% 42%,rgba(10,132,255,.15),transparent 64%),#000}
 .grid-bg{position:fixed;inset:0;opacity:.26;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:56px 56px}
 .vig{position:fixed;inset:0;background:radial-gradient(circle at 50% 50%,transparent 44%,rgba(0,0,0,.84) 100%)}
-.clip{position:fixed;inset:0;display:grid;place-items:center;padding:56px 68px;opacity:0;will-change:opacity,transform}
+.clip{position:fixed;inset:0;display:grid;place-items:center;padding:44px 68px;opacity:0;will-change:opacity,transform}
+.clip .shot-wrap{display:flex;flex-direction:column;align-items:center}
 .inner{width:100%;max-width:1150px}
 .flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none}
 /* 拍点脉冲条：让「卡点」看得见 */
@@ -30,8 +31,13 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 .mark svg{width:58%;height:58%}
 .word{margin-top:28px;font-size:66px;font-weight:800;letter-spacing:-.03em}
 .tagline{margin-top:10px;font-size:20px;color:var(--muted)}
-.shot{border-radius:14px;overflow:hidden;background:#111;box-shadow:0 34px 80px rgba(0,0,0,.68),0 0 0 1px rgba(255,255,255,.1)}
-.shot img{display:block;width:100%;height:auto}
+.shot{border-radius:14px;overflow:hidden;background:#111;box-shadow:0 34px 80px rgba(0,0,0,.68),0 0 0 1px rgba(255,255,255,.14);
+  display:inline-block;max-width:100%;vertical-align:top}
+/* 截图按高度约束：原图 862x566，铺满 1150 宽会撑爆画面并显得变形 */
+.shot img{display:block;max-height:500px;width:auto;max-width:100%;height:auto}
+/* 宽幅截图（界面顶部）按宽度铺满，才有冲击力；竖图仍按高度约束 */
+.shot.wide{width:100%}
+.shot.wide img{width:100%;max-height:none}
 .shot .bar{height:22px;background:linear-gradient(#2A2A2E,#1E1E22);display:flex;align-items:center;gap:6px;padding:0 10px}
 .shot .bar i{width:9px;height:9px;border-radius:50%;background:#FF5F57}
 .shot .bar i:nth-child(2){background:#FEBC2E}.shot .bar i:nth-child(3){background:#28C840}
@@ -92,26 +98,26 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
   </div>
 </section>
 <section class="clip" data-sec="ui1">
-  <div class="inner">
-    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-settings.png" alt=""></div>
-    <div class="cap" data-anim="up" data-delay=".05">账号、自检、教程 —— <span class="grad">一个窗口管完</span></div>
+  <div class="inner shot-wrap">
+    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-main.png" alt=""></div>
+    <div class="cap" data-anim="up" data-delay=".05">网关、hosts、权限、希沃 —— <span class="grad">四项状态一眼看清</span></div>
   </div>
 </section>
 <section class="clip" data-sec="ui2">
-  <div class="inner">
-    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-tour-tray.png" alt=""></div>
-    <div class="cap" data-anim="up" data-delay=".05">内置教程，<span class="grad">30 秒上手</span></div>
+  <div class="inner shot-wrap">
+    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-settings.png" alt=""></div>
+    <div class="cap" data-anim="up" data-delay=".05">账号、教程、备份 —— <span class="grad">一个窗口管完</span></div>
   </div>
 </section>
 <section class="clip" data-sec="ui3">
-  <div class="inner">
-    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-tour-seewo.png" alt=""></div>
-    <div class="cap" data-anim="up" data-delay=".05">配置备份 · <span class="grad">一键修复</span></div>
+  <div class="inner shot-wrap">
+    <div class="shot" data-anim="cut"><div class="bar"><i></i><i></i><i></i></div><img src="assets/ui-about.png" alt=""></div>
+    <div class="cap" data-anim="up" data-delay=".05">更新直达镜像，<span class="grad">不用翻墙</span></div>
   </div>
 </section>
 <section class="clip" data-sec="seewo">
-  <div class="inner">
-    <div class="shot" data-anim="zoom" style="width:780px;margin:0 auto"><img src="assets/seewo-login.png" alt=""></div>
+  <div class="inner shot-wrap">
+    <div class="shot" data-anim="zoom"><img src="assets/seewo-login.png" alt="" style="max-height:400px"></div>
     <div class="cap" data-anim="up" data-delay=".05" style="font-size:30px">希沃登录界面 —— <span class="grad">点一下头像就进去</span></div>
   </div>
 </section>
