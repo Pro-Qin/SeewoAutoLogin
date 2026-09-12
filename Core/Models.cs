@@ -24,8 +24,10 @@ namespace SeewoAutoLogin
         public bool AutoShowOverlay { get; set; }
         /// <summary>启动时自动检查更新（默认开启）</summary>
         public bool AutoCheckUpdate { get; set; } = true;
-        /// <summary>自定义更新源（留空使用内置 GitHub API + 国内镜像源列表）</summary>
+        /// <summary>自定义更新源（留空使用内置 GitHub API + jsDelivr 兜底）</summary>
         public string UpdateSource { get; set; } = "";
+        /// <summary>本地 SSO 网关端口（24300 被占用时自动切换并记录在此）</summary>
+        public int SsoGatewayPort { get; set; } = 24300;
     }
 
     public class SeewoAccount
@@ -42,9 +44,25 @@ namespace SeewoAutoLogin
         public int RequestCount { get; set; } = 0;
         /// <summary>最近一次 SSO 请求时间</summary>
         public DateTime? LastRequestAtUtc { get; set; }
+        /// <summary>健康巡检结果：ok / bad / unknown（空表示尚未巡检）</summary>
+        public string HealthState { get; set; } = "";
+        /// <summary>健康巡检说明（失败原因等）</summary>
+        public string HealthMessage { get; set; } = "";
+        /// <summary>最近一次健康巡检时间</summary>
+        public DateTime? LastHealthCheckAtUtc { get; set; }
+
+        /// <summary>凭据解密失败时的诊断出口（由 App 注入，便于在日志中显式记录而不是静默失败）</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        internal static Action<string> DiagnosticSink { get; set; }
+
+        /// <summary>最近一次解密是否失败（失败时界面应提示“凭据已失效，请重新录入”）</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool PasswordDecryptFailed { get; private set; }
 
         /// <summary>
-        /// 获取解密后的密码（如果已加密则自动解密，否则返回原值）
+        /// 获取解密后的密码（如果已加密则自动解密，否则返回原值）。
+        /// 解密失败时返回空串并置位 PasswordDecryptFailed —— 调用方必须据此提示“凭据已失效”，
+        /// 不能把它当成“密码错误”，否则用户会误以为密码记错了。
         /// </summary>
         [System.Text.Json.Serialization.JsonIgnore]
         public string DecryptedPassword
@@ -54,8 +72,18 @@ namespace SeewoAutoLogin
                 if (string.IsNullOrEmpty(Password)) return "";
                 if (Services.SecureStore.IsEncrypted(Password))
                 {
-                    try { return Services.SecureStore.Decrypt(Password); }
-                    catch { return ""; } // 解密失败宁可登录失败，也不把密文当密码
+                    try
+                    {
+                        var plain = Services.SecureStore.Decrypt(Password);
+                        PasswordDecryptFailed = false;
+                        return plain;
+                    }
+                    catch (Exception ex)
+                    {
+                        PasswordDecryptFailed = true;
+                        try { DiagnosticSink?.Invoke($"[Credential] 账号凭据解密失败（不是密码错误）; account-id={Id}; error={ex.GetType().Name} - {ex.Message}"); } catch { }
+                        return "";
+                    }
                 }
                 return Password;
             }

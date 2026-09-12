@@ -68,10 +68,31 @@ namespace SeewoAutoLogin.Services
             RebuildMenu();
         }
 
+        /// <summary>
+        /// 托盘菜单是 WinForms 控件：SSO 网关在线程池线程上触发账号刷新时，
+        /// 必须先切回创建菜单的 UI 线程，否则会出现随机异常或菜单句柄损坏。
+        /// 返回 false 表示已排队到 UI 线程（调用方应直接返回）。
+        /// </summary>
+        private bool EnsureUiThread()
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess()) return true;
+            try { dispatcher.BeginInvoke(new Action(RebuildMenu)); } catch { }
+            return false;
+        }
+
         private void RebuildMenu()
         {
             if (_notifyIcon == null || _menu == null) return;
-            while (_menu.Items.Count > 1) _menu.Items.RemoveAt(1);
+            if (!EnsureUiThread()) return;
+
+            // RemoveAt 只从集合移除、不释放控件：每次 SSO 请求都会重建菜单，不 Dispose 会持续泄漏 GDI/事件委托
+            while (_menu.Items.Count > 1)
+            {
+                var removed = _menu.Items[1];
+                _menu.Items.RemoveAt(1);
+                try { removed?.Dispose(); } catch { }
+            }
 
             var accounts = _getAccounts() ?? new List<AccountMenuItem>();
             if (accounts.Count == 0) return;

@@ -91,14 +91,15 @@ namespace SeewoAutoLogin
         private void RefreshList()
         {
             var all = _app.Config.Accounts.ToList();
-            var unlisted = all.Skip(6).ToList();
+            var unlisted = all.Skip(PluginConfig.MaxVisibleAccounts).ToList();
             AccountList.ItemsSource = unlisted.Select(a => new OverlayAccount
             {
                 Id = a.Id,
                 DisplayName = a.DisplayName ?? a.Username ?? "未命名",
                 MaskedContact = MaskPhone(a.Username ?? "")
             }).ToList();
-            if (unlisted.Count == 0 && !_closing) Close();
+            // 注意：不要在这里 Close()。构造函数中关闭窗口会导致随后的 Show() 抛 InvalidOperationException
+            // （账号数 ≤ 生效区上限时“显示遮罩”会永远失效）。是否需要显示由 App.ToggleOverlay 判断。
         }
 
         private static string MaskPhone(string raw)

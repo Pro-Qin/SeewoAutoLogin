@@ -87,19 +87,19 @@ namespace SeewoAutoLogin
         {
             try
             {
-                var hostsPath = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.System),
-                    "drivers", "etc", "hosts");
-                if (System.IO.File.Exists(hostsPath))
+                // 统一交给 HostsFileService 判定：只认「未被注释 + IP 精确等于 127.0.0.1 + 别名精确匹配」的有效映射。
+                // 不要用 content.Contains 判断，否则被注释掉的示例行或指向错误 IP 的行会被误判为已配置。
+                if (!System.IO.File.Exists(SeewoAutoLogin.Services.HostsFileService.HostsPath))
                 {
-                    var content = System.IO.File.ReadAllText(hostsPath);
-                    if (content.Contains("local.id.seewo.com"))
-                        AddResult("✅", "Hosts 映射", "local.id.seewo.com → 127.0.0.1 已配置", "pass");
-                    else
-                        AddResult("❌", "Hosts 映射", "local.id.seewo.com 未配置（需管理员权限）", "fail");
-                }
-                else
                     AddResult("⚠️", "Hosts 文件", "hosts 文件不存在", "fail");
+                    return;
+                }
+
+                var state = SeewoAutoLogin.Services.HostsFileService.DescribeState();
+                if (SeewoAutoLogin.Services.HostsFileService.HasLoopbackMapping())
+                    AddResult("✅", "Hosts 映射", $"local.id.seewo.com → 127.0.0.1 {state}", "pass");
+                else
+                    AddResult("❌", "Hosts 映射", $"local.id.seewo.com → 127.0.0.1 未生效：{state}", "fail");
             }
             catch (Exception ex)
             {

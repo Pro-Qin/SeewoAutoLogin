@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -27,8 +29,9 @@ namespace SeewoAutoLogin.Services
     }
 
     /// <summary>
-    /// 版本更新检查。默认更新源为 GitHub API + 多个国内镜像，逐个尝试，第一个可用即返回；
-    /// 全部 API 源失败时用 jsDelivr 数据接口兜底（只拿版本号，下载指向发布页）。
+    /// 版本更新检查。默认更新源只有 GitHub 官方 API，失败时用 jsDelivr 数据接口兜底（只拿版本号，下载指向发布页）。
+    /// 出于安全考虑不再使用第三方 GitHub 代理：它们可以改写返回的 JSON，从而把下载地址指向任意域名。
+    /// 所有下载直链都必须通过 <see cref="IsTrustedDownloadUrl"/> 校验，否则清空并引导用户去发布页手动下载。
     /// </summary>
     internal static class UpdateChecker
     {
@@ -37,16 +40,58 @@ namespace SeewoAutoLogin.Services
 
         public static string ReleasesPageUrl => $"https://github.com/{RepoOwner}/{RepoName}/releases";
 
-        /// <summary>默认更新源（备用源按顺序自动降级，可用自定义源覆盖）</summary>
+        /// <summary>单个响应体读取上限（1MB），防止异常源返回超大内容</summary>
+        private const int MaxResponseBytes = 1024 * 1024;
+
+        /// <summary>默认更新源（按顺序自动降级，可用自定义源覆盖）；只保留 GitHub 官方接口，第三方代理镜像已全部移除</summary>
         private static readonly string[] DefaultSources =
         {
-            "https://api.github.com/repos/{0}/{1}/releases/latest",
-            "https://api.kkgithub.com/repos/{0}/{1}/releases/latest",
-            "https://gh-proxy.com/https://api.github.com/repos/{0}/{1}/releases/latest",
-            "https://ghproxy.net/https://api.github.com/repos/{0}/{1}/releases/latest",
-            "https://ghfast.top/https://api.github.com/repos/{0}/{1}/releases/latest",
-            "https://mirror.ghproxy.com/https://api.github.com/repos/{0}/{1}/releases/latest"
+            "https://api.github.com/repos/{0}/{1}/releases/latest"
         };
+
+        /// <summary>可信下载主机白名单（忽略大小写）</summary>
+        private static readonly string[] TrustedDownloadHosts =
+        {
+            "github.com",
+            "www.github.com",
+            "objects.githubusercontent.com",
+            "raw.githubusercontent.com",
+            "codeload.github.com",
+            "release-assets.githubusercontent.com",
+            "github-releases.githubusercontent.com",
+            "cdn.jsdelivr.net"
+        };
+
+        /// <summary>可信下载域名的子域后缀（必须以 "." 开头，避免 evilgithub.com / evilgithubusercontent.com 这类绕过）</summary>
+        private static readonly string[] TrustedDownloadSuffixes =
+        {
+            ".github.com",
+            ".githubusercontent.com"
+        };
+
+        /// <summary>
+        /// 判断下载地址是否可信：必须是合法的 https 绝对地址，且主机命中白名单（含受信任域名的子域）。
+        /// </summary>
+        public static bool IsTrustedDownloadUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+            if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return false;
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
+
+            var host = uri.Host;
+            foreach (var trusted in TrustedDownloadHosts)
+            {
+                if (string.Equals(host, trusted, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+
+            foreach (var suffix in TrustedDownloadSuffixes)
+            {
+                // 必须以 ".域名" 结尾：evilgithub.com 不匹配 ".github.com"，因此无法冒充
+                if (host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+
+            return false;
+        }
 
         public static async Task<UpdateInfo> CheckLatestAsync(string overrideSource, Action<string> log,
             CancellationToken cancellationToken)
@@ -55,18 +100,27 @@ namespace SeewoAutoLogin.Services
 
             foreach (var template in BuildSources(overrideSource))
             {
-                var url = string.Format(template, RepoOwner, RepoName);
                 try
                 {
+                    // 自定义源先校验（https + {0}/{1} 占位符），格式错误只记为一次失败，不影响后续源降级
+                    if (!TryBuildSourceUrl(template, out var url, out var reason))
+                    {
+                        var label = HostOf((template ?? "").Trim());
+                        failures.Add($"{label}: {reason}");
+                        log?.Invoke($"[Update] 跳过无效更新源 {label}：{reason}");
+                        continue;
+                    }
+
                     using var client = CreateClient();
-                    using var response = await client.GetAsync(url, cancellationToken);
+                    using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                     if (!response.IsSuccessStatusCode)
                     {
                         failures.Add($"{HostOf(url)}: HTTP {(int)response.StatusCode}");
                         continue;
                     }
 
-                    var info = ParseRelease(await response.Content.ReadAsStringAsync(cancellationToken), url);
+                    var body = await ReadBodyLimitedAsync(response, log, cancellationToken);
+                    var info = ParseRelease(body, url, log);
                     if (info == null || string.IsNullOrWhiteSpace(info.Version))
                     {
                         failures.Add($"{HostOf(url)}: 响应解析失败");
@@ -82,14 +136,14 @@ namespace SeewoAutoLogin.Services
                 }
                 catch (Exception ex)
                 {
-                    failures.Add($"{HostOf(url)}: {ex.Message}");
+                    failures.Add($"{HostOf((template ?? "").Trim())}: {ex.Message}");
                 }
             }
 
             // 兜底：jsDelivr 数据接口（国内可直连，只能拿到版本号）
             try
             {
-                var info = await CheckViaJsDelivrAsync(cancellationToken);
+                var info = await CheckViaJsDelivrAsync(log, cancellationToken);
                 if (info != null)
                 {
                     log?.Invoke($"[Update] 兜底源 jsDelivr 命中，最新版本 {info.Tag}");
@@ -110,7 +164,8 @@ namespace SeewoAutoLogin.Services
             if (!string.IsNullOrWhiteSpace(overrideSource))
             {
                 var custom = overrideSource.Trim();
-                yield return custom.Contains("{0}")
+                // 只填了基地址（如 https://api.github.com）时按 GitHub API 规范补全路径
+                yield return custom.IndexOf("{0}", StringComparison.Ordinal) >= 0
                     ? custom
                     : custom.TrimEnd('/') + "/repos/{0}/{1}/releases/latest";
             }
@@ -118,18 +173,66 @@ namespace SeewoAutoLogin.Services
             foreach (var source in DefaultSources) yield return source;
         }
 
-        private static UpdateInfo ParseRelease(string json, string url)
+        /// <summary>
+        /// 校验并生成实际的更新源地址：必须含 {0}/{1} 占位符、格式化结果必须是合法的 https 绝对地址。
+        /// </summary>
+        private static bool TryBuildSourceUrl(string template, out string url, out string reason)
+        {
+            url = "";
+            reason = "";
+
+            if (string.IsNullOrWhiteSpace(template))
+            {
+                reason = "更新源为空";
+                return false;
+            }
+
+            var text = template.Trim();
+            if (text.IndexOf("{0}", StringComparison.Ordinal) < 0 ||
+                text.IndexOf("{1}", StringComparison.Ordinal) < 0)
+            {
+                reason = "更新源必须同时包含 {0} 与 {1} 占位符";
+                return false;
+            }
+
+            // string.Format 放在 try 内（由调用方捕获），格式串异常不会中断整条降级链
+            var formatted = string.Format(text, RepoOwner, RepoName);
+            if (!Uri.TryCreate(formatted, UriKind.Absolute, out var uri))
+            {
+                reason = "更新源不是合法的绝对地址";
+                return false;
+            }
+
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                reason = $"更新源必须使用 https（当前 {uri.Scheme}）";
+                return false;
+            }
+
+            url = formatted;
+            return true;
+        }
+
+        private static UpdateInfo ParseRelease(string json, string url, Action<string> log)
         {
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
 
             var tag = root.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
+            var pageUrl = root.TryGetProperty("html_url", out var htmlElement) ? htmlElement.GetString() : null;
+            if (string.IsNullOrWhiteSpace(pageUrl) || !IsTrustedDownloadUrl(pageUrl))
+            {
+                if (!string.IsNullOrWhiteSpace(pageUrl))
+                    log?.Invoke($"[Update] 忽略不可信的发布页地址，改用官方发布页：{pageUrl}");
+                pageUrl = ReleasesPageUrl;
+            }
+
             var info = new UpdateInfo
             {
                 Tag = tag ?? "",
                 Version = NormalizeVersion(tag),
                 Notes = root.TryGetProperty("body", out var bodyElement) ? Truncate(bodyElement.GetString(), 1000) : "",
-                PageUrl = root.TryGetProperty("html_url", out var htmlElement) ? htmlElement.GetString() : ReleasesPageUrl,
+                PageUrl = pageUrl,
                 Source = HostOf(url)
             };
 
@@ -143,6 +246,13 @@ namespace SeewoAutoLogin.Services
                         ? downloadElement.GetString()
                         : null;
                     if (string.IsNullOrWhiteSpace(download)) continue;
+
+                    // browser_download_url 不可原样信任：只接受 https + 白名单主机，否则丢弃该资源
+                    if (!IsTrustedDownloadUrl(download))
+                    {
+                        log?.Invoke($"[Update] 忽略不可信下载地址（{HostOf(download.Trim())}）：{download.Trim()}");
+                        continue;
+                    }
 
                     if (name.StartsWith("SeewoAutoLogin_Setup", StringComparison.OrdinalIgnoreCase))
                     {
@@ -162,21 +272,35 @@ namespace SeewoAutoLogin.Services
                 if (!string.IsNullOrEmpty(preferred.Value)) info.SetupUrl = preferred.Value;
             }
 
-            // API 未返回资源（或被镜像裁剪）时按发布规则推导安装包直链
+            // API 未返回资源（或被裁剪）时按发布规则推导安装包直链
             if (string.IsNullOrEmpty(info.SetupUrl) && !string.IsNullOrWhiteSpace(info.Version))
                 info.SetupUrl = BuildSetupUrl(info.Tag, info.Version);
+
+            // 直链最终校验：不通过就置空，并让用户自己去发布页下载（消费端会用 Process.Start 打开该地址）
+            if (!string.IsNullOrEmpty(info.SetupUrl) && !IsTrustedDownloadUrl(info.SetupUrl))
+            {
+                log?.Invoke($"[Update] 下载地址未通过可信校验，已置空并改用发布页手动下载：{info.SetupUrl}");
+                info.SetupUrl = "";
+                info.PageUrl = ReleasesPageUrl;
+            }
+
+            if (!string.IsNullOrEmpty(info.ExeUrl) && !IsTrustedDownloadUrl(info.ExeUrl))
+            {
+                log?.Invoke($"[Update] 单文件版下载地址未通过可信校验，已忽略：{info.ExeUrl}");
+                info.ExeUrl = "";
+            }
 
             return info;
         }
 
-        private static async Task<UpdateInfo> CheckViaJsDelivrAsync(CancellationToken cancellationToken)
+        private static async Task<UpdateInfo> CheckViaJsDelivrAsync(Action<string> log, CancellationToken cancellationToken)
         {
             using var client = CreateClient();
             var url = $"https://data.jsdelivr.com/v1/packages/gh/{RepoOwner}/{RepoName}";
-            using var response = await client.GetAsync(url, cancellationToken);
+            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            using var document = JsonDocument.Parse(await ReadBodyLimitedAsync(response, log, cancellationToken));
             if (!document.RootElement.TryGetProperty("versions", out var versions) ||
                 versions.ValueKind != JsonValueKind.Array)
                 return null;
@@ -200,6 +324,37 @@ namespace SeewoAutoLogin.Services
                 SetupUrl = BuildSetupUrl(tag, latest),
                 Source = "jsDelivr"
             };
+        }
+
+        /// <summary>限长读取响应体：先看 Content-Length，再按流累计校验，超过 1MB 直接失败</summary>
+        private static async Task<string> ReadBodyLimitedAsync(HttpResponseMessage response, Action<string> log,
+            CancellationToken cancellationToken)
+        {
+            var declared = response.Content.Headers.ContentLength;
+            if (declared.HasValue && declared.Value > MaxResponseBytes)
+            {
+                log?.Invoke($"[Update] 响应体过大（{declared.Value} 字节 > {MaxResponseBytes} 字节），已放弃该更新源");
+                throw new InvalidOperationException($"响应体过大（{declared.Value} 字节，上限 {MaxResponseBytes} 字节）");
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[8192];
+            while (true)
+            {
+                var read = await stream.ReadAsync(chunk, 0, chunk.Length, cancellationToken);
+                if (read <= 0) break;
+
+                if (buffer.Length + read > MaxResponseBytes)
+                {
+                    log?.Invoke($"[Update] 响应体超过 {MaxResponseBytes} 字节上限，已中止读取");
+                    throw new InvalidOperationException($"响应体超过 {MaxResponseBytes} 字节上限");
+                }
+
+                buffer.Write(chunk, 0, read);
+            }
+
+            return Encoding.UTF8.GetString(buffer.ToArray());
         }
 
         private static string BuildSetupUrl(string tag, string version)
