@@ -75,10 +75,34 @@ jobs:
         shell: pwsh
         run: Get-ChildItem publish | Select-Object Name, Length
 
+      # 对「将要上传的 exe」生成校验清单（每行 "<sha256>  <文件名>"），
+      # 客户端下载后可用它做强校验（UpdateChecker 读取同 Release 的 SHA256SUMS.txt）
+      - name: Generate SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          $targets = @()
+          $targets += Get-ChildItem -Path publish -Filter 'SeewoAutoLogin_Setup_*.exe' -File
+          $single = "bin\Release\net8.0-windows10.0.19041.0\publish\SeewoAutoLogin.exe"
+          if (Test-Path $single) { $targets += Get-Item $single }
+          if ($targets.Count -eq 0) { throw "没有找到需要计算 SHA256 的发布文件" }
+
+          $lines = foreach ($file in $targets) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash.ToLowerInvariant()
+            Write-Host "$($file.Name)  $hash"
+            "$hash  $($file.Name)"
+          }
+
+          # 固定无 BOM 的 UTF-8，避免解析端把 BOM 当成哈希首字符
+          $out = Join-Path (Get-Location) "publish\SHA256SUMS.txt"
+          [System.IO.File]::WriteAllLines($out, $lines, (New-Object System.Text.UTF8Encoding($false)))
+          Write-Host "已生成 $out"
+          Get-Content $out
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             publish/SeewoAutoLogin_Setup_*.exe
+            publish/SHA256SUMS.txt
             bin/Release/net8.0-windows10.0.19041.0/publish/SeewoAutoLogin.exe
           generate_release_notes: true

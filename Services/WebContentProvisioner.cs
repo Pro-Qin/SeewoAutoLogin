@@ -16,7 +16,7 @@ namespace SeewoAutoLogin.Services
     /// </summary>
     internal static class WebContentProvisioner
     {
-        private static readonly string[] Files = { "index.html", "styles.css", "app.js" };
+        private const string ResourcePrefix = "SeewoAutoLogin.frontend.";
 
         /// <summary>
         /// 虚拟主机名带版本号：升级后 URL 变化，避免 WebView2 命中旧版本的 HTML/CSS/JS 缓存。
@@ -49,26 +49,31 @@ namespace SeewoAutoLogin.Services
             var assembly = Assembly.GetExecutingAssembly();
             Directory.CreateDirectory(Root);
 
-            foreach (var file in Files)
+            foreach (var fullName in assembly.GetManifestResourceNames())
             {
-                var resourceName = "SeewoAutoLogin.frontend." + file;
-                var fullName = assembly.GetManifestResourceNames()
-                    .FirstOrDefault(n => n == resourceName || n.EndsWith(resourceName, StringComparison.Ordinal));
-                if (fullName == null) throw new InvalidOperationException($"Embedded resource not found: {resourceName}");
+                if (!fullName.StartsWith(ResourcePrefix, StringComparison.Ordinal)) continue;
+                var relative = ToRelativePath(fullName.Substring(ResourcePrefix.Length));
+                if (string.IsNullOrEmpty(relative)) continue;
 
-                string content;
+                byte[] bytes;
                 using (var stream = assembly.GetManifestResourceStream(fullName))
-                using (var reader = new StreamReader(stream, Encoding.UTF8))
                 {
-                    content = reader.ReadToEnd();
+                    if (stream == null) throw new InvalidOperationException($"Embedded resource not found: {fullName}");
+                    using var buffer = new MemoryStream();
+                    stream.CopyTo(buffer);
+                    bytes = buffer.ToArray();
                 }
 
-                var destination = Path.Combine(Root, file);
+                var destination = Path.Combine(Root, relative);
+                var dir = Path.GetDirectoryName(destination);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
                 if (File.Exists(destination))
                 {
                     try
                     {
-                        if (File.ReadAllText(destination) == content) continue;
+                        var existing = File.ReadAllBytes(destination);
+                        if (existing.Length == bytes.Length && existing.AsSpan().SequenceEqual(bytes)) continue;
                     }
                     catch
                     {
@@ -76,10 +81,30 @@ namespace SeewoAutoLogin.Services
                     }
                 }
 
-                File.WriteAllText(destination, content, new UTF8Encoding(false));
+                // 用字节写入：教程截图是二进制资源，不能按文本处理
+                File.WriteAllBytes(destination, bytes);
             }
 
             return Root;
+        }
+
+        /// <summary>
+        /// 把嵌入资源名还原成相对路径："assets.tutorial-tray.png" → "assets\tutorial-tray.png"。
+        /// 目录分隔符在资源名里是 '.'，最后一段是扩展名。
+        /// 注意：文件名本身请勿包含点（如 app.min.js），否则会被误判为目录。
+        /// </summary>
+        private static string ToRelativePath(string resourceRelative)
+        {
+            var parts = resourceRelative.Split('.');
+            if (parts.Length < 2) return null;
+
+            var extension = "." + parts[parts.Length - 1];
+            var withoutExtension = parts.Take(parts.Length - 1).ToArray();
+            if (withoutExtension.Length == 0) return null;
+
+            var fileName = withoutExtension[withoutExtension.Length - 1] + extension;
+            var directories = withoutExtension.Take(withoutExtension.Length - 1).ToArray();
+            return directories.Length == 0 ? fileName : Path.Combine(Path.Combine(directories), fileName);
         }
     }
 }

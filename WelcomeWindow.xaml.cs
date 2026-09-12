@@ -146,11 +146,36 @@ namespace SeewoAutoLogin
             }
         }
 
+        /// <summary>询问是否观看使用教程；选择结果由主界面加载后自动播放</summary>
+        private void AskAboutTour()
+        {
+            try
+            {
+                var wantTour = MessageBox.Show(
+                    "要不要花 30 秒看一遍使用教程？\n\n" +
+                    "  · 是   → 进入主界面后自动演示：账号在哪里加、加完希沃会变成什么样\n" +
+                    "  · 否   → 直接进入主界面（之后可在「设置 → 帮助与维护」里重看）",
+                    "使用教程", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+
+                if (_app?.Config != null)
+                {
+                    _app.Config.PendingTour = wantTour;
+                    _app.Config.TourCompleted = !wantTour;
+                }
+                _app?.WriteDiagnosticLog($"[Welcome] 教程选择: {(wantTour ? "查看" : "跳过")}");
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Welcome] 询问教程失败: {ex.Message}");
+            }
+        }
+
         private void StartButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 ApplyAutoStartChoice();
+                AskAboutTour();
                 AgreementAccepted = true;
                 DialogResult = true;
                 // Setting DialogResult automatically closes the window

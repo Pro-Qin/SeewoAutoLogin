@@ -400,6 +400,14 @@ namespace SeewoAutoLogin
             UpdateGatewayStatus();
             StartSeewoMonitor();
 
+            // 首次使用引导：欢迎界面选择了「查看教程」时自动播放（等界面渲染稳定再开始）
+            if (_app.Config.PendingTour)
+            {
+                await Task.Delay(700);
+                await SendToJs(new { type = "start-tour" });
+                _app.WriteDiagnosticLog("[Tour] 已自动播放使用教程");
+            }
+
             // 启动时自动检查更新（仅一次，失败静默）
             if (_app.Config.AutoCheckUpdate) await HandleCheckUpdateAsync(manual: false);
         }
@@ -416,6 +424,8 @@ namespace SeewoAutoLogin
         #region 更新检查
 
         private bool _updateChecked;
+        /// <summary>最近一次检查到的更新信息（下载时复用其直链与校验值）</summary>
+        private UpdateInfo _latestUpdate;
 
         private async Task HandleCheckUpdateAsync(bool manual)
         {
@@ -433,6 +443,7 @@ namespace SeewoAutoLogin
                 if (hasUpdate)
                 {
                     _app.WriteDiagnosticLog($"[Update] 发现新版本 {info.Tag}（当前 {current}）；更新源={info.Source}");
+                    _latestUpdate = info;
                     var notes = string.IsNullOrWhiteSpace(info.Notes) ? "" : "\n\n" + info.Notes.Trim();
                     await SendToJs(new
                     {
@@ -489,6 +500,80 @@ namespace SeewoAutoLogin
             catch (Exception ex)
             {
                 _app.WriteDiagnosticLog($"[Update] 打开发布页失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 下载新版本：先按网络情况挑最快的加速源，下载完成后校验 SHA256 再启动安装程序。
+        /// 直链不可用或下载失败时，回退到打开发布页让用户手动下载。
+        /// </summary>
+        private async void HandleDownloadUpdate()
+        {
+            var info = _latestUpdate;
+            if (info == null || string.IsNullOrWhiteSpace(info.SetupUrl))
+            {
+                _app.WriteDiagnosticLog("[Update] 没有可用的下载直链，改为打开发布页");
+                OpenExternal(UpdateChecker.ReleasesPageUrl);
+                return;
+            }
+
+            try
+            {
+                await SendToJs(new { type = "update-progress", state = "preparing", text = "正在挑选最快的下载源…" });
+
+                var progress = new Progress<(long received, long total)>(p =>
+                {
+                    _ = SendToJs(new
+                    {
+                        type = "update-progress",
+                        state = "downloading",
+                        received = p.received,
+                        total = p.total
+                    });
+                });
+
+                var localPath = await DownloadAccelerator.DownloadAsync(
+                    info.SetupUrl,
+                    info.Sha256,
+                    progress,
+                    message => _app.WriteDiagnosticLog($"[Update] {message}"),
+                    CancellationToken.None);
+
+                _app.WriteDiagnosticLog($"[Update] 安装包已下载并校验通过: {localPath}");
+                await SendToJs(new { type = "update-progress", state = "done", text = "下载完成，正在启动安装程序…" });
+                _app.TrayIcon?.SetStatusText("更新包下载完成");
+                OpenExternal(localPath);
+            }
+            catch (Exception ex)
+            {
+                _app.WriteDiagnosticLog($"[Update] 下载失败: {ex.Message}");
+                await SendToJs(new
+                {
+                    type = "update-progress",
+                    state = "error",
+                    text = "下载失败：" + ex.Message + "（已为你打开发布页，可手动下载）"
+                });
+                OpenExternal(UpdateChecker.ReleasesPageUrl);
+            }
+        }
+
+        /// <summary>打开本地文件或受信任的网页；不可信地址一律回落到官方发布页</summary>
+        private void OpenExternal(string target)
+        {
+            try
+            {
+                if (File.Exists(target))
+                {
+                    Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true });
+                    return;
+                }
+
+                var url = UpdateChecker.IsTrustedDownloadUrl(target) ? target : UpdateChecker.ReleasesPageUrl;
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _app.WriteDiagnosticLog($"[Update] 打开失败: {ex.Message}");
             }
         }
 
@@ -581,6 +666,10 @@ namespace SeewoAutoLogin
                     case "batch-import": await HandleBatchImportAsync(root); break;
                     case "list-backups": await SendBackups(); break;
                     case "restore-backup": await HandleRestoreBackupAsync(root); break;
+                    case "tour-started": _app.WriteDiagnosticLog("[Tour] 用户开始观看使用教程"); break;
+                    case "tour-done": HandleTourDone(root); break;
+                    case "factory-reset": HandleFactoryReset(); break;
+                    case "download-update": HandleDownloadUpdate(); break;
                 }
             }
             catch (Exception ex) { Debug.WriteLine($"[WebView] msg error: {ex.Message}"); }
@@ -830,6 +919,51 @@ namespace SeewoAutoLogin
             await SendToJs(new { type = "toast", text = $"已从备份恢复：{name}", level = "info" });
             await SendBackups();
             await RefreshAccountList();
+        }
+
+        /// <summary>教程结束：记录状态，避免每次启动都自动播放</summary>
+        private void HandleTourDone(JsonElement root)
+        {
+            var completed = root.TryGetProperty("completed", out var element) && element.ValueKind == JsonValueKind.True;
+            _app.Config.PendingTour = false;
+            if (completed) _app.Config.TourCompleted = true;
+            _app.SaveConfig();
+            _app.WriteDiagnosticLog($"[Tour] 教程结束; completed={completed}");
+            _ = SendToJs(new { type = "toast", text = "教程结束，随时可在「设置 → 帮助与维护」里重看", level = "ok" });
+        }
+
+        /// <summary>恢复出厂设置：前端已确认一次，这里再确认一次并说明后果</summary>
+        private void HandleFactoryReset()
+        {
+            var choice = MessageBox.Show(
+                "恢复出厂设置会：\n" +
+                "  · 删除全部账号（含扫码凭据）\n" +
+                "  · 清空所有设置与配置备份\n" +
+                "  · 回到首次安装的引导流程\n\n" +
+                "此操作不可撤销，确定继续吗？",
+                "恢复出厂设置", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+            if (choice != MessageBoxResult.Yes)
+            {
+                _ = SendToJs(new { type = "factory-reset-cancelled" });
+                return;
+            }
+
+            _app.FactoryReset();
+            _ = SendToJs(new { type = "factory-reset-done" });
+            _app.WriteDiagnosticLog("[Reset] 即将自动重启，回到首次使用流程");
+
+            // 稍等一下让界面把提示画出来，然后直接重启（不必让用户自己再点一次）
+            var restartTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(1200)
+            };
+            restartTimer.Tick += (_, _) =>
+            {
+                restartTimer.Stop();
+                _app.RestartApp();
+            };
+            restartTimer.Start();
         }
 
         private void HandleExportConfig()

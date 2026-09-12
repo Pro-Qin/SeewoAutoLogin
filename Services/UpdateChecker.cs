@@ -26,6 +26,13 @@ namespace SeewoAutoLogin.Services
         public string ExeUrl { get; set; } = "";
         /// <summary>命中的更新源（用于界面展示）</summary>
         public string Source { get; set; } = "";
+        /// <summary>
+        /// 安装包的 SHA256（取自同一 Release 的 SHA256SUMS.txt，小写十六进制）。
+        /// 拿不到时保持空字符串，不影响原有流程；下载时传给 DownloadAccelerator 做强校验。
+        /// </summary>
+        public string Sha256 { get; set; } = "";
+        /// <summary>SHA256SUMS.txt 的资源地址（API 返回时带出来，否则按发布规则推导）</summary>
+        internal string Sha256SumsUrl { get; set; } = "";
     }
 
     /// <summary>
@@ -42,6 +49,12 @@ namespace SeewoAutoLogin.Services
 
         /// <summary>单个响应体读取上限（1MB），防止异常源返回超大内容</summary>
         private const int MaxResponseBytes = 1024 * 1024;
+
+        /// <summary>SHA256SUMS.txt 的读取上限（64KB），它只是一份哈希清单</summary>
+        private const int MaxSumsBytes = 64 * 1024;
+
+        /// <summary>校验清单文件名（由 release.yml 在打包步骤后生成并上传）</summary>
+        private const string Sha256SumsFileName = "SHA256SUMS.txt";
 
         /// <summary>默认更新源（按顺序自动降级，可用自定义源覆盖）；只保留 GitHub 官方接口，第三方代理镜像已全部移除</summary>
         private static readonly string[] DefaultSources =
@@ -127,6 +140,9 @@ namespace SeewoAutoLogin.Services
                         continue;
                     }
 
+                    // 有 SHA256SUMS.txt 就顺带把安装包哈希取回来（失败只写日志，不影响检查更新）
+                    await AttachSha256Async(info, log, cancellationToken);
+
                     log?.Invoke($"[Update] 更新源 {info.Source} 命中，最新版本 {info.Tag}");
                     return info;
                 }
@@ -146,6 +162,8 @@ namespace SeewoAutoLogin.Services
                 var info = await CheckViaJsDelivrAsync(log, cancellationToken);
                 if (info != null)
                 {
+                    await AttachSha256Async(info, log, cancellationToken);
+
                     log?.Invoke($"[Update] 兜底源 jsDelivr 命中，最新版本 {info.Tag}");
                     return info;
                 }
@@ -254,6 +272,13 @@ namespace SeewoAutoLogin.Services
                         continue;
                     }
 
+                    // 校验清单：记下地址，稍后单独限长下载（拿不到就留空，不影响更新流程）
+                    if (string.Equals(name, Sha256SumsFileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        info.Sha256SumsUrl = download;
+                        continue;
+                    }
+
                     if (name.StartsWith("SeewoAutoLogin_Setup", StringComparison.OrdinalIgnoreCase))
                     {
                         setupAssets.Add(new KeyValuePair<string, string>(name, download));
@@ -326,15 +351,160 @@ namespace SeewoAutoLogin.Services
             };
         }
 
-        /// <summary>限长读取响应体：先看 Content-Length，再按流累计校验，超过 1MB 直接失败</summary>
-        private static async Task<string> ReadBodyLimitedAsync(HttpResponseMessage response, Action<string> log,
+        /// <summary>
+        /// 尝试从同一 Release 的 SHA256SUMS.txt 里取出「最终选中的安装包」对应的哈希，填进 <see cref="UpdateInfo.Sha256"/>。
+        /// 这是纯增强步骤：文件不存在、拉取失败、解析不到都只写日志，绝不影响更新检查本身。
+        /// </summary>
+        private static async Task AttachSha256Async(UpdateInfo info, Action<string> log, CancellationToken cancellationToken)
+        {
+            if (info == null) return;
+
+            try
+            {
+                var targetName = PickHashTargetName(info);
+                if (string.IsNullOrWhiteSpace(targetName))
+                {
+                    log?.Invoke("[Update] 未确定安装包文件名，跳过 SHA256SUMS.txt");
+                    return;
+                }
+
+                var url = !string.IsNullOrWhiteSpace(info.Sha256SumsUrl)
+                    ? info.Sha256SumsUrl
+                    : (!string.IsNullOrWhiteSpace(info.Tag)
+                        ? $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{info.Tag}/{Sha256SumsFileName}"
+                        : "");
+
+                if (string.IsNullOrWhiteSpace(url) || !IsTrustedDownloadUrl(url))
+                {
+                    log?.Invoke("[Update] 没有可信的 SHA256SUMS.txt 地址，跳过哈希校验");
+                    return;
+                }
+
+                var text = await FetchSumsTextAsync(url, log, cancellationToken);
+                if (string.IsNullOrWhiteSpace(text)) return;
+
+                var hash = ParseSha256Sums(text, targetName);
+                if (string.IsNullOrWhiteSpace(hash))
+                {
+                    log?.Invoke($"[Update] SHA256SUMS.txt 中没有 {targetName} 的记录，本次不做哈希校验");
+                    return;
+                }
+
+                info.Sha256 = hash;
+                log?.Invoke($"[Update] 已获取 {targetName} 的 SHA256：{hash}");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[Update] 获取 SHA256SUMS.txt 失败（忽略，不影响更新）：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 读取 SHA256SUMS.txt：先直连（快）；直连不通（国内很常见）再交给
+        /// <see cref="DownloadAccelerator"/> 按网络状况动态挑源。
+        /// </summary>
+        private static async Task<string> FetchSumsTextAsync(string url, Action<string> log,
             CancellationToken cancellationToken)
         {
-            var declared = response.Content.Headers.ContentLength;
-            if (declared.HasValue && declared.Value > MaxResponseBytes)
+            try
             {
-                log?.Invoke($"[Update] 响应体过大（{declared.Value} 字节 > {MaxResponseBytes} 字节），已放弃该更新源");
-                throw new InvalidOperationException($"响应体过大（{declared.Value} 字节，上限 {MaxResponseBytes} 字节）");
+                using var client = CreateClient();
+                using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (response.IsSuccessStatusCode)
+                    return await ReadBodyLimitedAsync(response, log, cancellationToken, MaxSumsBytes);
+
+                // 404 是「这个 Release 确实没有清单」，换加速通道也还是 404，直接跳过，别白折腾
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    log?.Invoke("[Update] 该 Release 没有 SHA256SUMS.txt（HTTP 404），跳过哈希校验");
+                    return "";
+                }
+
+                log?.Invoke($"[Update] SHA256SUMS.txt 直连返回 HTTP {(int)response.StatusCode}，改用加速通道");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[Update] SHA256SUMS.txt 直连失败（{ex.Message}），改用加速通道");
+            }
+
+            // 走多源动态选路；清单本身不需要哈希校验，所以 expectedSha256 传 null
+            var local = await DownloadAccelerator.DownloadAsync(url, null, null, log, cancellationToken);
+
+            var file = new FileInfo(local);
+            if (file.Length > MaxSumsBytes)
+            {
+                log?.Invoke($"[Update] SHA256SUMS.txt 过大（{file.Length} 字节 > {MaxSumsBytes} 字节），已忽略");
+                return "";
+            }
+
+            return await File.ReadAllTextAsync(local, Encoding.UTF8, cancellationToken);
+        }
+
+        /// <summary>取「最终会被下载的那个包」的文件名：优先安装包，退而取单文件版</summary>
+        private static string PickHashTargetName(UpdateInfo info)
+        {
+            var name = FileNameOf(info.SetupUrl);
+            if (!string.IsNullOrWhiteSpace(name)) return name;
+            return FileNameOf(info.ExeUrl);
+        }
+
+        private static string FileNameOf(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return "";
+            if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return "";
+
+            var path = Uri.UnescapeDataString(uri.AbsolutePath);
+            var index = path.LastIndexOf('/');
+            return index >= 0 ? path.Substring(index + 1) : path;
+        }
+
+        /// <summary>
+        /// 解析 SHA256SUMS.txt，返回指定文件名对应的哈希（忽略大小写）。找不到返回空串。
+        /// 兼容 "hash  name"、"hash *name"、制表符分隔以及 # 注释行。
+        /// </summary>
+        private static string ParseSha256Sums(string text, string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(fileName)) return "";
+
+            foreach (var rawLine in text.Split('\n'))
+            {
+                var line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal)) continue;
+
+                var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2) continue;
+
+                var hash = parts[0].Trim().ToLowerInvariant();
+                if (hash.Length != 64) continue;
+
+                var name = parts[parts.Length - 1].TrimStart('*').Trim();
+                if (!string.Equals(name, fileName, StringComparison.OrdinalIgnoreCase)) continue;
+
+                return hash;
+            }
+
+            return "";
+        }
+
+        /// <summary>限长读取响应体：先看 Content-Length，再按流累计校验，超过上限直接失败（默认 1MB，SHA256SUMS.txt 用 64KB）</summary>
+        private static async Task<string> ReadBodyLimitedAsync(HttpResponseMessage response, Action<string> log,
+            CancellationToken cancellationToken, int maxBytes = MaxResponseBytes)
+        {
+            if (maxBytes <= 0) maxBytes = MaxResponseBytes;
+
+            var declared = response.Content.Headers.ContentLength;
+            if (declared.HasValue && declared.Value > maxBytes)
+            {
+                log?.Invoke($"[Update] 响应体过大（{declared.Value} 字节 > {maxBytes} 字节），已放弃该更新源");
+                throw new InvalidOperationException($"响应体过大（{declared.Value} 字节，上限 {maxBytes} 字节）");
             }
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -345,10 +515,10 @@ namespace SeewoAutoLogin.Services
                 var read = await stream.ReadAsync(chunk, 0, chunk.Length, cancellationToken);
                 if (read <= 0) break;
 
-                if (buffer.Length + read > MaxResponseBytes)
+                if (buffer.Length + read > maxBytes)
                 {
-                    log?.Invoke($"[Update] 响应体超过 {MaxResponseBytes} 字节上限，已中止读取");
-                    throw new InvalidOperationException($"响应体超过 {MaxResponseBytes} 字节上限");
+                    log?.Invoke($"[Update] 响应体超过 {maxBytes} 字节上限，已中止读取");
+                    throw new InvalidOperationException($"响应体超过 {maxBytes} 字节上限");
                 }
 
                 buffer.Write(chunk, 0, read);

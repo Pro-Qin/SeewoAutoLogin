@@ -28,6 +28,10 @@ namespace SeewoAutoLogin
         public string UpdateSource { get; set; } = "";
         /// <summary>本地 SSO 网关端口（24300 被占用时自动切换并记录在此）</summary>
         public int SsoGatewayPort { get; set; } = 24300;
+        /// <summary>是否已看过使用教程（看过之后不再自动播放，仍可在设置里重看）</summary>
+        public bool TourCompleted { get; set; }
+        /// <summary>下次打开主界面时自动播放教程（在欢迎界面选择「查看教程」后置位）</summary>
+        public bool PendingTour { get; set; }
     }
 
     public class SeewoAccount

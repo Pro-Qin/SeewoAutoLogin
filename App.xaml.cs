@@ -338,37 +338,6 @@ namespace SeewoAutoLogin
             // （托盘常驻场景同样预热，用户点开主界面时无需再等浏览器进程启动）
             Services.WebView2Runtime.Prewarm(WriteDiagnosticLog);
 
-            // 首次启动显示欢迎界面
-            if (_config.IsFirstLaunch)
-            {
-                try
-                {
-                    var welcome = new WelcomeWindow();
-                    // ShowDialog 如果失败属于致命错误，让上层 catch 处理
-                    bool? dialogResult = welcome.ShowDialog();
-
-                    if (dialogResult == true && welcome.AgreementAccepted)
-                    {
-                        _config.IsFirstLaunch = false;
-                        SaveConfig();
-                        WriteDiagnosticLog("[FirstLaunch] 用户已同意协议，首次启动完成");
-                    }
-                    else
-                    {
-                        WriteDiagnosticLog("[FirstLaunch] 用户未同意协议，应用退出");
-                        _isExiting = true;
-                        Shutdown();
-                        return;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    NotifyError("欢迎窗口错误", $"欢迎界面加载失败，跳过首次引导:\n{ex.Message}");
-                    _config.IsFirstLaunch = false;
-                    SaveConfig();
-                }
-            }
-
             // 开机自启自愈：配置要求自启、但系统里没有启动项（被杀软清理、程序换目录、旧版本从未写入）时自动重建
             try
             {
@@ -412,6 +381,37 @@ namespace SeewoAutoLogin
                 NotifyError("SSO 网关错误",
                     $"{ex.Message}\n\n" +
                     $"希沃自动登录功能可能无法正常工作。\n{hint}");
+            }
+
+            // 首次启动显示欢迎界面（放在网关启动之后：即使用户停留在欢迎界面，希沃侧快捷登录也已可用）
+            if (_config.IsFirstLaunch)
+            {
+                try
+                {
+                    var welcome = new WelcomeWindow();
+                    // ShowDialog 如果失败属于致命错误，让上层 catch 处理
+                    bool? dialogResult = welcome.ShowDialog();
+
+                    if (dialogResult == true && welcome.AgreementAccepted)
+                    {
+                        _config.IsFirstLaunch = false;
+                        SaveConfig();
+                        WriteDiagnosticLog("[FirstLaunch] 用户已同意协议，首次启动完成");
+                    }
+                    else
+                    {
+                        WriteDiagnosticLog("[FirstLaunch] 用户未同意协议，应用退出");
+                        _isExiting = true;
+                        Shutdown();
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    NotifyError("欢迎窗口错误", $"欢迎界面加载失败，跳过首次引导:\n{ex.Message}");
+                    _config.IsFirstLaunch = false;
+                    SaveConfig();
+                }
             }
 
             // 显示主窗口（除非设置了启动隐藏或传了 --minimized）
@@ -933,22 +933,36 @@ namespace SeewoAutoLogin
         /// </summary>
         internal void RestartApp()
         {
+            var started = false;
             try
             {
-                var exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
                 if (!string.IsNullOrEmpty(exePath))
                 {
                     var psi = new ProcessStartInfo
                     {
                         FileName = exePath,
                         Arguments = "--elevated",
-                        UseShellExecute = true,
-                        Verb = "runas"
+                        UseShellExecute = true
                     };
+                    // 已经是管理员时不再请求提权，否则每次重启都会再弹一次 UAC
+                    if (!IsAdministrator()) psi.Verb = "runas";
                     Process.Start(psi);
+                    started = true;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Restart] 重启失败（用户取消或系统限制）: {ex.Message}");
+            }
+
+            if (!started)
+            {
+                // 启动不成功时保持当前实例继续运行，避免托盘常驻程序“凭空消失”
+                NotifyError("重启失败", "无法自动重启，请从托盘菜单退出后重新打开程序。");
+                return;
+            }
+
             _isExiting = true;
             Shutdown();
         }
@@ -1185,6 +1199,35 @@ namespace SeewoAutoLogin
             {
                 WriteDiagnosticLog($"[Uninstall] 删除数据目录失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 恢复出厂设置：清空账号、扫码凭据、配置与备份，回到首次安装状态。
+        /// 日志保留（便于排障），下次启动会重新走欢迎界面。
+        /// </summary>
+        internal void FactoryReset()
+        {
+            try { _authService?.Logout(); } catch { }
+
+            foreach (var folder in new[] { "Sessions", "Backups" })
+            {
+                try
+                {
+                    var path = Path.Combine(AppDataDir, folder);
+                    if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+                }
+                catch (Exception ex)
+                {
+                    WriteDiagnosticLog($"[Reset] 清理 {folder} 失败: {ex.Message}");
+                }
+            }
+
+            lock (ConfigIoLock)
+            {
+                _config = new PluginConfig();
+            }
+            SaveConfig();
+            WriteDiagnosticLog("[Reset] 已恢复出厂设置（账号、设置与备份均已清空）");
         }
 
         /// <summary>列出配置备份（供设置页「配置备份」区域展示）</summary>
