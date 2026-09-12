@@ -94,7 +94,8 @@ namespace SeewoAutoLogin
                 GetVisibleAccounts,
                 account => { account.UserInfo = _authService.UserInfo; SaveConfig(); },
                 OnQrTokenValidated, _userListRotation, SaveConfig);
-            _gateway.Port = Math.Clamp(_config.SsoGatewayPort <= 0 ? 24300 : _config.SsoGatewayPort, 1024, 65535);
+            // 希沃固定请求 24300：始终以该端口为首选（配置里记录的值只用于诊断展示，不作为首选端口）
+            _gateway.Port = SeewoSsoGateway.SeewoExpectedPort;
             _gateway.ConfirmStopEasiAgent = (pid, path) => Dispatcher.Invoke(() =>
                 MessageBox.Show(
                     $"本地 SSO 网关端口被希沃 EasiAgent 占用（pid={pid}）。\n\n" +
@@ -767,6 +768,11 @@ namespace SeewoAutoLogin
         {
             gatewayRunning = _gateway?.IsRunning == true,
             gatewayPort = _gateway?.Port ?? 0,
+            expectedPort = SeewoSsoGateway.SeewoExpectedPort,
+            gatewayPortOk = _gateway != null && !_gateway.IsPortMismatched,
+            gatewayPortWarning = _gateway != null && _gateway.IsPortMismatched
+                ? $"网关端口 {_gateway.Port} ≠ 希沃固定请求的 {SeewoSsoGateway.SeewoExpectedPort}，希沃不会显示快捷登录入口"
+                : "",
             hostsOk = Services.HostsFileService.HasLoopbackMapping(),
             hostsState = Services.HostsFileService.DescribeState(),
             isAdmin = IsAdministrator(),
@@ -792,7 +798,9 @@ namespace SeewoAutoLogin
             {
                 if (_gateway.IsRunning) _gateway.Stop();
                 await Task.Run(() => _gateway.Start()).ConfigureAwait(true);
-                messages.Add($"SSO 网关已启动（端口 {_gateway.Port}）");
+                messages.Add(_gateway.IsPortMismatched
+                    ? $"SSO 网关已启动，但端口为 {_gateway.Port}（希沃固定请求 {SeewoSsoGateway.SeewoExpectedPort}），快捷登录仍不会出现"
+                    : $"SSO 网关已启动（端口 {_gateway.Port}）");
             }
             catch (Exception ex)
             {

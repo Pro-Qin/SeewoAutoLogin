@@ -503,11 +503,16 @@ function renderSelfCheck(msg) {
   resetRepairButton();
 
   const port = (st.gatewayPort === undefined || st.gatewayPort === null || st.gatewayPort === '') ? '' : String(st.gatewayPort);
-  const gwLevel = triLevel(st.gatewayRunning);
+  let gwLevel = triLevel(st.gatewayRunning);
   let gwSub = '';
   if (gwLevel !== 'unknown') {
     gwSub = port ? (':' + port) : '';
     if (!st.gatewayRunning) gwSub = (gwSub ? gwSub + ' · ' : '') + '未运行';
+  }
+  // 网关没监听在希沃固定请求的端口上时，希沃拿不到账号列表、入口不会出现：必须显式报红
+  if (st.gatewayPortWarning) {
+    gwLevel = 'error';
+    gwSub = (port ? ':' + port + ' · ' : '') + '端口不符（希沃需 ' + (st.expectedPort || 24300) + '）';
   }
   setCheckItem('gateway', gwLevel, 'SSO 网关', gwSub);
 
@@ -523,7 +528,8 @@ function renderSelfCheck(msg) {
   const bar = document.getElementById('selfcheckBar');
   if (bar) {
     const auto = (st.autoStartEnabled === undefined || st.autoStartEnabled === null) ? '未知' : (st.autoStartEnabled ? '已开启' : '未开启');
-    bar.title = '开机自启：' + auto + (st.autoStartMode ? '（' + st.autoStartMode + '）' : '');
+    bar.title = '开机自启：' + auto + (st.autoStartMode ? '（' + st.autoStartMode + '）' : '')
+      + (st.gatewayPortWarning ? '\n⚠ ' + st.gatewayPortWarning : '');
   }
 }
 let repairTimer = null;

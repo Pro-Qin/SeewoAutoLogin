@@ -69,8 +69,17 @@ namespace SeewoAutoLogin
         /// <summary>端口被占用且占用者疑似希沃 EasiAgent 时，由上层弹窗征求用户同意（返回 true 才结束该进程）</summary>
         public Func<int, string, bool> ConfirmStopEasiAgent { get; set; }
 
-        /// <summary>实际监听端口发生变化（例如 24300 被占用后自动切换）时触发</summary>
+        /// <summary>实际监听端口发生变化时触发（用于记录与界面告警）</summary>
         public event Action<int> PortChanged;
+
+        /// <summary>
+        /// 希沃固定请求的端口。网关必须占用它，否则希沃永远拿不到账号列表、
+        /// 也就不会出现快捷登录入口 —— 换用备用端口对希沃没有任何意义。
+        /// </summary>
+        public const int SeewoExpectedPort = 24300;
+
+        /// <summary>当前是否没有监听在希沃期望的端口上（此时快捷登录不会生效，界面需要显式告警）</summary>
+        public bool IsPortMismatched => Port != SeewoExpectedPort;
 
         public void Start()
         {
@@ -84,75 +93,126 @@ namespace SeewoAutoLogin
                     $"无法将 {Services.HostsFileService.HostName} 映射到 127.0.0.1（hosts 写入失败：{hostsError}）。请以管理员权限运行本程序。");
             }
 
-            var preferredPort = Port > 0 ? Port : 24300;
-            var candidates = new List<int> { preferredPort };
-            for (var i = 1; i <= 9; i++) candidates.Add(preferredPort + i);
+            // 首选端口始终是希沃期望的端口（不使用上一次记录的备用端口，避免“越修越偏”）
+            var preferredPort = SeewoExpectedPort;
 
-            Exception lastError = null;
-            foreach (var candidate in candidates)
+            // 1) 首选端口：希沃 EasiAgent 占用时按用户确认结束它，并重试到端口真正释放
+            if (TryStartAtPort(preferredPort, allowEasiAgentHandoff: true, out var error))
             {
-                try
-                {
-                    TryStartAt(candidate);
-                }
-                catch (Exception ex)
-                {
-                    lastError = ex;
-
-                    // 权限不足（HttpListener 需要管理员权限 / URL ACL）：换端口同样会失败，必须直接给出明确原因，
-                    // 否则会被误报成“端口被占用”，把用户引向错误的排查方向
-                    if (IsAccessDenied(ex))
-                    {
-                        Log($"[ERROR] SSO 网关无法监听端口 {candidate}：拒绝访问（需要管理员权限）");
-                        throw new InvalidOperationException(
-                            "以当前权限无法监听本地 SSO 网关（拒绝访问）。请以管理员身份重新运行本程序。", ex);
-                    }
-
-                    var occupied = IsPortListening(candidate);
-                    if (!occupied) continue; // 非权限原因且端口未被占用：换端口没有意义
-
-                    Log($"SSO 网关端口 {candidate} 已被占用");
-                    if (!TryAskToStopEasiAgent(candidate, out var stopError))
-                    {
-                        if (!string.IsNullOrEmpty(stopError)) Log(stopError);
-                        continue; // 用户不同意或没有可结束的 EasiAgent → 尝试下一个端口
-                    }
-
-                    if (!WaitForPortRelease(TimeSpan.FromSeconds(5)))
-                    {
-                        Log($"结束希沃 EasiAgent 后端口 {candidate} 未及时释放");
-                        continue;
-                    }
-
-                    try
-                    {
-                        TryStartAt(candidate);
-                        Log($"已结束占用端口的希沃 EasiAgent，并重新加载 SSO 网关");
-                    }
-                    catch (Exception retryEx)
-                    {
-                        lastError = retryEx;
-                        continue;
-                    }
-                }
-
-                var switched = candidate != preferredPort;
-                Port = candidate;
-                if (switched)
-                {
-                    Log($"端口 {preferredPort} 被占用，SSO 网关已自动切换到 {candidate}" +
-                        $"（希沃默认仍请求 {preferredPort}，建议尽快释放该端口）");
-                    try { PortChanged?.Invoke(candidate); } catch { }
-                }
-
-                _ = Task.Run(() => ListenLoop(_listener, _cts.Token));
-                Log($"SSO 网关已启动: http://localhost:{Port}");
+                CompleteStartup(preferredPort);
                 return;
+            }
+
+            // 权限不足等非占用类问题：如实抛出，不用备用端口掩盖
+            if (error is InvalidOperationException || !IsPortListening(preferredPort)) throw error;
+
+            // 2) EasiAgent 仍占着端口（用户拒绝结束、或反复被希沃拉起）：必须报错而不是换端口，
+            //    否则程序“看起来正常”，用户却怎么都等不到快捷登录入口。
+            if (TryFindTrustedEasiAgent(out var easiPid, out _))
+            {
+                throw new InvalidOperationException(
+                    $"希沃 EasiAgent（pid={easiPid}）仍占用端口 {preferredPort}，SSO 快捷登录无法生效。" +
+                    $"请允许结束 EasiAgent，或先退出希沃白板后点击「一键修复」。",
+                    error);
+            }
+
+            // 3) 首选端口被其它程序占用：退到备用端口保证网关可用，但希沃仍请求原端口，界面会给出明确告警
+            for (var port = preferredPort + 1; port <= preferredPort + 9; port++)
+            {
+                if (TryStartAtPort(port, allowEasiAgentHandoff: false, out _))
+                {
+                    Log($"[WARN] 首选端口 {preferredPort} 被其它程序占用，SSO 网关已改用 {port}；" +
+                        $"希沃固定请求 {preferredPort}，在其被释放前不会出现快捷登录入口。");
+                    CompleteStartup(port);
+                    return;
+                }
             }
 
             throw new InvalidOperationException(
                 $"SSO 网关启动失败：端口 {preferredPort}~{preferredPort + 9} 均不可用。" +
-                $"最后一次错误：{lastError?.Message ?? "未知"}");
+                $"最后一次错误：{error?.Message ?? "未知"}", error);
+        }
+
+        private void CompleteStartup(int actualPort)
+        {
+            Port = actualPort;
+            if (actualPort != SeewoExpectedPort)
+            {
+                try { PortChanged?.Invoke(actualPort); } catch { }
+            }
+            _ = Task.Run(() => ListenLoop(_listener, _cts.Token));
+            Log($"SSO 网关已启动: http://localhost:{Port}");
+        }
+
+        /// <summary>
+        /// 尝试在指定端口启动监听。allowEasiAgentHandoff 为 true 时，允许在用户确认后结束希沃 EasiAgent，
+        /// 并在端口释放前反复重试（http.sys 回收注册需要时间，希沃也可能重新拉起 EasiAgent）。
+        /// </summary>
+        private bool TryStartAtPort(int port, bool allowEasiAgentHandoff, out Exception error)
+        {
+            error = null;
+            var maxRounds = allowEasiAgentHandoff ? 3 : 1;
+            bool? userApproved = null;
+
+            for (var round = 1; round <= maxRounds; round++)
+            {
+                try
+                {
+                    ResetListener(port);
+                    _listener.Start();
+                    if (round > 1) Log($"已接管端口 {port}（第 {round} 轮重试成功）");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+
+                    // 权限不足（需要管理员 / URL ACL）：换端口或重试都无意义
+                    if (IsAccessDenied(ex))
+                    {
+                        Log($"[ERROR] SSO 网关无法监听端口 {port}：拒绝访问（需要管理员权限）");
+                        throw new InvalidOperationException(
+                            $"以当前权限无法监听本地 SSO 网关（拒绝访问，端口 {port}）。请以管理员身份重新运行本程序。", ex);
+                    }
+
+                    if (!allowEasiAgentHandoff) return false;
+                    if (!IsPortListening(port)) return false; // 不是端口占用
+
+                    Log($"SSO 网关端口 {port} 已被占用（第 {round}/{maxRounds} 轮）");
+
+                    if (userApproved == null)
+                    {
+                        // 只询问一次，后续轮次沿用用户的选择，避免反复弹窗
+                        if (!TryAskToStopEasiAgent(port, out var askError))
+                        {
+                            if (!string.IsNullOrEmpty(askError)) Log(askError);
+                            return false;
+                        }
+                        userApproved = true;
+                    }
+
+                    var deadline = DateTime.UtcNow.AddSeconds(15);
+                    while (DateTime.UtcNow < deadline && IsPortListening(port))
+                    {
+                        // 希沃会重新拉起 EasiAgent：等待期间持续清理，直到端口空出来
+                        if (TryFindTrustedEasiAgent(out var pid, out _))
+                        {
+                            Log($"端口 {port} 仍被占用，结束希沃 EasiAgent; pid={pid}");
+                            TryStopTrustedEasiAgent(out _);
+                        }
+                        Thread.Sleep(500);
+                    }
+
+                    if (!IsPortListening(port))
+                    {
+                        Log($"端口 {port} 已释放，重新尝试绑定");
+                        continue;
+                    }
+
+                    Log($"[WARN] 端口 {port} 等待 15 秒后仍被占用");
+                }
+            }
+            return false;
         }
 
         /// <summary>端口被占用时询问用户是否结束希沃 EasiAgent；未注入回调或用户拒绝时返回 false（不结束任何进程）</summary>
@@ -234,12 +294,6 @@ namespace SeewoAutoLogin
                 finally { process.Dispose(); }
             }
             return false;
-        }
-
-        private void TryStartAt(int port)
-        {
-            ResetListener(port);
-            _listener.Start();
         }
 
         private void ResetListener(int port)
