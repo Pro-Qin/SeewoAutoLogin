@@ -7,7 +7,7 @@
 
 ; 本地构建用的默认版本号；CI（release.yml / build.yml）会在编译前用 csproj 里的 <Version> 覆盖这一行，
 ; 避免出现“发布 vX.Y.Z，安装包却叫 vA.B.C”的问题。
-#define AppVersion "1.8.3"
+#define AppVersion "1.8.4"
 
 #ifndef BundleWebView2
   #define BundleWebView2 0
@@ -43,6 +43,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："
 Name: "autostart"; Description: "开机自动启动"; GroupDescription: "启动选项："
+
+[Registry]
+; 「开机自动启动」任务：勾选后写入当前用户启动项（与程序内设置、欢迎界面选项共用同一个值），卸载时自动删除
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SeewoAutoLogin"; ValueData: """{app}\SeewoAutoLogin.exe"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Files]
 Source: "bin\Release\net8.0-windows10.0.19041.0\publish\SeewoAutoLogin.exe"; DestDir: "{app}"; Flags: ignoreversion

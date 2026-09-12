@@ -695,7 +695,11 @@ namespace SeewoAutoLogin
                 case "startMinimized": _app.Config.StartMinimized = val.GetBoolean(); break;
                 case "autoShowOverlay": _app.Config.AutoShowOverlay = val.GetBoolean(); break;
                 case "autoCheckUpdate": _app.Config.AutoCheckUpdate = val.GetBoolean(); break;
-                case "autoStart": if (val.GetBoolean()) AutoStartService.Enable(); else AutoStartService.Disable(); break;
+                case "autoStart":
+                    // 与欢迎界面的「开机自启」选项共用同一份状态，便于首次启动时正确回显
+                    _app.Config.AutoStartEnabled = val.GetBoolean();
+                    if (val.GetBoolean()) AutoStartService.Enable(); else AutoStartService.Disable();
+                    break;
             }
             _app.SaveConfig();
         }

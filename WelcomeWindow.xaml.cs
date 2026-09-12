@@ -11,18 +11,82 @@ namespace SeewoAutoLogin
 
         public bool AgreementAccepted { get; private set; }
 
+        /// <summary>欢迎界面里用户选择的开机自启状态</summary>
+        public bool AutoStartEnabled => AutoStartCheckBox?.IsChecked == true;
+
         public WelcomeWindow()
         {
             try
             {
                 _app = (App)Application.Current;
                 InitializeComponent();
+                InitializeAutoStartOption();
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"欢迎窗口初始化失败：{ex.Message}", "希沃自动登录",
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// 初始化开机自启选项：注册表里已经有这项设置就按实际状态显示，
+        /// 否则按配置显示（首次安装默认勾选——托盘常驻才能让希沃快捷登录窗口随时可用）。
+        /// </summary>
+        private void InitializeAutoStartOption()
+        {
+            try
+            {
+                var configWants = _app?.Config?.AutoStartEnabled ?? true;
+                AutoStartCheckBox.IsChecked = Services.AutoStartService.IsEnabled || configWants;
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Welcome] 初始化开机自启选项失败: {ex.Message}");
+            }
+
+            UpdateAutoStartHint();
+        }
+
+        private void AutoStart_Changed(object sender, RoutedEventArgs e)
+        {
+            UpdateAutoStartHint();
+        }
+
+        private void UpdateAutoStartHint()
+        {
+            try
+            {
+                // XAML 解析期间 Checked 事件可能早于提示控件创建，这里做保护
+                if (AutoStartStateText == null) return;
+
+                AutoStartStateText.Text = AutoStartCheckBox.IsChecked == true
+                    ? "当前：将开启开机自启（点击「开始使用」后生效，之后可在「设置 → 常规」中修改）"
+                    : "当前：不开机自启（仍可手动打开本程序，之后可在「设置 → 常规」中修改）";
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Welcome] 刷新开机自启提示失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>把欢迎界面的选择写入注册表（HKCU Run）与配置。</summary>
+        private void ApplyAutoStartChoice()
+        {
+            try
+            {
+                var enabled = AutoStartCheckBox.IsChecked == true;
+                if (_app?.Config != null) _app.Config.AutoStartEnabled = enabled;
+
+                if (enabled) Services.AutoStartService.Enable();
+                else Services.AutoStartService.Disable();
+
+                _app?.WriteDiagnosticLog($"[FirstLaunch] 开机自启: {(enabled ? "已开启" : "已关闭")}");
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Welcome] 应用开机自启设置失败: {ex.Message}");
             }
         }
 
@@ -70,6 +134,7 @@ namespace SeewoAutoLogin
         {
             try
             {
+                ApplyAutoStartChoice();
                 AgreementAccepted = true;
                 DialogResult = true;
                 // Setting DialogResult automatically closes the window

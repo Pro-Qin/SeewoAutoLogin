@@ -279,6 +279,19 @@
                 BorderBrush="{StaticResource CardBorder}"
                 BorderThickness="0,1,0,0">
             <StackPanel>
+                <!-- 首次启动让用户决定是否开机自启（默认勾选，可随时取消） -->
+                <CheckBox x:Name="AutoStartCheckBox" Margin="0,0,0,6" FontSize="13"
+                          Foreground="{StaticResource TextPrimary}"
+                          IsChecked="True"
+                          Checked="AutoStart_Changed" Unchecked="AutoStart_Changed">
+                    <TextBlock>
+                        开机自动启动<Run Text="（推荐）" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                        —— 随系统启动后在托盘后台运行，希沃快捷登录窗口随时可用
+                    </TextBlock>
+                </CheckBox>
+                <TextBlock x:Name="AutoStartStateText" Margin="24,0,0,12" FontSize="12"
+                           Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"
+                           Text="当前：将开启开机自启（点击「开始使用」后生效，之后可在「设置 → 常规」中修改）"/>
                 <CheckBox x:Name="AgreeCheckBox" Margin="0,0,0,12" FontSize="13"
                           Foreground="{StaticResource TextPrimary}"
                           Checked="Agree_Changed" Unchecked="Agree_Changed">
