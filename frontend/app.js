@@ -1061,6 +1061,15 @@ function closeTerms() {
   if (ov) ov.hidden = true;
 }
 
+// ===== 受信任外链：作者主页 / 项目仓库 =====
+// 前端只负责发起，实际打开由 C# 侧按域名白名单再校验一次后交给系统浏览器
+function openExternalUrl(url) {
+  send({ type: 'open-external', url: url });
+}
+bindClick('authorLink', function () { openExternalUrl('https://space.bilibili.com/1849305981'); });
+bindClick('madeByLink', function () { openExternalUrl('https://space.bilibili.com/1849305981'); });
+bindClick('openRepoBtn', function () { openExternalUrl('https://github.com/Pro-Qin/SeewoAutoLogin'); });
+
 bindClick('termsLink', openTerms);
 bindClick('termsCloseBtn', closeTerms);
 (function bindTermsOverlay() {

@@ -98,6 +98,12 @@ jobs:
           Write-Host "已生成 $out"
           Get-Content $out
 
+      # 生成发布说明：固定开头（三个产物怎么选）＋ CHANGELOG 里对应版本的段落。
+      # 不再使用自动生成的 release notes —— 提交信息里可能带上不适合公开的排查细节。
+      - name: Build release body
+        shell: pwsh
+        run: ./.github/scripts/build-release-body.ps1
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -105,4 +111,4 @@ jobs:
             publish/SeewoAutoLogin_Setup_*.exe
             publish/SHA256SUMS.txt
             bin/Release/net8.0-windows10.0.19041.0/publish/SeewoAutoLogin.exe
-          generate_release_notes: true
+          body_path: RELEASE_BODY.md

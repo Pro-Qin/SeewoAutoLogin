@@ -37,6 +37,7 @@ namespace SeewoAutoLogin
             {
                 _app = (App)Application.Current;
                 InitializeComponent();
+                try { Icon = App.LoadWindowIcon(); } catch { }
                 InitializeAutoStartOption();
                 LoadAgreementText();
             }

@@ -56,7 +56,7 @@
         <span class="status-text" id="accountCountText"></span>
       </div>
       <div class="update-badge" id="updateBadge" style="display:none" onclick="navigate('about')"></div>
-      <div class="made-by">Made by Qin_zzq</div>
+      <div class="made-by">Made by <a class="author-link" id="madeByLink" href="javascript:void(0)">Qin_zzq</a></div>
     </div>
   </aside>
   <main id="main">
@@ -326,12 +326,12 @@
           <p style="color:#d7d7d7;font-size:13px;margin:6px 0 0 0">希沃白板 SSO 快捷登录服务</p>
           <hr class="divider" style="margin:20px 0">
           <p style="font-size:12px;color:#d7d7d7;margin:4px 0">版本: <span id="appVersion">-</span></p>
-          <p style="font-size:12px;color:#d7d7d7;margin:4px 0">原作者：CJKmkp</p>
-          <p style="font-size:12px;color:#d7d7d7;margin:4px 0">重构作者：Qin_zzq</p>
-          <p style="font-size:11px;color:rgba(255,255,255,0.4);margin:2px 0">LLM 辅助编程</p>
+          <p class="credit-dim">灵感提供：CJKmkp</p>
+          <p style="font-size:12px;color:#d7d7d7;margin:4px 0">作者：<a class="author-link" id="authorLink" href="javascript:void(0)">Qin_zzq</a></p>
           <hr class="divider" style="margin:20px 0">
-          <div style="display:flex;gap:8px;justify-content:center">
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
             <button class="btn btn-secondary" id="checkUpdateBtn" onclick="checkUpdate()">检查更新</button>
+            <button class="btn btn-secondary" id="openRepoBtn">GitHub 仓库</button>
             <button class="btn btn-primary" id="downloadUpdateBtn" style="display:none" onclick="openUpdatePage()">下载新版本</button>
             <button class="btn btn-secondary" id="cancelDownloadBtn" style="display:none">取消下载</button>
           </div>

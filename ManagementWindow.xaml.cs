@@ -35,6 +35,9 @@ namespace SeewoAutoLogin
         public ManagementWindow()
         {
             InitializeComponent();
+            // 显式指定窗口图标：只用 exe 图标时，任务栏会沿用 Windows 的旧图标缓存，
+            // 换图标后用户看到的仍是旧的。从嵌入资源直接加载可确保与安装包一致。
+            try { Icon = App.LoadWindowIcon(); } catch { }
             _app = (App)Application.Current;
             _qrLoginCoordinator = _app?.QrLoginCoordinator;
             _authService = _app?.AuthService;
@@ -485,6 +488,39 @@ namespace SeewoAutoLogin
             }
         }
 
+        /// <summary>允许在前端点击后打开的外部地址（仅 https，且限定这些主机）</summary>
+        private static readonly string[] TrustedExternalHosts =
+        {
+            "space.bilibili.com", "www.bilibili.com", "github.com", "gitee.com",
+        };
+
+        /// <summary>
+        /// 处理前端发来的外链跳转请求（作者主页、项目仓库）。
+        /// 前端消息不可信，这里按「https + 主机白名单」再校验一次，避免被改成 file:// 或任意网址。
+        /// </summary>
+        private void HandleOpenExternal(JsonElement root)
+        {
+            var url = root.TryGetProperty("url", out var element) ? element.GetString() : null;
+            if (string.IsNullOrWhiteSpace(url)) return;
+
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                || uri.Scheme != Uri.UriSchemeHttps
+                || !TrustedExternalHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase))
+            {
+                _app.WriteDiagnosticLog($"[External] 已拦截不可信的外链请求: {url}");
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo { FileName = uri.ToString(), UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _app.WriteDiagnosticLog($"[External] 打开链接失败: {ex.Message}");
+            }
+        }
+
         /// <summary>把用户协议正文下发给前端（「关于」页点击《用户协议》时请求，与欢迎界面共用同一份资源）</summary>
         private async Task SendTerms()
         {
@@ -725,6 +761,7 @@ namespace SeewoAutoLogin
                     case "tour-done": HandleTourDone(root); break;
                     case "factory-reset": HandleFactoryReset(); break;
                     case "get-terms": await SendTerms(); break;
+                    case "open-external": HandleOpenExternal(root); break;
                     case "download-update": HandleDownloadUpdate(); break;
                     case "cancel-download": HandleCancelDownload(); break;
                 }

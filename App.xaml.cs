@@ -1205,6 +1205,37 @@ namespace SeewoAutoLogin
         }
 
         /// <summary>
+        /// 加载窗口图标（嵌入资源里的 app.ico）。
+        /// 窗口若不显式设置 Icon，只会沿用 exe 图标并受 Windows 图标缓存影响，
+        /// 换图标后任务栏仍显示旧图标，所以这里直接给出图像。
+        /// </summary>
+        internal static System.Windows.Media.Imaging.BitmapImage? LoadWindowIcon()
+        {
+            try
+            {
+                var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                var name = assembly.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("app.ico", StringComparison.OrdinalIgnoreCase));
+                if (name == null) return null;
+
+                using var stream = assembly.GetManifestResourceStream(name);
+                if (stream == null) return null;
+
+                var image = new System.Windows.Media.Imaging.BitmapImage();
+                image.BeginInit();
+                image.StreamSource = stream;
+                image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;  // 立即读取，避免流关闭后失效
+                image.EndInit();
+                image.Freeze();
+                return image;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// 读取用户协议正文（嵌入资源）。欢迎界面的协议页与「关于」页的弹窗共用这一份，
         /// 保证两处内容永远一致。
         /// </summary>
