@@ -3,8 +3,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:SeewoAutoLogin"
     Title="欢迎使用希沃自动登录"
-    Width="580" Height="520"
-    MinWidth="520" MinHeight="460"
+    Width="871" Height="562"
+    MinWidth="700" MinHeight="480"
     WindowStartupLocation="CenterScreen"
     ResizeMode="CanResizeWithGrip"
     Background="{StaticResource ContentBg}"
@@ -54,7 +54,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- ======== HEADER ======== -->
@@ -79,7 +78,9 @@
         </Border>
 
         <!-- ======== CONTENT ======== -->
-        <Grid Grid.Row="1" Margin="32,20,32,0">
+        <!-- 内容区：占据 Header 以下的全部空间，一直铺到窗口底部；
+             底部操作栏以浮层形式压在其上（见下方 FOOTER），卡片则在内部留出等高的底部留白 -->
+        <Grid Grid.Row="1" Margin="32,20,32,0" Panel.ZIndex="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -98,8 +99,8 @@
                              Checked="Tab_Changed" Tag="guide"/>
             </StackPanel>
 
-            <!-- Tab Content -->
-            <Border Grid.Row="1" Padding="20" CornerRadius="8"
+            <!-- Tab Content：底部留出 158 的空白，供悬浮的底部操作栏覆盖 -->
+            <Border Grid.Row="1" Padding="20,20,20,158" CornerRadius="8"
                     Background="{StaticResource BgCard}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1">
@@ -250,16 +251,20 @@
             </Border>
         </Grid>
 
-        <!-- ======== FOOTER ======== -->
-        <Border Grid.Row="2" Padding="32,16,32,20"
+        <!-- ======== FOOTER（浮层：压在内容之上，内容在其下方延伸） ======== -->
+        <Border Grid.Row="1" Panel.ZIndex="10" VerticalAlignment="Bottom"
+                Padding="32,16,32,20"
                 Background="{StaticResource BgCard}"
                 BorderBrush="{StaticResource CardBorder}"
                 BorderThickness="0,1,0,0">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="18" ShadowDepth="-4" Direction="90" Opacity="0.45" Color="#000000"/>
+            </Border.Effect>
             <StackPanel>
-                <!-- 首次启动让用户决定是否开机自启（默认勾选，可随时取消） -->
+                <!-- 首次启动让用户决定是否开机自启：初始状态由 InitializeAutoStartOption()
+                     按系统里是否真的装了自启来设置，这里不再硬编码勾选 -->
                 <CheckBox x:Name="AutoStartCheckBox" Margin="0,0,0,6" FontSize="13"
                           Foreground="{StaticResource TextPrimary}"
-                          IsChecked="True"
                           Checked="AutoStart_Changed" Unchecked="AutoStart_Changed">
                     <TextBlock>
                         开机自动启动<Run Text="（推荐）" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
