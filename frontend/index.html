@@ -336,10 +336,21 @@
             <button class="btn btn-secondary" id="cancelDownloadBtn" style="display:none">取消下载</button>
           </div>
           <div id="updateStatus" class="update-status"></div>
+          <p class="terms-note">当您使用此软件时，则默认您已经阅读并同意 <a id="termsLink" href="javascript:void(0)">《用户协议》</a></p>
         </div>
       </div>
     </div>
   </main>
+</div>
+<!-- 用户协议：全屏弹窗（正文由 C# 从嵌入资源下发，与欢迎界面的协议页共用同一份） -->
+<div id="termsOverlay" class="terms-overlay" hidden>
+  <div class="terms-panel">
+    <div class="terms-head">
+      <h2 id="termsTitle">用户协议</h2>
+      <button class="btn btn-secondary" id="termsCloseBtn" type="button">关闭</button>
+    </div>
+    <div class="terms-body" id="termsBody"></div>
+  </div>
 </div>
 <!-- Lock Overlay -->
 <div id="lockOverlay" class="overlay" style="display:none">

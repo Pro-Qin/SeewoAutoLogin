@@ -485,6 +485,15 @@ namespace SeewoAutoLogin
             }
         }
 
+        /// <summary>把用户协议正文下发给前端（「关于」页点击《用户协议》时请求，与欢迎界面共用同一份资源）</summary>
+        private async Task SendTerms()
+        {
+            var text = App.LoadTermsText();
+            if (string.IsNullOrWhiteSpace(text))
+                _app.WriteDiagnosticLog("[Terms] 协议正文载入失败（嵌入资源缺失？）");
+            await SendToJs(new { type = "terms", text });
+        }
+
         private async void HandleOpenUpdatePage(JsonElement root)
         {
             var url = root.TryGetProperty("url", out var element) ? element.GetString() : null;
@@ -715,6 +724,7 @@ namespace SeewoAutoLogin
                     case "tour-debug": _app.WriteDiagnosticLog("[Tour] " + (root.TryGetProperty("text", out var dbg) ? dbg.GetString() : "")); break;
                     case "tour-done": HandleTourDone(root); break;
                     case "factory-reset": HandleFactoryReset(); break;
+                    case "get-terms": await SendTerms(); break;
                     case "download-update": HandleDownloadUpdate(); break;
                     case "cancel-download": HandleCancelDownload(); break;
                 }

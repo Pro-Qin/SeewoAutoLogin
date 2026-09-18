@@ -14,6 +14,23 @@ namespace SeewoAutoLogin
         /// <summary>欢迎界面里用户选择的开机自启状态</summary>
         public bool AutoStartEnabled => AutoStartCheckBox?.IsChecked == true;
 
+        /// <summary>把用户协议正文填进协议页（与「关于」页的弹窗共用同一份嵌入资源）</summary>
+        private void LoadAgreementText()
+        {
+            try
+            {
+                var text = App.LoadTermsText();
+                if (AgreementText == null) return;
+                AgreementText.Text = string.IsNullOrWhiteSpace(text)
+                    ? "协议正文载入失败，请前往「关于 → 用户协议」查看。"
+                    : text;
+            }
+            catch
+            {
+                // 协议载入失败不应阻止用户进入软件
+            }
+        }
+
         public WelcomeWindow()
         {
             try
@@ -21,6 +38,7 @@ namespace SeewoAutoLogin
                 _app = (App)Application.Current;
                 InitializeComponent();
                 InitializeAutoStartOption();
+                LoadAgreementText();
             }
             catch (Exception ex)
             {

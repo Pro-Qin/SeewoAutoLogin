@@ -1205,6 +1205,30 @@ namespace SeewoAutoLogin
         }
 
         /// <summary>
+        /// 读取用户协议正文（嵌入资源）。欢迎界面的协议页与「关于」页的弹窗共用这一份，
+        /// 保证两处内容永远一致。
+        /// </summary>
+        internal static string LoadTermsText()
+        {
+            try
+            {
+                var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                var name = assembly.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("Resources.terms.txt", StringComparison.Ordinal));
+                if (name == null) return "";
+
+                using var stream = assembly.GetManifestResourceStream(name);
+                if (stream == null) return "";
+                using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+                return reader.ReadToEnd();
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        /// <summary>
         /// 恢复出厂设置：清空账号、扫码凭据、配置与备份，回到首次安装状态。
         /// 日志保留（便于排障），下次启动会重新走欢迎界面。
         /// </summary>

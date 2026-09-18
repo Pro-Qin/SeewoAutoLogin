@@ -109,38 +109,10 @@
                         <StackPanel>
                             <TextBlock Text="用户协议" FontSize="16" FontWeight="SemiBold"
                                        Foreground="{StaticResource TextPrimary}" Margin="0,0,0,12"/>
-
-                            <TextBlock TextWrapping="Wrap" FontSize="13"
-                                       Foreground="{StaticResource TextSecondary}" LineHeight="20">
-                                <Run Text="1. 软件说明" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                <LineBreak/>
-                                本软件（"希沃自动登录"）是一款独立的桌面工具，旨在为希沃白板提供账号管理及 SSO 快捷登录能力。软件通过本地 HTTP 网关拦截希沃白板的登录请求，并注入已保存的账号凭据以实现自动登录。
-                                <LineBreak/><LineBreak/>
-
-                                <Run Text="2. 账号信息与安全" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                <LineBreak/>
-                                本软件仅在本地存储您的账号信息。密码登录凭据以明文保存在本地配置文件中；二维码登录令牌使用 Windows DPAPI 加密后存储于当前用户目录下。请仅在可信设备上使用本软件，并妥善保管您的配置文件。
-                                <LineBreak/><LineBreak/>
-
-                                <Run Text="3. 免责声明" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                <LineBreak/>
-                                本软件按"现状"提供，不提供任何明示或暗示的保证。开发者不对因使用本软件而导致的任何账号信息泄露、密码泄露、账号被盗或其他数据损失承担责任。使用者应自行评估风险并采取适当的安全措施，包括但不限于使用强密码、定期更换密码以及在共享设备上谨慎使用本软件。
-                                <LineBreak/><LineBreak/>
-
-                                <Run Text="4. 网络请求" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                <LineBreak/>
-                                本软件在进行密码登录时会向希沃教育平台（edu.seewo.com）发送加密后的密码凭据。二维码登录时会连接希沃账号中心（id.seewo.com）获取二维码会话及校验登录状态。所有网络请求均与希沃官方移动端使用的协议一致。
-                                <LineBreak/><LineBreak/>
-
-                                <Run Text="5. 知识产权" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                <LineBreak/>
-                                本软件基于 InkCanvas 社区插件的原始代码提取和重构，遵循其原有开源许可条款。除第三方组件外，本软件代码及相关资源的知识产权归贡献者所有。
-                                <LineBreak/><LineBreak/>
-
-                                <Run Text="6. 协议变更" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                <LineBreak/>
-                                开发者保留随时修改本协议的权利。重大变更将通过软件更新通知。继续使用本软件即表示您接受修改后的协议。
-                            </TextBlock>
+                            <!-- 正文由 App.LoadTermsText() 动态填充，与「关于」页的弹窗共用同一份资源，避免两处内容不一致 -->
+                            <TextBlock x:Name="AgreementText" TextWrapping="Wrap" FontSize="11.5"
+                                       Foreground="{StaticResource TextSecondary}" LineHeight="16.5"
+                                       Text="正在载入协议正文…"/>
                         </StackPanel>
                     </ScrollViewer>
 

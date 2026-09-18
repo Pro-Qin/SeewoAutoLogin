@@ -722,3 +722,33 @@ nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
   .tour-mask, .tour-ring, .tour-card, .tour-media img { transition-duration: 1ms !important; }
   .tour-hint.pulse { animation: none; opacity: .8; }
 }
+
+/* ===== 用户协议：关于页声明 + 全屏弹窗 ===== */
+.terms-note{margin-top:18px;font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.44)}
+.terms-note a{color:#75c72a;text-decoration:none;border-bottom:1px solid rgba(117,199,42,.42);cursor:pointer;transition:color .2s ease,border-color .2s ease}
+.terms-note a:hover{color:#8fdc45;border-bottom-color:rgba(143,220,69,.72)}
+
+.terms-overlay{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;
+  padding:26px;background:rgba(0,0,0,.74);backdrop-filter:blur(6px);animation:termsFadeIn .22s cubic-bezier(.23,1,.32,1)}
+.terms-overlay[hidden]{display:none}
+@keyframes termsFadeIn{from{opacity:0}to{opacity:1}}
+.terms-panel{width:100%;max-width:920px;height:100%;display:flex;flex-direction:column;
+  background:#1c1c1e;border:1px solid rgba(255,255,255,.1);border-radius:14px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.62);animation:termsRise .28s cubic-bezier(.23,1,.32,1)}
+@keyframes termsRise{from{opacity:0;transform:translateY(14px) scale(.99)}to{opacity:1;transform:none}}
+.terms-head{display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:15px 22px;border-bottom:1px solid rgba(255,255,255,.08);background:#232326;flex:0 0 auto}
+.terms-head h2{font-size:16px;font-weight:600;color:#fff;margin:0}
+.terms-body{flex:1 1 auto;overflow-y:auto;padding:26px 34px 46px;font-size:12.5px;line-height:1.9;color:#c9c9ce}
+.terms-body .t-title{font-size:16px;font-weight:700;color:#fff;margin:0 0 6px}
+.terms-body .t-meta{color:rgba(255,255,255,.45);margin:0 0 6px}
+.terms-body .t-head{font-weight:700;color:#fff;font-size:13.5px;margin:24px 0 8px}
+.terms-body .t-warn{color:#ffb84d;font-weight:600;margin:10px 0}
+.terms-body .t-clause{margin:3px 0}
+.terms-body .t-sub{margin:2px 0 2px 14px;color:rgba(255,255,255,.62)}
+.terms-body .t-p{margin:3px 0}
+.terms-body .t-gap{height:10px}
+.terms-body::-webkit-scrollbar{width:10px}
+.terms-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:5px}
+.terms-body::-webkit-scrollbar-track{background:transparent}
+

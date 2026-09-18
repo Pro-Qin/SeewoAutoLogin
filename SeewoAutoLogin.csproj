@@ -33,6 +33,8 @@
   <ItemGroup>
     <EmbeddedResource Include="frontend\**\*" />
     <EmbeddedResource Include="Resources\app.ico" />
+    <!-- 用户协议正文：欢迎界面与「关于」页共用同一份，避免两处内容不一致 -->
+    <EmbeddedResource Include="Resources\terms.txt" />
   </ItemGroup>
 
 </Project>
