@@ -56,8 +56,9 @@ namespace SeewoAutoLogin
         {
             try
             {
-                var configWants = _app?.Config?.AutoStartEnabled ?? true;
-                AutoStartCheckBox.IsChecked = Services.AutoStartService.IsEnabled || configWants;
+                // 只反映系统里的真实状态：装了自启就勾上，没装就不勾。
+                // （此前是「系统已启用 || 配置默认值」，而配置默认值为 true，导致这里永远勾选。）
+                AutoStartCheckBox.IsChecked = Services.AutoStartService.IsEnabled;
             }
             catch (Exception ex)
             {

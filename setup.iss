@@ -42,11 +42,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："
-Name: "autostart"; Description: "开机自动启动"; GroupDescription: "启动选项："
 
 [Registry]
-; 「开机自动启动」任务：勾选后写入当前用户启动项（与程序内设置、欢迎界面选项共用同一个值），卸载时自动删除
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SeewoAutoLogin"; ValueData: """{app}\SeewoAutoLogin.exe"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart
+; 安装器不再提供「开机自动启动」：该选项与首次启动的欢迎界面重复，且安装器里的勾选默认开启，
+; 用户往往在不知情的情况下被写入启动项。开机自启改为完全由欢迎界面 / 设置 → 常规 决定。
+; 卸载时清理历史上由旧版安装包写入的启动项，避免残留。
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SeewoAutoLogin"; Flags: uninsdeletevalue; Tasks: desktopicon; Permissions: users-delete
 
 [Files]
 Source: "bin\Release\net8.0-windows10.0.19041.0\publish\SeewoAutoLogin.exe"; DestDir: "{app}"; Flags: ignoreversion

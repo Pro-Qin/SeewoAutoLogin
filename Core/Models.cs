@@ -17,7 +17,9 @@ namespace SeewoAutoLogin
         public bool UsePluginPassword { get; set; }
         public string PluginPasswordHash { get; set; } = "";
         public string PluginPasswordSalt { get; set; } = "";
-        public bool AutoStartEnabled { get; set; } = true;
+        // 默认关闭：开机自启必须由用户在欢迎界面或设置里明确选择。
+        // 若默认 true，App 启动时的「自启自愈」逻辑会替用户把启动项写进系统。
+        public bool AutoStartEnabled { get; set; } = false;
         public bool MinimizeToTray { get; set; } = true;
         public bool StartMinimized { get; set; } = true;
         /// <summary>希沃打开但未登录时是否自动显示切换遮罩（全局控制，默认关闭）</summary>
