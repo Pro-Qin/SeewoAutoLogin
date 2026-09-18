@@ -27,8 +27,8 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 .hit .word{font-size:168px;font-weight:800;letter-spacing:-.045em;line-height:1}
 .hit .word span{background:linear-gradient(96deg,#7FC4FF,#0A84FF 46%,#75C72A);-webkit-background-clip:text;background-clip:text;color:transparent}
 .brand{display:flex;flex-direction:column;align-items:center;text-align:center}
-.mark{width:120px;height:120px;border-radius:29%;display:grid;place-items:center;background:linear-gradient(150deg,#4FA9FF,#0A84FF 52%,#0057C8);box-shadow:0 26px 70px rgba(10,132,255,.5)}
-.mark svg{width:58%;height:58%}
+.mark{width:120px;height:120px;display:grid;place-items:center;filter:drop-shadow(0 22px 52px rgba(190,58,34,.42))}
+.mark svg{width:100%;height:100%}
 .word{margin-top:28px;font-size:66px;font-weight:800;letter-spacing:-.03em}
 .tagline{margin-top:10px;font-size:20px;color:var(--muted)}
 .shot{border-radius:14px;overflow:hidden;background:#111;box-shadow:0 34px 80px rgba(0,0,0,.68),0 0 0 1px rgba(255,255,255,.14);
@@ -92,7 +92,7 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 </section>
 <section class="clip brand" data-sec="brand">
   <div class="inner" style="display:flex;flex-direction:column;align-items:center">
-    <div class="mark" data-anim="pop"><svg viewBox="0 0 24 24" fill="#fff"><path d="M13.4 2 5 13.2h5.3L9.8 22l8.6-11.4h-5.5L13.4 2z"/></svg></div>
+    <div class="mark" data-anim="pop"><svg viewBox="0 0 24 24"><rect x="0" y="0" width="24" height="24" rx="5.4" fill="#F3EFE7"/><rect x="4.2" y="4.2" width="15.6" height="15.6" rx="1.7" fill="none" stroke="#BE3A22" stroke-width="1.45"/><path d="M7.9 12h6.9M12.6 9.1 15.5 12l-2.9 2.9" fill="none" stroke="#BE3A22" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
     <div class="word" data-anim="up" data-delay=".1">希沃自动登录</div>
     <div class="tagline" data-anim="up" data-delay=".24">点头像，就进了</div>
   </div>
@@ -138,7 +138,7 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 </section>
 <section class="clip end" data-sec="end">
   <div class="inner" style="display:flex;flex-direction:column;align-items:center">
-    <div class="mark" data-anim="pop" style="width:80px;height:80px"><svg viewBox="0 0 24 24" fill="#fff"><path d="M13.4 2 5 13.2h5.3L9.8 22l8.6-11.4h-5.5L13.4 2z"/></svg></div>
+    <div class="mark" data-anim="pop" style="width:80px;height:80px"><svg viewBox="0 0 24 24"><rect x="0" y="0" width="24" height="24" rx="5.4" fill="#F3EFE7"/><rect x="4.2" y="4.2" width="15.6" height="15.6" rx="1.7" fill="none" stroke="#BE3A22" stroke-width="1.45"/><path d="M7.9 12h6.9M12.6 9.1 15.5 12l-2.9 2.9" fill="none" stroke="#BE3A22" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
     <div class="word" data-anim="up" data-delay=".08" style="font-size:42px">希沃自动登录</div>
     <div class="end-row">
       <div class="repo" data-anim="pop" data-delay=".18">github.com/Pro-Qin/SeewoAutoLogin</div>
