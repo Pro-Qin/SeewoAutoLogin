@@ -7,7 +7,7 @@
 
 ; 本地构建用的默认版本号；CI（release.yml / build.yml）会在编译前用 csproj 里的 <Version> 覆盖这一行，
 ; 避免出现“发布 vX.Y.Z，安装包却叫 vA.B.C”的问题。
-#define AppVersion "1.11.1"
+#define AppVersion "1.11.2"
 
 #ifndef BundleWebView2
   #define BundleWebView2 0
