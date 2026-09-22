@@ -68,10 +68,16 @@ Name: "{group}\卸载希沃自动登录"; Filename: "{uninstallexe}"
 ; 已装 WebView2 时跳过（Check 为 False 则不执行），未装则离线静默安装
 Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "正在安装 WebView2 运行时（离线安装，约需 1-2 分钟）..."; Flags: runhidden waituntilterminated; Check: WebView2Missing
 #endif
+; 刷新 Windows 图标缓存。
+; 快捷方式本身会被安装程序重建，但桌面/开始菜单上的图标来自系统缓存：
+; 程序换了图标之后，缓存里仍是旧的，用户看到的就还是旧图标。这一步让资源管理器重新读取。
+Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden nowait skipifdoesntexist
 Filename: "{app}\SeewoAutoLogin.exe"; Description: "启动希沃自动登录"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--uninstall"; RunOnceId: "SeewoAutoLoginCleanup"
+; 卸载后同样刷新图标缓存，避免残留的旧图标
+Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden nowait skipifdoesntexist; RunOnceId: "RefreshIconCache"
 
 [Code]
 { 是否缺少 WebView2 运行时。判断不出来时返回 True，让官方安装器自行判断（已装则它会直接跳过）。 }

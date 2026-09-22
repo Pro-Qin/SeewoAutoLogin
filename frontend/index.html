@@ -206,6 +206,11 @@
             <button id="refreshQrBtn" class="btn btn-secondary" style="display:none" onclick="send({type:'start-qr'})">刷新</button>
             <button id="cancelQrBtn" class="btn btn-secondary" style="display:none" onclick="send({type:'cancel-qr'})">取消</button>
           </div>
+          <p class="qr-note">
+            使用扫码登录可能会缩短账号数据有效期：扫码得到的凭据由希沃签发，本程序运行期间会自动续期，
+            但若长时间没有运行本程序，凭据可能失效，届时需要重新扫码。
+            若希望更省心，建议改用「账号添加」里的密码方式 —— 凭据失效时会自动用保存的密码重新登录。
+          </p>
         </div>
       </div>
 

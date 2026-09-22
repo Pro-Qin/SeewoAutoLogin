@@ -1124,6 +1124,9 @@ namespace SeewoAutoLogin
 
         #region Account List
 
+        /// <summary>供后台保活调用：账号状态变化后刷新界面（主界面未打开时不会走到这里）</summary>
+        internal Task RefreshAccountListAsync() => RefreshAccountList();
+
         private async Task RefreshAccountList()
         {
             await SendToJs(new { type = "account-list", accounts = GetAccountList() });

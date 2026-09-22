@@ -370,7 +370,6 @@ namespace SeewoAutoLogin
             try
             {
                 _gateway.Start();
-                StartDailyTokenRefresh();
                 WriteDiagnosticLog("SSO 网关启动成功");
             }
             catch (Exception ex)
@@ -382,6 +381,10 @@ namespace SeewoAutoLogin
                     $"{ex.Message}\n\n" +
                     $"希沃自动登录功能可能无法正常工作。\n{hint}");
             }
+
+            // 账号保活与网关是否可用无关：即便以普通权限运行、网关没能启动，
+            // 也必须在凭据过期前续期，否则账号数据一样会失效。
+            StartDailyTokenRefresh();
 
             // 首次启动显示欢迎界面（放在网关启动之后：即使用户停留在欢迎界面，希沃侧快捷登录也已可用）
             var welcomeShown = false;
@@ -818,59 +821,18 @@ namespace SeewoAutoLogin
             return summary;
         }
 
-        /// <summary>账号健康巡检：逐个验证密码/扫码令牌是否仍然有效</summary>
+        /// <summary>
+        /// 账号健康巡检：逐个校验凭据是否仍然有效，并就地修复。
+        ///
+        /// 与后台保活共用同一套逻辑：密码账号会用保存的密码重新登录，
+        /// 扫码账号会换发新令牌（换发成功即写回本地凭据）。
+        /// 确实修不了的（例如扫码令牌已过期）会标为异常，并说明需要人工做什么。
+        /// </summary>
         internal async Task RunHealthCheckAsync()
         {
-            WriteDiagnosticLog("[Health] 开始账号健康巡检");
-            foreach (var account in _config.Accounts.ToList())
-            {
-                try
-                {
-                    if (!string.IsNullOrEmpty(account.Password))
-                    {
-                        var password = account.DecryptedPassword;
-                        if (string.IsNullOrEmpty(password))
-                        {
-                            account.HealthState = "bad";
-                            account.HealthMessage = "本地凭据无法解密，请重新录入密码";
-                        }
-                        else
-                        {
-                            var result = await _authService.LoginAsync(account.Username, password).ConfigureAwait(true);
-                            account.HealthState = result.Success ? "ok" : "bad";
-                            account.HealthMessage = result.Success ? "密码有效" : (result.ErrorMessage ?? "登录失败");
-                        }
-                    }
-                    else if (!string.IsNullOrWhiteSpace(account.QrCredentialId))
-                    {
-                        if (TryRestoreQrSession(account))
-                        {
-                            var result = await _authService.ExchangeCurrentTokenAsync().ConfigureAwait(true);
-                            account.HealthState = result.Success ? "ok" : "bad";
-                            account.HealthMessage = result.Success ? "扫码令牌有效" : (result.ErrorMessage ?? "令牌已失效，需要重新扫码");
-                        }
-                        else
-                        {
-                            account.HealthState = "bad";
-                            account.HealthMessage = "扫码凭据不可用，需要重新扫码";
-                        }
-                    }
-                    else
-                    {
-                        account.HealthState = "unknown";
-                        account.HealthMessage = "没有可校验的凭据";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    account.HealthState = "unknown";
-                    account.HealthMessage = ex.Message;
-                }
-                account.LastHealthCheckAtUtc = DateTime.UtcNow;
-            }
-            SaveConfig();
-            WriteDiagnosticLog($"[Health] 巡检完成：{_config.Accounts.Count(a => a.HealthState == "ok")} 个正常，" +
-                               $"{_config.Accounts.Count(a => a.HealthState == "bad")} 个异常");
+            WriteDiagnosticLog("[Health] 开始账号健康巡检（发现问题会自动重新导入）");
+            var (refreshed, failed) = await RunKeepAliveAsync(force: true).ConfigureAwait(true);
+            WriteDiagnosticLog($"[Health] 巡检完成：已自动修复 {refreshed} 个，仍需人工处理 {failed} 个");
         }
 
         /// <summary>批量导入账号：每行 “账号,密码[,备注]”</summary>
@@ -991,30 +953,171 @@ namespace SeewoAutoLogin
 
         #region Token Refresh
 
+        /// <summary>后台保活的检查频率：每 5 分钟看一次有哪些账号该续期了</summary>
+        private static readonly TimeSpan KeepAliveTick = TimeSpan.FromMinutes(5);
+        /// <summary>账号超过这么久没有续期，就主动刷新一次</summary>
+        private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMinutes(25);
+
+        private bool _keepAliveRunning;
+
+        /// <summary>
+        /// 启动账号凭据的后台保活。
+        ///
+        /// 希沃的登录令牌会随时间失效，一旦失效，该账号在希沃的登录界面上就无法再用于快捷登录，
+        /// 表现为“账号数据已过期”。而换发令牌本身需要“用当前令牌换新令牌”，
+        /// 所以必须在令牌失效之前主动续期 —— 事后补救是来不及的。
+        ///
+        /// 原先的实现是 `Timer(..., FromDays(1), FromDays(1))`：启动满一天才执行第一次，
+        /// 而程序每次重启计时器都从头开始，实际几乎从不触发；且它只处理扫码账号，
+        /// 密码账号完全不刷新。这里改为每 5 分钟检查、超过 25 分钟未续期即刷新，两类账号都覆盖。
+        /// </summary>
         private void StartDailyTokenRefresh()
         {
-            _dailyTokenRefreshTimer = new Timer(_ => _ = RefreshTokensAsync(), null, TimeSpan.FromDays(1), TimeSpan.FromDays(1));
+            if (_dailyTokenRefreshTimer != null) return;
+
+            // 启动后 20 秒先跑一轮（等界面与网关就绪），此后每 5 分钟检查一次
+            _dailyTokenRefreshTimer = new Timer(_ => _ = RunKeepAliveAsync(), null,
+                TimeSpan.FromSeconds(20), KeepAliveTick);
+
+            WriteDiagnosticLog($"[KeepAlive] 后台保活已启动：每 {KeepAliveTick.TotalMinutes:0} 分钟检查，" +
+                               $"账号超过 {KeepAliveInterval.TotalMinutes:0} 分钟未续期即自动刷新");
         }
 
-        private async Task RefreshTokensAsync()
+        /// <summary>
+        /// 后台保活：在凭据失效前主动续期，返回（成功数, 失败数）。
+        /// force=true 时忽略时间间隔 —— 供「健康巡检」按钮手动触发，即“发现问题就地修好”。
+        /// </summary>
+        internal async Task<(int refreshed, int failed)> RunKeepAliveAsync(bool force = false)
         {
-            foreach (var account in _config.Accounts
-                .Where(account => string.IsNullOrEmpty(account.Password) && !string.IsNullOrWhiteSpace(account.QrCredentialId))
-                .ToList())
+            if (_keepAliveRunning) return (0, 0);
+            _keepAliveRunning = true;
+
+            var refreshed = 0;
+            var failed = 0;
+            try
             {
-                try
+                var now = DateTimeOffset.UtcNow;
+                foreach (var account in _config.Accounts.ToList())
                 {
-                    if (!TryRestoreQrSession(account)) continue;
-                    var result = await _authService.ExchangeCurrentTokenAsync().ConfigureAwait(false);
-                    if (!result.Success) continue;
-                    OnQrTokenValidated(account, result.Token);
-                    WriteDiagnosticLog($"[Scheduler] Token 自动刷新成功; account-id={account.Id}");
+                    if (!force && account.LastTokenExchangeAtUtc.HasValue &&
+                        now - account.LastTokenExchangeAtUtc.Value < KeepAliveInterval)
+                        continue;
+
+                    var (ok, message) = await RefreshAccountCredentialAsync(account).ConfigureAwait(true);
+                    account.HealthState = ok ? "ok" : "bad";
+                    account.HealthMessage = message;
+                    account.LastHealthCheckAtUtc = DateTime.UtcNow;
+
+                    if (ok)
+                    {
+                        account.LastTokenExchangeAtUtc = DateTimeOffset.UtcNow;
+                        refreshed++;
+                        if (force) WriteDiagnosticLog($"[KeepAlive] 续期成功; account-id={account.Id}; {message}");
+                    }
+                    else
+                    {
+                        failed++;
+                        WriteDiagnosticLog($"[KeepAlive] 续期失败; account-id={account.Id}; reason={message}");
+                    }
                 }
-                catch (Exception ex)
+
+                if (refreshed > 0 || failed > 0)
                 {
-                    WriteDiagnosticLog($"[Scheduler] Token 自动刷新失败; account-id={account.Id}; error={ex.GetType().Name}");
+                    SaveConfig();
+                    await RefreshAccountListUiAsync().ConfigureAwait(true);
+                    WriteDiagnosticLog($"[KeepAlive] 本轮完成：续期 {refreshed} 个，失败 {failed} 个");
                 }
+
+                if (failed > 0) NotifyKeepAliveFailure();
             }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[KeepAlive] 本轮异常: {ex.GetType().Name} - {ex.Message}");
+            }
+            finally
+            {
+                _keepAliveRunning = false;
+            }
+
+            return (refreshed, failed);
+        }
+
+        /// <summary>
+        /// 刷新单个账号的凭据。
+        /// 使用独立的服务实例，避免与正在响应希沃请求的网关争用同一份会话状态。
+        /// </summary>
+        private async Task<(bool ok, string message)> RefreshAccountCredentialAsync(SeewoAccount account)
+        {
+            try
+            {
+                // 密码账号：用保存的密码重新登录，顺带刷新用户信息
+                if (!string.IsNullOrEmpty(account.Password))
+                {
+                    var password = account.DecryptedPassword;
+                    if (string.IsNullOrEmpty(password))
+                        return (false, "本地凭据无法解密，请重新录入密码");
+
+                    using var service = new SeewoAuthService();
+                    service.DiagnosticMessage += WriteDiagnosticLog;
+                    var result = await service.LoginAsync(account.Username, password).ConfigureAwait(true);
+                    if (!result.Success) return (false, result.ErrorMessage ?? "密码登录失败");
+                    if (result.UserInfo != null) account.UserInfo = result.UserInfo;
+                    return (true, "已自动重新登录");
+                }
+
+                // 扫码账号：用当前令牌换发新令牌，换发成功后立即写回本地加密凭据
+                if (!string.IsNullOrWhiteSpace(account.QrCredentialId))
+                {
+                    if (!_qrSessionStore.TryLoad(account.QrCredentialId, out var session))
+                        return (false, "扫码凭据不可用，需要重新扫码");
+
+                    using var service = new SeewoAuthService();
+                    service.DiagnosticMessage += WriteDiagnosticLog;
+                    service.RestoreQrSession(session.Token, account.UserInfo);
+                    var result = await service.ExchangeCurrentTokenAsync().ConfigureAwait(true);
+                    if (!result.Success) return (false, "扫码令牌已失效，需要重新扫码添加");
+
+                    if (!string.IsNullOrWhiteSpace(service.Token)) OnQrTokenValidated(account, service.Token);
+                    if (service.UserInfo != null) account.UserInfo = service.UserInfo;
+                    return (true, "已自动续期");
+                }
+
+                return (false, "没有可用于续期的凭据");
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+        }
+
+        /// <summary>续期失败时提示一次，说明哪些账号需要人工处理</summary>
+        private void NotifyKeepAliveFailure()
+        {
+            try
+            {
+                var bad = _config.Accounts.Where(a => a.HealthState == "bad").ToList();
+                if (bad.Count == 0) return;
+
+                var qrCount = bad.Count(a => !string.IsNullOrWhiteSpace(a.QrCredentialId));
+                var pwdCount = bad.Count - qrCount;
+                var parts = new List<string>();
+                if (pwdCount > 0) parts.Add($"{pwdCount} 个密码账号需要重新录入");
+                if (qrCount > 0) parts.Add($"{qrCount} 个扫码账号需要重新扫码");
+
+                NotifyInfo("有账号需要处理", string.Join("；", parts) + "。\n可打开账号列表查看具体原因。");
+            }
+            catch { }
+        }
+
+        /// <summary>让主界面刷新账号列表（主界面未打开或已销毁时静默跳过）</summary>
+        private async Task RefreshAccountListUiAsync()
+        {
+            try
+            {
+                if (MainWindow is ManagementWindow window && window.IsLoaded)
+                    await window.RefreshAccountListAsync().ConfigureAwait(true);
+            }
+            catch { }
         }
 
         #endregion
