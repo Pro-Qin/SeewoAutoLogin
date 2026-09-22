@@ -43,6 +43,11 @@ namespace SeewoAutoLogin
         public string Username { get; set; } = "";
         public string Password { get; set; } = "";
         public string QrCredentialId { get; set; } = "";
+        /// <summary>
+        /// 占位账号：由「添加假账号」生成的演示数据，其凭据在希沃侧并不存在。
+        /// 这类账号不参与后台保活与健康巡检 —— 否则只会持续失败，还会反复提示用户去处理。
+        /// </summary>
+        public bool IsPlaceholder { get; set; }
         public DateTimeOffset? LastTokenExchangeAtUtc { get; set; }
         public SeewoUserInfo UserInfo { get; set; }
         public List<string> Tags { get; set; } = new List<string>();

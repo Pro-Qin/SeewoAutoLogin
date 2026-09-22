@@ -1075,7 +1075,9 @@ namespace SeewoAutoLogin
                 Id = fakeId,
                 DisplayName = displayName,
                 Username = $"fake_{fakeId.ToLower()}",
-                Password = "fake_password_that_will_fail"
+                Password = "fake_password_that_will_fail",
+                // 标记为占位账号：后续的保活与巡检会跳过它
+                IsPlaceholder = true
             };
             _app.Config.Accounts.Add(fakeAccount);
             _app.SaveConfig();

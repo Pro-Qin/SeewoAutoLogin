@@ -89,6 +89,7 @@ namespace SeewoAutoLogin
                 SwitchToAccount);
 
             LoadConfig();
+            MigratePlaceholderFlags();
 
             _gateway = new SeewoSsoGateway(_authService, () => _config, TryRestoreQrSession,
                 GetVisibleAccounts,
@@ -961,17 +962,31 @@ namespace SeewoAutoLogin
         private bool _keepAliveRunning;
 
         /// <summary>
-        /// 是否为测试 / 占位账号。
-        /// 这类账号只是为了占位或演示而存在，其凭据在希沃侧并不存在，
-        /// 参与保活只会每次都失败、白白请求接口，还会持续弹出“有账号需要处理”的提示。
-        /// 依据是这类数据导入时使用的前缀（FAKE_ / fake_ / test_）。
+        /// 是否为占位账号（由「添加假账号」生成，凭据在希沃侧并不存在）。
+        /// 判断依据是账号上的显式标记，不做命名猜测 —— 用户完全可以把某个账号命名为 test 之类的名字。
         /// </summary>
-        private static bool IsPlaceholderAccount(SeewoAccount account)
+        private static bool IsPlaceholderAccount(SeewoAccount account) => account?.IsPlaceholder == true;
+
+        /// <summary>
+        /// 兼容历史数据：早期版本生成的假账号没有标记，这里按当时固定的命名补上（仅在必要时执行一次）。
+        /// 补完之后判断就完全依赖标记。
+        /// </summary>
+        private void MigratePlaceholderFlags()
         {
-            if (account == null) return false;
-            return (account.Id ?? "").StartsWith("FAKE", StringComparison.OrdinalIgnoreCase)
-                || (account.Username ?? "").StartsWith("fake", StringComparison.OrdinalIgnoreCase)
-                || (account.Username ?? "").StartsWith("test", StringComparison.OrdinalIgnoreCase);
+            var changed = false;
+            foreach (var account in _config.Accounts)
+            {
+                if (account.IsPlaceholder) continue;
+                if ((account.Id ?? "").StartsWith("FAKE_", StringComparison.OrdinalIgnoreCase)
+                    || (account.Username ?? "").StartsWith("fake_fake_", StringComparison.OrdinalIgnoreCase))
+                {
+                    account.IsPlaceholder = true;
+                    changed = true;
+                    WriteDiagnosticLog($"[Config] 历史测试账号已补占位标记; account-id={account.Id}");
+                }
+            }
+
+            if (changed) SaveConfig();
         }
 
         /// <summary>
