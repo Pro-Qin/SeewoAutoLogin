@@ -961,6 +961,20 @@ namespace SeewoAutoLogin
         private bool _keepAliveRunning;
 
         /// <summary>
+        /// 是否为测试 / 占位账号。
+        /// 这类账号只是为了占位或演示而存在，其凭据在希沃侧并不存在，
+        /// 参与保活只会每次都失败、白白请求接口，还会持续弹出“有账号需要处理”的提示。
+        /// 依据是这类数据导入时使用的前缀（FAKE_ / fake_ / test_）。
+        /// </summary>
+        private static bool IsPlaceholderAccount(SeewoAccount account)
+        {
+            if (account == null) return false;
+            return (account.Id ?? "").StartsWith("FAKE", StringComparison.OrdinalIgnoreCase)
+                || (account.Username ?? "").StartsWith("fake", StringComparison.OrdinalIgnoreCase)
+                || (account.Username ?? "").StartsWith("test", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// 启动账号凭据的后台保活。
         ///
         /// 希沃的登录令牌会随时间失效，一旦失效，该账号在希沃的登录界面上就无法再用于快捷登录，
@@ -994,11 +1008,24 @@ namespace SeewoAutoLogin
 
             var refreshed = 0;
             var failed = 0;
+            var stateChanged = false;
             try
             {
                 var now = DateTimeOffset.UtcNow;
                 foreach (var account in _config.Accounts.ToList())
                 {
+                    // 测试 / 占位账号不参与保活，也不显示健康状态
+                    if (IsPlaceholderAccount(account))
+                    {
+                        if (!string.IsNullOrEmpty(account.HealthState) || !string.IsNullOrEmpty(account.HealthMessage))
+                        {
+                            account.HealthState = "";
+                            account.HealthMessage = "";
+                            stateChanged = true;
+                        }
+                        continue;
+                    }
+
                     if (!force && account.LastTokenExchangeAtUtc.HasValue &&
                         now - account.LastTokenExchangeAtUtc.Value < KeepAliveInterval)
                         continue;
@@ -1008,6 +1035,7 @@ namespace SeewoAutoLogin
                     account.HealthMessage = message;
                     account.LastHealthCheckAtUtc = DateTime.UtcNow;
 
+                    stateChanged = true;
                     if (ok)
                     {
                         account.LastTokenExchangeAtUtc = DateTimeOffset.UtcNow;
@@ -1021,12 +1049,14 @@ namespace SeewoAutoLogin
                     }
                 }
 
-                if (refreshed > 0 || failed > 0)
+                if (stateChanged)
                 {
                     SaveConfig();
                     await RefreshAccountListUiAsync().ConfigureAwait(true);
-                    WriteDiagnosticLog($"[KeepAlive] 本轮完成：续期 {refreshed} 个，失败 {failed} 个");
                 }
+
+                if (refreshed > 0 || failed > 0)
+                    WriteDiagnosticLog($"[KeepAlive] 本轮完成：续期 {refreshed} 个，失败 {failed} 个");
 
                 if (failed > 0) NotifyKeepAliveFailure();
             }
@@ -1095,7 +1125,9 @@ namespace SeewoAutoLogin
         {
             try
             {
-                var bad = _config.Accounts.Where(a => a.HealthState == "bad").ToList();
+                var bad = _config.Accounts
+                    .Where(a => a.HealthState == "bad" && !IsPlaceholderAccount(a))
+                    .ToList();
                 if (bad.Count == 0) return;
 
                 var qrCount = bad.Count(a => !string.IsNullOrWhiteSpace(a.QrCredentialId));
