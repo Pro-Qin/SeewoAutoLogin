@@ -131,6 +131,10 @@ namespace SeewoAutoLogin
 
             var value = user.Value;
             Log($"账号校验用户对象: fields=[{DescribeFields(value)}]");
+            // 完整响应（敏感字段的值打码、字段名保留）。
+            // 用途：确认希沃是否提供了可用于长期续期的凭据字段（如 refreshToken / 过期时间），
+            // 从而判断凭据失效后还有没有自动恢复的余地。
+            Log($"账号校验完整响应(脱敏): {RedactForLog(value)}");
             var validatedToken = GetString(value, "tokenId") ?? "";
             if (string.IsNullOrWhiteSpace(validatedToken))
                 throw new InvalidDataException("登录响应缺少账号令牌。");
@@ -290,6 +294,67 @@ namespace SeewoAutoLogin
             if (element.ValueKind != JsonValueKind.Object) return element.ValueKind.ToString();
             return string.Join(",", element.EnumerateObject()
                 .Select(property => IsSensitiveField(property.Name) ? property.Name + "=<redacted>" : property.Name));
+        }
+
+        /// <summary>
+        /// 把 JSON 序列化成日志文本：敏感字段的值替换为 &lt;redacted&gt;，
+        /// 其它字段连同取值一起保留，超长字符串截断。字段名始终保留。
+        /// </summary>
+        private static string RedactForLog(JsonElement element)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                AppendRedacted(element, sb);
+                var text = sb.ToString();
+                return text.Length > 4000 ? text[..4000] + "…(截断)" : text;
+            }
+            catch
+            {
+                return "<序列化失败>";
+            }
+        }
+
+        private static void AppendRedacted(JsonElement element, StringBuilder sb)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    sb.Append('{');
+                    var first = true;
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        if (!first) sb.Append(',');
+                        first = false;
+                        sb.Append('"').Append(property.Name).Append("\":");
+                        if (IsSensitiveField(property.Name)) sb.Append("\"<redacted>\"");
+                        else AppendRedacted(property.Value, sb);
+                    }
+                    sb.Append('}');
+                    break;
+
+                case JsonValueKind.Array:
+                    sb.Append('[');
+                    var firstItem = true;
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        if (!firstItem) sb.Append(',');
+                        firstItem = false;
+                        AppendRedacted(item, sb);
+                    }
+                    sb.Append(']');
+                    break;
+
+                case JsonValueKind.String:
+                    var str = element.GetString() ?? "";
+                    // 长字符串多半是标识符，截断显示但保留长度信息
+                    sb.Append('"').Append(str.Length > 40 ? str[..12] + "…(len=" + str.Length + ")" : str).Append('"');
+                    break;
+
+                default:
+                    sb.Append(element.GetRawText());
+                    break;
+            }
         }
 
         private static bool IsSensitiveField(string name)

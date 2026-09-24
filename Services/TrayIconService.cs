@@ -62,6 +62,85 @@ namespace SeewoAutoLogin.Services
             RebuildMenu();
         }
 
+        /// <summary>
+        /// 在托盘图标右下角点亮/熄灭感叹角标。
+        /// 用于“有账号需要处理”这类需要用户知晓、但不该反复弹窗的状态。
+        /// </summary>
+        public void SetAlert(bool alert)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                try { dispatcher.BeginInvoke(new Action(() => SetAlert(alert))); } catch { }
+                return;
+            }
+
+            if (_notifyIcon == null) return;
+            if (_alertState == alert) return;
+            _alertState = alert;
+
+            try
+            {
+                if (alert)
+                {
+                    _alertIcon ??= BuildAlertIcon();
+                    _notifyIcon.Icon = _alertIcon ?? _cachedIcon;
+                    _notifyIcon.Text = Truncate(AlertText, 63);
+                }
+                else
+                {
+                    _notifyIcon.Icon = _cachedIcon;
+                    _notifyIcon.Text = Truncate(Strings.AppTitle, 63);
+                }
+            }
+            catch { }
+        }
+
+        private static readonly string AlertText = Strings.AppTitle + " — 有账号需要处理";
+
+        private static string Truncate(string text, int max)
+            => string.IsNullOrEmpty(text) || text.Length <= max ? text : text[..max];
+
+        private bool _alertState;
+        private Icon _alertIcon;
+
+        /// <summary>在原图标右下角叠一个红色圆点 + 白色感叹号</summary>
+        private Icon BuildAlertIcon()
+        {
+            try
+            {
+                var size = 32;
+                using var bmp = new Bitmap(size, size);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.Clear(Color.Transparent);
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    if (_cachedIcon != null) g.DrawIcon(_cachedIcon, new Rectangle(0, 0, size, size));
+
+                    var d = Math.Max(13, size / 2);
+                    var x = size - d;
+                    var y = size - d;
+                    using var brush = new SolidBrush(Color.FromArgb(230, 40, 40));
+                    g.FillEllipse(brush, x, y, d, d);
+
+                    using var pen = new Pen(Color.White, Math.Max(2f, d / 6f))
+                    {
+                        StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                        EndCap = System.Drawing.Drawing2D.LineCap.Round
+                    };
+                    var cx = x + d / 2f;
+                    g.DrawLine(pen, cx, y + d * 0.24f, cx, y + d * 0.60f);
+                    g.DrawLine(pen, cx, y + d * 0.78f, cx, y + d * 0.80f);
+                }
+
+                var handle = bmp.GetHicon();
+                try { return (Icon)Icon.FromHandle(handle).Clone(); }
+                finally { DestroyIcon(handle); }
+            }
+            catch { return null; }
+        }
+
         public void UpdateVisibleAccounts(List<string> visibleIds)
         {
             _visibleIds = visibleIds ?? new List<string>();

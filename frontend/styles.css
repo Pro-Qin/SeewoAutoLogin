@@ -81,7 +81,8 @@ body {
   background-clip: text;
 }
 .gradient-title {
-  background: linear-gradient(135deg, #fff 30%, var(--blue-light) 100%);
+  /* 绿色渐变：与品牌图标、自检状态的主色保持一致 */
+  background: linear-gradient(135deg, #f2ffe6 10%, #8fdc45 55%, #46a30f 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -757,3 +758,42 @@ nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
 .credit-dim{font-size:12px;color:rgba(255,255,255,.34);margin:4px 0}
 .author-link{color:#75c72a;text-decoration:none;cursor:pointer;transition:color .2s ease}
 .author-link:hover{color:#8fdc45;text-decoration:underline}
+
+/* ===== 主界面标题：绿色渐变 ===== */
+#pageTitle {
+  background: linear-gradient(135deg, #f4ffe9 0%, #8fdc45 50%, #46a30f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  width: fit-content;
+}
+
+/* ===== 账号卡片：入场动画 + 自动续期状态 ===== */
+/* 动画只在列表首次出现时播放（JS 里通过 .enter 类控制），
+   否则点选账号、切换生效区时整列卡片会重新飞入一遍，像在闪烁。 */
+.acct-card.enter { animation: acctCardIn 420ms cubic-bezier(.23, 1, .32, 1) both; }
+@keyframes acctCardIn {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .acct-card.enter { animation: none; }
+}
+
+.renew-line {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(143, 220, 69, .75);
+}
+.renew-line::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+.renew-line.bad { color: rgba(255, 122, 100, .9); }
+

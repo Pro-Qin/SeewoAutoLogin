@@ -1150,7 +1150,10 @@ namespace SeewoAutoLogin
                 lastRequestAtUtc = a.LastRequestAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
                 healthState = a.HealthState ?? "",
                 healthMessage = a.HealthMessage ?? "",
-                lastHealthCheckAtUtc = a.LastHealthCheckAtUtc?.ToLocalTime().ToString("MM-dd HH:mm") ?? ""
+                lastHealthCheckAtUtc = a.LastHealthCheckAtUtc?.ToLocalTime().ToString("MM-dd HH:mm") ?? "",
+                // 后台自动续期的时间：账号卡片上会显示「已自动续期 · 3 分钟前」
+                lastTokenExchangeAtUtc = a.LastTokenExchangeAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "",
+                isPlaceholder = a.IsPlaceholder
             }).ToList();
         }
 

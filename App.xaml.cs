@@ -143,6 +143,64 @@ namespace SeewoAutoLogin
 
         private const string InstanceMutexName = "SeewoAutoLogin_InstanceMutex_2F3A1B";
 
+        /// <summary>单实例唤醒事件：后启动的实例用它请求已在运行的实例显示主窗口</summary>
+        private const string InstanceSignalName = "SeewoAutoLogin_ShowWindow_7B4C1E";
+
+        private EventWaitHandle _instanceSignal;
+        private CancellationTokenSource _instanceSignalCts;
+
+        /// <summary>开始监听「请显示主窗口」的唤醒请求（仅第一个实例需要）</summary>
+        private void StartInstanceSignalListener()
+        {
+            try
+            {
+                _instanceSignal = new EventWaitHandle(false, EventResetMode.AutoReset, InstanceSignalName);
+                _instanceSignalCts = new CancellationTokenSource();
+                var token = _instanceSignalCts.Token;
+
+                Task.Run(() =>
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            if (!_instanceSignal.WaitOne(TimeSpan.FromSeconds(1))) continue;
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    WriteDiagnosticLog("[Instance] 收到唤醒请求，显示主窗口");
+                                    ShowMainWindow();
+                                }
+                                catch (Exception ex) { WriteDiagnosticLog($"[Instance] 显示主窗口失败: {ex.Message}"); }
+                            }));
+                        }
+                        catch (ObjectDisposedException) { break; }
+                        catch { }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Instance] 唤醒监听启动失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>通知已在运行的实例显示主窗口；失败也不影响本次退出</summary>
+        private void SignalExistingInstance()
+        {
+            try
+            {
+                using var signal = EventWaitHandle.OpenExisting(InstanceSignalName);
+                signal.Set();
+                WriteDiagnosticLog("[Instance] 已有实例在运行，已请求其显示主窗口；本次启动退出");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Instance] 唤醒已有实例失败（可能对方版本较旧）: {ex.GetType().Name}");
+            }
+        }
+
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
@@ -178,67 +236,16 @@ namespace SeewoAutoLogin
             }
             else if (!isFirstInstance)
             {
-                try
-                {
-                    var result = MessageBox.Show(
-                        "已有希沃自动登录正在运行。\n\n" +
-                        "选择操作：\n" +
-                        "  · 是   → 关闭旧实例，使用当前\n" +
-                        "  · 否   → 重启旧实例\n" +
-                        "  · 取消 → 关闭当前",
-                        "希沃自动登录",
-                        MessageBoxButton.YesNoCancel,
-                        MessageBoxImage.Question);
-
-                    if (result == MessageBoxResult.Yes)
-                    {
-                        // 关闭旧实例
-                        foreach (var proc in Process.GetProcessesByName("SeewoAutoLogin")
-                            .Where(p => p.Id != Environment.ProcessId))
-                        {
-                            try { proc.Kill(); proc.WaitForExit(3000); } catch { }
-                        }
-                        // 重新获取互斥锁所有权
-                        instanceMutex?.Dispose();
-                        instanceMutex = new Mutex(true, InstanceMutexName, out isFirstInstance);
-                        WriteDiagnosticLog("[Instance] 已关闭旧实例，继续启动");
-                        // 当前进程成为新实例，继续运行
-                    }
-                    else if (result == MessageBoxResult.No)
-                    {
-                        // 重启旧实例：关闭旧进程，然后重启新进程，退出当前
-                        foreach (var proc in Process.GetProcessesByName("SeewoAutoLogin")
-                            .Where(p => p.Id != Environment.ProcessId))
-                        {
-                            try { proc.Kill(); proc.WaitForExit(3000); } catch { }
-                        }
-                        // 启动新进程替代
-                        var exePath = Process.GetCurrentProcess().MainModule?.FileName;
-                        if (!string.IsNullOrEmpty(exePath))
-                        {
-                            Process.Start(new ProcessStartInfo
-                            {
-                                FileName = exePath,
-                                Arguments = "--elevated",
-                                UseShellExecute = true
-                            });
-                        }
-                        _isExiting = true;
-                        Shutdown();
-                        return;
-                    }
-                    else
-                    {
-                        // 取消 → 关闭当前
-                        _isExiting = true;
-                        Shutdown();
-                        return;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    WriteDiagnosticLog($"[Instance] 实例检测异常: {ex.Message}");
-                }
+                // 已有实例在运行：请它把主窗口显示出来，本次启动随后静默退出。
+                //
+                // 原先这里弹一个带系统提示音的「是/否/取消」询问框。开机自启与本人在桌面上
+                // 双击图标很容易撞在一起，于是每次开机都可能弹一个突兀的对话框加提示音 ——
+                // 而用户真正想要的往往只是「把界面叫出来」。现在改为直接唤醒已有实例。
+                SignalExistingInstance();
+                instanceMutex?.Dispose();
+                _isExiting = true;
+                Shutdown();
+                return;
             }
 
             if (isUninstall)
@@ -254,6 +261,7 @@ namespace SeewoAutoLogin
             if (isFirstInstance && instanceMutex != null)
             {
                 _instanceMutex = instanceMutex;
+                StartInstanceSignalListener();
             }
             else
             {
@@ -378,14 +386,34 @@ namespace SeewoAutoLogin
                 var hint = IsAdministrator()
                     ? "常见原因：端口 24300 被其它程序占用、hosts 文件无法写入。\n可在主界面顶部状态栏点击「一键修复」重试。"
                     : "当前以普通权限运行，本地 SSO 网关需要管理员权限。\n请以管理员身份重新运行本程序。";
-                NotifyError("SSO 网关错误",
-                    $"{ex.Message}\n\n" +
-                    $"希沃自动登录功能可能无法正常工作。\n{hint}");
+                // 以普通权限运行导致网关起不来，是可预期的降级状态（用户主动选了"以降级模式运行"），
+                // 不该用弹窗打断 —— 主界面自检栏会标红，托盘也会给出提示，足够让用户知道该提权。
+                if (IsAdministrator())
+                {
+                    NotifyError("SSO 网关错误",
+                        $"{ex.Message}\n\n" +
+                        $"希沃自动登录功能可能无法正常工作。\n{hint}");
+                }
+                else
+                {
+                    WriteDiagnosticLog("[Gateway] 以普通权限运行，本地 SSO 网关未启动（预期内的降级状态，不弹窗）");
+                    try { _trayIcon?.SetStatusText("需要管理员权限才能启用快捷登录"); } catch { }
+                }
             }
 
             // 账号保活与网关是否可用无关：即便以普通权限运行、网关没能启动，
             // 也必须在凭据过期前续期，否则账号数据一样会失效。
             StartDailyTokenRefresh();
+
+            // 关机 / 注销时也补一次续期（只挂一次，避免重复注册）
+            try
+            {
+                Microsoft.Win32.SystemEvents.SessionEnding += (_, __) => TryFinalKeepAlive();
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[KeepAlive] 关机事件注册失败: {ex.Message}");
+            }
 
             // 首次启动显示欢迎界面（放在网关启动之后：即使用户停留在欢迎界面，希沃侧快捷登录也已可用）
             var welcomeShown = false;
@@ -1120,8 +1148,22 @@ namespace SeewoAutoLogin
                     service.DiagnosticMessage += WriteDiagnosticLog;
                     service.RestoreQrSession(session.Token, account.UserInfo);
                     var result = await service.ExchangeCurrentTokenAsync().ConfigureAwait(true);
-                    if (!result.Success) return (false, "扫码令牌已失效，需要重新扫码添加");
 
+                    // 记录凭据「年龄」：凭据是扫码那一刻拿到的，能续期说明还在有效期内。
+                    // 积累几次「多大年龄仍能续期 / 从多大年龄开始续不动」，就能反推出实际有效期，
+                    // 从而判断关机多久之内还能自动恢复。
+                    var age = session.AcquiredAtUtc == default
+                        ? "未知"
+                        : (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours.ToString("F1") + " 小时";
+
+                    if (!result.Success)
+                    {
+                        WriteDiagnosticLog($"[KeepAlive] 扫码凭据续期失败; account-id={account.Id}; 凭据年龄={age}; " +
+                                           $"说明=凭据已超出有效期，无法自动恢复，需要重新扫码");
+                        return (false, "扫码令牌已失效，需要重新扫码添加");
+                    }
+
+                    WriteDiagnosticLog($"[KeepAlive] 扫码凭据续期成功; account-id={account.Id}; 凭据年龄={age}");
                     if (!string.IsNullOrWhiteSpace(service.Token)) OnQrTokenValidated(account, service.Token);
                     if (service.UserInfo != null) account.UserInfo = service.UserInfo;
                     return (true, "已自动续期");
@@ -1135,7 +1177,18 @@ namespace SeewoAutoLogin
             }
         }
 
-        /// <summary>续期失败时提示一次，说明哪些账号需要人工处理</summary>
+        /// <summary>上一次就续期失败弹窗的日期（弹窗每天最多一次）</summary>
+        private DateTime _lastKeepAliveNotifyDate = DateTime.MinValue;
+
+        /// <summary>
+        /// 续期失败时的提醒策略。
+        ///
+        /// 续期是后台行为，失败原因往往只是网络抖动；每次都弹窗（还带系统提示音）
+        /// 会在上课时突然响一声，很打扰。所以这里分三档：
+        ///   · 托盘图标右下角点亮感叹号 —— 只要还有异常账号就一直亮着，恢复后自动熄灭
+        ///   · 账号列表里逐条标注状态 —— 想细看的时候随时能看
+        ///   · 弹窗每天最多一次，并列出具体是哪些账号
+        /// </summary>
         private void NotifyKeepAliveFailure()
         {
             try
@@ -1143,17 +1196,65 @@ namespace SeewoAutoLogin
                 var bad = _config.Accounts
                     .Where(a => a.HealthState == "bad" && !IsPlaceholderAccount(a))
                     .ToList();
+
+                // 托盘感叹号跟随实际状态，恢复正常后自动熄灭
+                _trayIcon?.SetAlert(bad.Count > 0);
+
                 if (bad.Count == 0) return;
+
+                var today = DateTime.Today;
+                if (_lastKeepAliveNotifyDate == today) return;
+                _lastKeepAliveNotifyDate = today;
+
+                var shown = bad.Take(8)
+                    .Select(a => string.IsNullOrWhiteSpace(a.DisplayName) ? a.Username : a.DisplayName)
+                    .ToList();
+                var nameList = string.Join("\n", shown.Select(n => "  · " + n));
+                if (bad.Count > shown.Count) nameList += $"\n  · 另有 {bad.Count - shown.Count} 个";
 
                 var qrCount = bad.Count(a => !string.IsNullOrWhiteSpace(a.QrCredentialId));
                 var pwdCount = bad.Count - qrCount;
-                var parts = new List<string>();
-                if (pwdCount > 0) parts.Add($"{pwdCount} 个密码账号需要重新录入");
-                if (qrCount > 0) parts.Add($"{qrCount} 个扫码账号需要重新扫码");
+                var hint = new List<string>();
+                if (pwdCount > 0) hint.Add($"{pwdCount} 个密码账号：请确认密码是否已修改");
+                if (qrCount > 0) hint.Add($"{qrCount} 个扫码账号：需要重新扫码添加");
 
-                NotifyInfo("有账号需要处理", string.Join("；", parts) + "。\n可打开账号列表查看具体原因。");
+                NotifyInfo("有账号自动续期失败",
+                    $"以下账号需要处理：\n\n{nameList}\n\n{string.Join("\n", hint)}" +
+                    "\n\n后续不再重复弹窗，可查看托盘图标或账号列表了解状态。");
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 退出前补一次续期。
+        ///
+        /// 凭据越「新鲜」，关机后还能撑的时间越长：如果凭据有效期是若干天，
+        /// 那么在关机前刚换过一次，下次开机这段时间内都还有机会继续续期。
+        /// 只在确实有账号需要续期时才做，且带超时，不会拖慢退出。
+        /// </summary>
+        private void TryFinalKeepAlive()
+        {
+            try
+            {
+                var now = DateTimeOffset.UtcNow;
+                var need = _config.Accounts.Any(a =>
+                    !IsPlaceholderAccount(a) &&
+                    (!string.IsNullOrEmpty(a.Password) || !string.IsNullOrWhiteSpace(a.QrCredentialId)) &&
+                    (!a.LastTokenExchangeAtUtc.HasValue || now - a.LastTokenExchangeAtUtc.Value > TimeSpan.FromMinutes(5)));
+
+                if (!need) return;
+
+                WriteDiagnosticLog("[KeepAlive] 退出前刷新凭据…");
+                var task = RunKeepAliveAsync(force: true);
+                if (!task.Wait(TimeSpan.FromSeconds(12)))
+                    WriteDiagnosticLog("[KeepAlive] 退出前刷新超时，已跳过（不影响退出）");
+                else
+                    WriteDiagnosticLog($"[KeepAlive] 退出前刷新完成：续期 {task.Result.refreshed} 个");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[KeepAlive] 退出前刷新异常: {ex.GetType().Name}");
+            }
         }
 
         /// <summary>让主界面刷新账号列表（主界面未打开或已销毁时静默跳过）</summary>
@@ -1359,7 +1460,7 @@ namespace SeewoAutoLogin
         /// 窗口若不显式设置 Icon，只会沿用 exe 图标并受 Windows 图标缓存影响，
         /// 换图标后任务栏仍显示旧图标，所以这里直接给出图像。
         /// </summary>
-        internal static System.Windows.Media.Imaging.BitmapImage? LoadWindowIcon()
+        internal static System.Windows.Media.Imaging.BitmapSource? LoadWindowIcon()
         {
             try
             {
@@ -1371,13 +1472,21 @@ namespace SeewoAutoLogin
                 using var stream = assembly.GetManifestResourceStream(name);
                 if (stream == null) return null;
 
-                var image = new System.Windows.Media.Imaging.BitmapImage();
-                image.BeginInit();
-                image.StreamSource = stream;
-                image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;  // 立即读取，避免流关闭后失效
-                image.EndInit();
-                image.Freeze();
-                return image;
+                // 关键：ico 里打包了 16~256 多个尺寸，直接交给 BitmapImage 会取到第一帧（通常是 16px），
+                // 任务栏和 Alt+Tab 再把它放大，于是图标又小又糊。这里按尺寸挑一帧合适的。
+                var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(
+                    stream,
+                    System.Windows.Media.Imaging.BitmapCreateOptions.None,
+                    System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+
+                var frame = decoder.Frames
+                    .Where(f => f.PixelWidth <= 64)          // 32/48 足够任务栏使用
+                    .OrderByDescending(f => f.PixelWidth)
+                    .FirstOrDefault()
+                    ?? decoder.Frames.OrderBy(f => f.PixelWidth).First();   // 兜底取最小帧
+
+                frame.Freeze();
+                return frame;
             }
             catch
             {

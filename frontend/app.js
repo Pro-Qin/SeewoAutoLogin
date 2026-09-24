@@ -237,6 +237,8 @@ function updateStatusBar() {
 }
 
 // ===== Two-Column Render =====
+let accountListRendered = false;
+
 function renderAccounts() {
   const accounts = state.accounts || [];
   const empty = document.getElementById('emptyState');
@@ -258,13 +260,19 @@ function renderAccounts() {
   document.getElementById('activeCount').textContent = active.length;
   document.getElementById('inactiveCount').textContent = inactive.length;
 
-  activeCol.innerHTML = active.map((a,i) => cardHtml(a, true, i, full)).join('');
-  inactiveCol.innerHTML = inactive.map((a,i) => cardHtml(a, false, i, full)).join('');
+  // 入场动画只在列表首次出现时播放。
+  // 之前每次 renderAccounts() 都会重建卡片 DOM，于是点选账号、切换生效区这类操作
+  // 也会让整列卡片重新"飞入"一遍，看起来像在闪烁。
+  const animate = !accountListRendered;
+  accountListRendered = true;
+
+  activeCol.innerHTML = active.map((a,i) => cardHtml(a, true, i, full, animate)).join('');
+  inactiveCol.innerHTML = inactive.map((a,i) => cardHtml(a, false, i, full, animate)).join('');
 
   updateActionBar();
 }
 
-function cardHtml(a, isActive, idx, isFull) {
+function cardHtml(a, isActive, idx, isFull, animate) {
   const sel = state.selectedId === a.id ? ' selected' : '';
   const freq = a.requestCount > 0 ? '<span class="freq" title="最近SSO请求: ' + escAttr(a.lastRequestAtUtc || '-') + '">' + esc(a.requestCount) + '次</span>' : '';
   // 健康巡检小圆点：优先使用 account-list 里持久化的 healthState（刷新/重启后仍显示），
@@ -284,18 +292,41 @@ function cardHtml(a, isActive, idx, isFull) {
         : `<button class="switch-btn" data-switch="active" title="移到生效">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l1.41 1.41L7.83 11H20v2H7.83l5.58 5.59L12 20l-8-8z"/></svg>
           </button>`);
-  return `<div class="acct-card${sel}" data-id="${escAttr(a.id)}">
+  // 后台自动续期状态：让「这个账号有没有被自动刷新过」一眼可见，
+  // 而不是只能靠账号突然不可用来发现问题。占位账号不参与续期，不显示。
+  let renewLine = '';
+  if (!a.isPlaceholder && a.lastTokenExchangeAtUtc) {
+    const failed = hState === 'bad';
+    renewLine = '<div class="renew-line' + (failed ? ' bad' : '') + '">'
+      + (failed ? '续期失败 · ' : '已自动续期 · ')
+      + esc(relativeTime(a.lastTokenExchangeAtUtc))
+      + '</div>';
+  }
+
+  return `<div class="acct-card${sel}${animate ? ' enter' : ''}" data-id="${escAttr(a.id)}">
     <div class="row1">
       <div class="avatar-mini"><span>${esc(a.initial||'S')}</span></div>
       <div class="info">
         <div class="name">${esc(a.displayName||a.username||'')}</div>
         <div class="meta">${esc(a.username||'')} · ${esc(a.loginType||'')}</div>
+        ${renewLine}
       </div>
       ${healthDot}
       ${freq}
       ${switchBtn}
     </div>
   </div>`;
+}
+
+// 把时间戳转成人话（刚刚 / N 分钟前 / N 小时前 / N 天前）
+function relativeTime(text) {
+  const t = new Date(String(text).replace(' ', 'T'));
+  if (isNaN(t.getTime())) return text;
+  const sec = (Date.now() - t.getTime()) / 1000;
+  if (sec < 60) return '刚刚';
+  if (sec < 3600) return Math.floor(sec / 60) + ' 分钟前';
+  if (sec < 86400) return Math.floor(sec / 3600) + ' 小时前';
+  return Math.floor(sec / 86400) + ' 天前';
 }
 
 function switchToActive(id) {
