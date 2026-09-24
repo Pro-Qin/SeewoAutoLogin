@@ -76,7 +76,8 @@
                 <ProgressBar x:Name="StatusProgress"
                              Margin="0,24,0,0" Height="4"
                              IsIndeterminate="True"
-                             Foreground="#007AFF" Background="#2C2C2E" BorderThickness="0"/>
+                             Minimum="0" Maximum="100" Value="0"
+                             Foreground="#75C72A" Background="#2C2C2E" BorderThickness="0"/>
                 <StackPanel x:Name="StatusButtons"
                             Orientation="Horizontal" HorizontalAlignment="Center"
                             Margin="0,26,0,0" Visibility="Collapsed">

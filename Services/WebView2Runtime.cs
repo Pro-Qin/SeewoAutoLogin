@@ -18,6 +18,12 @@ namespace SeewoAutoLogin.Services
     ///  2. 应用安装在 Program Files，WebView2 默认在 exe 同级建用户数据目录会失败
     ///     → 用户数据目录固定到 %LOCALAPPDATA%\SeewoAutoLogin\WebView2。
     /// </summary>
+    /// <summary>
+    /// WebView2 安装进度：说明文字 + 可选百分比。
+    /// Percent 为 null 表示"进度未知"（例如静默安装阶段），界面此时应显示不确定进度条。
+    /// </summary>
+    public readonly record struct InstallProgress(string Text, double? Percent);
+
     internal static class WebView2Runtime
     {
         /// <summary>微软官方 Evergreen Bootstrapper（约 150KB，运行时由它联网下载并静默安装）。</summary>
@@ -125,18 +131,20 @@ namespace SeewoAutoLogin.Services
         /// <summary>
         /// 下载官方 Bootstrapper 并静默安装 WebView2 运行时。
         /// 返回 true 表示安装后已能探测到运行时。
+        ///
+        /// 下载环节会自动重试：首次启动时网络抖动、代理软件未运行、DNS 暂时不可用都很常见，
+        /// 一次失败就判定"装不上"对用户没有意义。
         /// </summary>
-        public static async Task<bool> InstallAsync(IProgress<string> progress, CancellationToken cancellationToken)
+        public static async Task<bool> InstallAsync(IProgress<InstallProgress> progress, CancellationToken cancellationToken)
         {
             if (IsInstalled) return true;
 
             var setupPath = Path.Combine(Path.GetTempPath(), "MicrosoftEdgeWebView2Setup.exe");
             try
             {
-                progress?.Report("正在下载 WebView2 运行时安装包…");
-                await DownloadFileAsync(BootstrapperUrl, setupPath, progress, cancellationToken);
+                await DownloadWithRetryAsync(BootstrapperUrl, setupPath, progress, cancellationToken);
 
-                progress?.Report("正在安装 WebView2 运行时（静默模式，可能需要 1-2 分钟）…");
+                progress?.Report(new InstallProgress("正在安装 WebView2 运行时（静默模式，可能需要 1-2 分钟）…", null));
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = setupPath,
@@ -158,7 +166,7 @@ namespace SeewoAutoLogin.Services
 
                 // 安装完成后旧环境缓存已失效
                 ResetEnvironment();
-                progress?.Report("安装完成，正在校验运行时…");
+                progress?.Report(new InstallProgress("安装完成，正在校验运行时…", null));
                 return IsInstalled;
             }
             finally
@@ -173,7 +181,53 @@ namespace SeewoAutoLogin.Services
             return CoreWebView2Environment.CreateAsync(null, UserDataFolder, null);
         }
 
-        private static async Task DownloadFileAsync(string url, string destination, IProgress<string> progress,
+        /// <summary>
+        /// 带自动重试的下载：最多 3 次，间隔递增。
+        /// 每次重试都会把原因和进度告知界面，用户能看到"在重试"而不是卡住不动。
+        /// </summary>
+        private static async Task DownloadWithRetryAsync(string url, string destination,
+            IProgress<InstallProgress> progress, CancellationToken cancellationToken)
+        {
+            const int maxAttempts = 3;
+            Exception lastError = null;
+
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    await DownloadFileAsync(url, destination, progress, cancellationToken);
+                    return;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    if (attempt == maxAttempts) break;
+
+                    progress?.Report(new InstallProgress(
+                        $"下载失败（{DescribeDownloadFailure(ex)}），正在重试（{attempt}/{maxAttempts - 1}）…", null));
+                    await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken);
+                }
+            }
+
+            throw lastError ?? new InvalidOperationException("下载失败");
+        }
+
+        /// <summary>把底层异常翻译成用户能看懂的原因</summary>
+        private static string DescribeDownloadFailure(Exception ex) => ex switch
+        {
+            System.Net.Http.HttpRequestException => "网络连接失败，可能是网络不通或代理设置异常",
+            TaskCanceledException => "连接超时",
+            System.Net.Sockets.SocketException => "无法建立连接",
+            UnauthorizedAccessException => "没有写入临时目录的权限",
+            IOException => "写入文件失败，请检查磁盘空间",
+            _ => ex.Message
+        };
+
+        private static async Task DownloadFileAsync(string url, string destination, IProgress<InstallProgress> progress,
             CancellationToken cancellationToken)
         {
             using var handler = new HttpClientHandler();
@@ -199,9 +253,11 @@ namespace SeewoAutoLogin.Services
                 received += read;
                 if (total <= 0) continue;
                 var percent = (int)(received * 100 / total);
-                if (percent == lastPercent || percent % 5 != 0) continue;
+                if (percent == lastPercent || percent % 2 != 0) continue;   // 每 2% 刷新一次，进度条更跟手
                 lastPercent = percent;
-                progress?.Report($"正在下载 WebView2 运行时安装包… {percent}%");
+                progress?.Report(new InstallProgress(
+                    $"正在下载 WebView2 运行时… {percent}%（{received / 1048576.0:F1} / {total / 1048576.0:F1} MB）",
+                    percent));
             }
         }
     }

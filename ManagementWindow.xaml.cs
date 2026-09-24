@@ -145,16 +145,31 @@ namespace SeewoAutoLogin
 
             if (await RunInstallAsync()) return true;
 
-            _app?.WriteDiagnosticLog("[WebView2] 自动安装未成功");
-            ShowStatusPanel("WebView2 自动安装失败",
-                "无法自动安装 WebView2 运行时（可能网络受限或安装被系统阻止）。\n请在「手动下载」安装官方运行时后，点击「重新检测」。",
+            _app?.WriteDiagnosticLog("[WebView2] 自动安装未成功（已自动重试 3 次）");
+            ShowStatusPanel("WebView2 运行时安装未成功",
+                "已自动重试 3 次仍未成功。常见原因：网络无法访问微软下载服务器、公司网络有限制、或安装被安全软件拦截。\n\n" +
+                "可以点「自动安装」再试一次；或用「手动下载」装好官方运行时后点「重新检测」。",
                 showRetry: true, showInstall: true, showDownload: true);
             return false;
         }
 
         private async Task<bool> RunInstallAsync()
         {
-            var progress = new Progress<string>(text => StatusDetail.Text = text);
+            // 进度回调同时更新说明文字与进度条：下载阶段显示真实百分比，安装阶段转为不确定进度
+            var progress = new Progress<Services.InstallProgress>(p =>
+            {
+                StatusDetail.Text = p.Text;
+                if (p.Percent.HasValue)
+                {
+                    StatusProgress.IsIndeterminate = false;
+                    StatusProgress.Value = p.Percent.Value;
+                }
+                else
+                {
+                    StatusProgress.IsIndeterminate = true;
+                }
+            });
+
             try
             {
                 return await WebView2Runtime.InstallAsync(progress, CancellationToken.None);
