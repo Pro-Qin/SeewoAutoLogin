@@ -123,6 +123,15 @@ function handleCSharpMessage(raw) {
       if (st) st.textContent = '已取消';
       break;
     }
+    case 'diagnostics-exported': {
+      const dst = document.getElementById('diagnosticsStatus');
+      if (dst) dst.textContent = msg.ok ? ('已导出到：' + (msg.path || '')) : (msg.message || '导出失败');
+      showToast(msg.ok ? (msg.message || '诊断包已导出') : (msg.message || '诊断包导出失败'), msg.ok ? 'ok' : 'error');
+      break;
+    }
+    case 'seewo-version-changed':
+      showToast('检测到希沃客户端已更新，如遇登录异常请反馈', 'warn');
+      break;
   }
 }
 
@@ -303,6 +312,15 @@ function cardHtml(a, isActive, idx, isFull, animate) {
       + '</div>';
   }
 
+  // 扫码账号的凭据一旦过期就无法自动恢复（希沃只发一个 token，没有 refresh token），
+  // 所以直接给一个补救入口：重新扫一次，登录后会自动替换该账号的凭据，不用删了重加。
+  const rescanBtn = (!a.isPlaceholder && a.loginType === '扫码')
+    ? `<button class="switch-btn rescan${hState === 'bad' ? ' urgent' : ''}" data-rescan="${escAttr(a.id)}"
+         title="重新扫码：扫码登录后会自动替换该账号的凭据">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+      </button>`
+    : '';
+
   return `<div class="acct-card${sel}${animate ? ' enter' : ''}" data-id="${escAttr(a.id)}">
     <div class="row1">
       <div class="avatar-mini"><span>${esc(a.initial||'S')}</span></div>
@@ -313,6 +331,7 @@ function cardHtml(a, isActive, idx, isFull, animate) {
       </div>
       ${healthDot}
       ${freq}
+      ${rescanBtn}
       ${switchBtn}
     </div>
   </div>`;
@@ -327,6 +346,16 @@ function relativeTime(text) {
   if (sec < 3600) return Math.floor(sec / 60) + ' 分钟前';
   if (sec < 86400) return Math.floor(sec / 3600) + ' 小时前';
   return Math.floor(sec / 86400) + ' 天前';
+}
+
+// 重新扫码：走的是和「扫码登录」完全相同的流程。
+// C# 侧扫码成功后会按账号匹配已有账号并替换其凭据（App.CompleteQrLoginAsync 里已有该逻辑），
+// 所以这里不需要特殊参数，扫同一个账号即可。
+function rescanAccount(id) {
+  const a = (state.accounts || []).find(x => x.id === id);
+  navigate('qr');
+  send({ type: 'start-qr' });
+  showToast('请用希沃 App 扫码登录' + (a && a.displayName ? '（' + a.displayName + '）' : '') + '，登录成功后会自动替换该账号的凭据', 'info');
 }
 
 function switchToActive(id) {
@@ -518,6 +547,8 @@ document.addEventListener('click', function(e) {
     const card = sw.closest('.acct-card');
     const id = card ? card.getAttribute('data-id') : '';
     if (!id || sw.disabled || sw.classList.contains('disabled')) return;
+    // 重新扫码按钮同样带 .switch-btn（沿用同一套样式），所以要先判断它
+    if (sw.hasAttribute('data-rescan')) { rescanAccount(id); return; }
     if (sw.getAttribute('data-switch') === 'inactive') switchToInactive(id);
     else switchToActive(id);
     return;

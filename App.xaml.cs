@@ -28,6 +28,8 @@ namespace SeewoAutoLogin
         public SeewoOverlay CurrentOverlay => _overlay;
         private Mutex _instanceMutex;
         private bool _isExiting;
+        /// <summary>希沃客户端版本变化检测结果（启动时检测一次，供主界面首次显示时提示）</summary>
+        private Services.SeewoVersionCheckResult _seewoVersionChange;
 
         /// <summary>
         /// True when the application is performing an intentional shutdown (not minimize-to-tray).
@@ -36,6 +38,9 @@ namespace SeewoAutoLogin
 
         /// <summary>主界面开场动画是否已播放（每个进程只播放一次）</summary>
         internal bool IntroPlayed { get; set; }
+
+        /// <summary>本次启动检测到的希沃客户端版本变化（无变化 / 未检测到时为 null 或 Changed=false）</summary>
+        internal Services.SeewoVersionCheckResult SeewoVersionChange => _seewoVersionChange;
 
         public PluginConfig Config => _config;
         public SeewoAuthService AuthService => _authService;
@@ -399,6 +404,21 @@ namespace SeewoAutoLogin
                     WriteDiagnosticLog("[Gateway] 以普通权限运行，本地 SSO 网关未启动（预期内的降级状态，不弹窗）");
                     try { _trayIcon?.SetStatusText("需要管理员权限才能启用快捷登录"); } catch { }
                 }
+            }
+
+            // 希沃客户端版本变化检测（网关启动之后执行一次）：
+            // 希沃升级后接口可能变化，越早知道越容易把「登录异常」归因到版本变化上。
+            try
+            {
+                _seewoVersionChange = Services.SeewoVersionMonitor.CheckAndRecord(
+                    Path.Combine(AppDataDir, "seewo-version.json"), WriteDiagnosticLog);
+
+                if (_seewoVersionChange != null && _seewoVersionChange.Changed)
+                    _trayIcon?.SetStatusText($"检测到希沃客户端已更新（{_seewoVersionChange.Previous} → {_seewoVersionChange.Current}）");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[SeewoVersion] 版本检测异常: {ex.GetType().Name} - {ex.Message}");
             }
 
             // 账号保活与网关是否可用无关：即便以普通权限运行、网关没能启动，
@@ -1283,6 +1303,9 @@ namespace SeewoAutoLogin
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SeewoAutoLogin");
 
         private string ConfigPath => Path.Combine(AppDataDir, "config.json");
+
+        /// <summary>数据目录（%LOCALAPPDATA%\SeewoAutoLogin）：供诊断包导出等外部功能读取日志与配置</summary>
+        internal static string DataDirectory => AppDataDir;
 
         public void LoadConfig()
         {

@@ -216,8 +216,10 @@
           <p style="color:#d7d7d7;font-size:12px;margin:0 0 12px 0">第一次用？30 秒看完教程就知道账号怎么加、希沃那边会变成什么样。教程可以随时重看。</p>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button class="btn btn-secondary" id="startTourBtn">显示使用教程</button>
+            <button class="btn btn-secondary" id="exportDiagnosticsBtn" onclick="send({type:'export-diagnostics'});var s=document.getElementById('diagnosticsStatus');if(s)s.textContent='正在收集诊断信息，请稍候…';">导出诊断包</button>
             <button class="btn btn-danger" id="factoryResetBtn">恢复出厂设置</button>
           </div>
+          <div id="diagnosticsStatus" style="font-size:12px;margin-top:10px;color:var(--text-tertiary);line-height:1.6"></div>
           <div id="factoryResetStatus" style="font-size:12px;margin-top:10px;color:var(--text-tertiary);line-height:1.6"></div>
         </div>
         <div class="card">

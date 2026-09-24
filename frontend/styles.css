@@ -797,3 +797,11 @@ nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
 }
 .renew-line.bad { color: rgba(255, 122, 100, .9); }
 
+
+/* ===== 账号卡片：重新扫码按钮 ===== */
+/* 扫码凭据过期后无法自动恢复，卡片上给一个直接的补救入口 */
+.switch-btn.rescan { color: rgba(255, 255, 255, .5); }
+.switch-btn.rescan:hover { color: var(--accent, #75c72a); }
+.switch-btn.rescan.urgent { color: #ff7a64; }
+.switch-btn.rescan.urgent:hover { color: #ff9b8a; }
+

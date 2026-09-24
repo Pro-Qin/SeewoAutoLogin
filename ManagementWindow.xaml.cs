@@ -418,6 +418,18 @@ namespace SeewoAutoLogin
             UpdateGatewayStatus();
             StartSeewoMonitor();
 
+            // 希沃客户端版本变化提示（仅在检测到变化的那一次启动推送一次）
+            var seewoVersionChange = _app?.SeewoVersionChange;
+            if (seewoVersionChange != null && seewoVersionChange.Changed)
+            {
+                await SendToJs(new
+                {
+                    type = "seewo-version-changed",
+                    from = seewoVersionChange.Previous ?? "",
+                    to = seewoVersionChange.Current ?? ""
+                });
+            }
+
             // 首次使用引导：欢迎界面选择了「查看教程」时自动播放（等界面渲染稳定再开始）
             if (_app.Config.PendingTour)
             {
@@ -775,6 +787,7 @@ namespace SeewoAutoLogin
                     case "tour-debug": _app.WriteDiagnosticLog("[Tour] " + (root.TryGetProperty("text", out var dbg) ? dbg.GetString() : "")); break;
                     case "tour-done": HandleTourDone(root); break;
                     case "factory-reset": HandleFactoryReset(); break;
+                    case "export-diagnostics": await HandleExportDiagnosticsAsync(); break;
                     case "get-terms": await SendTerms(); break;
                     case "open-external": HandleOpenExternal(root); break;
                     case "download-update": HandleDownloadUpdate(); break;
@@ -1073,6 +1086,55 @@ namespace SeewoAutoLogin
                 _app.RestartApp();
             };
             restartTimer.Start();
+        }
+
+        /// <summary>
+        /// 导出诊断包：日志 + 脱敏配置 + 系统信息 + 自检快照 → 一个 zip。
+        /// 收集与压缩放在后台线程，避免日志较多时把界面卡住；任何一项失败都只是少一个文件。
+        /// </summary>
+        private async Task HandleExportDiagnosticsAsync()
+        {
+            DiagnosticBundleContext context = null;
+            try
+            {
+                var dataDir = App.DataDirectory;
+                context = new DiagnosticBundleContext
+                {
+                    AppDataDir = dataDir,
+                    LogsDir = Path.Combine(dataDir, "Logs"),
+                    ConfigPath = Path.Combine(dataDir, "config.json"),
+                    AppVersion = AppVersion,
+                    SelfCheckSnapshot = () => _app.BuildSelfCheckStatus(),
+                    Log = _app.WriteDiagnosticLog
+                };
+
+                var targetPath = DiagnosticBundleService.AskSavePath(this, context, out var cancelled);
+                if (cancelled)
+                {
+                    await SendToJs(new { type = "diagnostics-exported", ok = false, path = "", message = "已取消导出" });
+                    return;
+                }
+
+                var result = await Task.Run(() => DiagnosticBundleService.Create(targetPath, context));
+                await SendToJs(new
+                {
+                    type = "diagnostics-exported",
+                    ok = result.Ok,
+                    path = result.Path ?? "",
+                    message = result.Message ?? ""
+                });
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Diagnostics] 导出异常: {ex.GetType().Name} - {ex.Message}");
+                await SendToJs(new
+                {
+                    type = "diagnostics-exported",
+                    ok = false,
+                    path = "",
+                    message = "导出失败：" + ex.Message
+                });
+            }
         }
 
         private void HandleExportConfig()
