@@ -2,6 +2,8 @@
 
 基于 [CJKmkp/SeewoAutoLogin](https://github.com/CJKmkp/SeewoAutoLogin)（ICC-CE 插件版）重构的 **Windows 独立应用（WPF）**，为希沃白板提供 SSO 快捷登录能力。
 
+> 项目主页：<https://pro-qin.github.io/SeewoAutoLogin/> | 下载：<https://github.com/Pro-Qin/SeewoAutoLogin/releases/latest>
+
 ## 功能
 
 - 多希沃账号管理：账号密码登录、希沃官方二维码登录（120s 倒计时、过期/拒绝/网络错误状态）
