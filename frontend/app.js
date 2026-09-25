@@ -10,7 +10,7 @@ try {
 
 // ===== App State =====
 let state = { currentPage:'accounts', accounts:[], selectedId:null, config:{}, qrActive:false, needsPassword:false, particles:true,
-  maxVisible:6, status:null, health:{}, backupsLoading:false };
+  maxVisible:6, status:null, health:{}, backupsLoading:false, filterTag:'' };
 
 // 生效区账号上限：由 init 消息 config.maxVisibleAccounts 下发，缺省 6
 function maxVisible() {
@@ -38,6 +38,8 @@ function navigate(page) {
   const t = { accounts:'账号列表', add:'添加账号', qr:'扫码登录', settings:'设置', about:'关于' };
   document.getElementById('pageTitle').textContent = t[page] || '';
   if (page === 'accounts') renderAccounts();
+  if (page === 'settings') { send({ type: 'get-credential-lifetime' }); send({ type: 'get-switch-pin' }); }
+  moveNavIndicator();
 }
 
 // ===== Handle Messages from C# =====
@@ -61,6 +63,30 @@ function handleCSharpMessage(raw) {
       state.accounts = msg.accounts || []; state.selectedId = null; state.health = {}; renderAccounts(); updateStatusBar();
       if (msg.config) applyConfig(msg.config);
       break;
+    case 'switch-pin': {
+      var spEnabled = !!msg.enabled;
+      var spCheck = document.getElementById('useSwitchPinCheck');
+      var spPanel = document.getElementById('switchPinPanel');
+      var spStatus = document.getElementById('switchPinStatus');
+      if (spCheck) {
+        switchPinSuppressChange = true;
+        spCheck.checked = spEnabled;
+        switchPinSuppressChange = false;
+      }
+      if (spPanel) spPanel.style.display = spEnabled ? 'block' : 'none';
+      if (spStatus) spStatus.textContent = spEnabled
+        ? '已启用：切换生效账号前需要输入口令'
+        : '未启用：切换账号不验证'; 
+      break;
+    }
+    case 'credential-lifetime':
+      var cl = document.getElementById('credentialLifetime');
+      if (cl) {
+        var ctext = msg.text || '';
+        if (!ctext || ctext.indexOf('样本不足') >= 0) { cl.style.display = 'none'; }
+        else { cl.textContent = ctext; cl.style.display = 'block'; }
+      }
+      break;
     case 'terms':
       window.__termsText = msg.text || '';
       renderTerms(window.__termsText);
@@ -81,6 +107,7 @@ function handleCSharpMessage(raw) {
       if (msg.startMinimized!==undefined) document.getElementById('startMinimizedCheck').checked = msg.startMinimized;
       if (msg.autoShowOverlay!==undefined) document.getElementById('autoShowOverlayCheck').checked = msg.autoShowOverlay;
       if (msg.autoCheckUpdate!==undefined) document.getElementById('autoCheckUpdateCheck').checked = msg.autoCheckUpdate;
+      if (msg.autoInstallAfterDownload!==undefined) setAutoInstallSwitch(msg.autoInstallAfterDownload);
       break;
     case 'unlock-status': document.getElementById('unlockStatus').textContent = msg.text; break;
     case 'unlock-success': hideLock(); break;
@@ -103,6 +130,7 @@ function handleCSharpMessage(raw) {
     case 'status': renderSelfCheck(msg.status || msg); break;
     case 'health': renderHealth(msg); break;
     case 'batch-import-result': renderBatchImportResult(msg); break;
+    case 'csv-imported': renderCsvImportResult(msg); break;
     case 'backups': renderBackups(msg); break;
     case 'toast': showToast(msg.text, msg.level); break;
     case 'start-tour': startTour(); break;
@@ -161,6 +189,19 @@ function checkUpdate() {
 }
 function openUpdatePage() { send({type:'download-update'}); }
 function fmtMB(bytes) { return ((bytes || 0) / 1048576).toFixed(1) + ' MB'; }
+// ===== 下载完成后自动安装 =====
+// 「关于」页与「设置 → 更新」各有一个开关，两处始终同步到同一份配置（autoInstallAfterDownload）
+function setAutoInstallSwitch(enabled) {
+  ['autoInstallUpdateCheck','autoInstallUpdateSettingsCheck'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.checked = !!enabled;
+  });
+}
+function onAutoInstallSwitchChanged(enabled) {
+  setAutoInstallSwitch(enabled);
+  send({ type: 'update-setting', key: 'autoInstallAfterDownload', value: !!enabled });
+  showToast(enabled ? '下载完成并通过校验后将自动静默安装' : '已关闭自动安装，更新包将只下载、需手动安装', 'info');
+}
 function renderUpdateProgress(msg) {
   msg = msg || {};
   const state = msg.state || '';
@@ -171,13 +212,21 @@ function renderUpdateProgress(msg) {
       ? '正在下载 ' + Math.round((msg.received || 0) * 100 / total) + '%（' + fmtMB(msg.received) + ' / ' + fmtMB(total) + '）'
       : '正在下载 ' + fmtMB(msg.received);
   }
+  const installing = (state === 'verifying' || state === 'installing');
   ['updateStatus','settingsUpdateStatus'].forEach(function (id) {
     const el = document.getElementById(id);
-    if (el) { el.textContent = text; el.className = 'update-status' + (state === 'error' ? ' error' : ''); }
+    if (el) {
+      el.textContent = text;
+      el.className = 'update-status' + (state === 'error' ? ' error' : (state === 'installing' ? ' ok' : ''));
+    }
   });
   const busy = (state === 'preparing' || state === 'downloading');
   const btn = document.getElementById('downloadUpdateBtn');
-  if (btn) btn.disabled = busy;
+  if (btn) {
+    btn.disabled = busy || installing;
+    // 校验 / 静默安装阶段已经没什么可下载的了，别再让用户以为还能再点一次
+    if (installing) btn.style.display = 'none';
+  }
   // 下载过程中给出取消入口，避免用户只能干等
   const cancelBtn = document.getElementById('cancelDownloadBtn');
   if (cancelBtn) cancelBtn.style.display = busy ? '' : 'none';
@@ -256,15 +305,24 @@ function renderAccounts() {
   const limit = maxVisible();
   const full = accounts.length >= limit;
   updateLimitHint();
+  renderTagFilter();
 
   if (accounts.length === 0) {
     activeCol.innerHTML = ''; inactiveCol.innerHTML = '';
-    empty.style.display = 'block'; return;
+    setEmptyState(true, '暂无账号'); return;
   }
-  empty.style.display = 'none';
 
-  const active = accounts.slice(0, limit);
-  const inactive = accounts.slice(limit);
+  // 生效区 / 未生效区的切分始终按后端下发的真实顺序算，
+  // 标签筛选只决定「哪些卡片显示出来」，不会改变谁在生效区、谁排第几。
+  const active = filterByTag(accounts.slice(0, limit));
+  const inactive = filterByTag(accounts.slice(limit));
+
+  if (active.length === 0 && inactive.length === 0) {
+    activeCol.innerHTML = ''; inactiveCol.innerHTML = '';
+    setEmptyState(true, '没有带「' + state.filterTag + '」标签的账号');
+    return;
+  }
+  setEmptyState(false, '');
 
   document.getElementById('activeCount').textContent = active.length;
   document.getElementById('inactiveCount').textContent = inactive.length;
@@ -279,6 +337,79 @@ function renderAccounts() {
   inactiveCol.innerHTML = inactive.map((a,i) => cardHtml(a, false, i, full, animate)).join('');
 
   updateActionBar();
+}
+
+// ===== 标签筛选（只影响显示，后端数据与生效区顺序都不变）=====
+function accountTags(a) {
+  if (!a || !a.tags) return [];
+  const raw = Array.isArray(a.tags) ? a.tags : String(a.tags).split(/[,，;；]/);
+  return raw.map(function(t) { return String(t).trim(); }).filter(function(t) { return t.length > 0; });
+}
+function filterByTag(list) {
+  const tag = state.filterTag;
+  if (!tag) return list || [];
+  return (list || []).filter(function(a) { return accountTags(a).indexOf(tag) >= 0; });
+}
+function collectTags() {
+  const tags = [];
+  (state.accounts || []).forEach(function(a) {
+    accountTags(a).forEach(function(t) {
+      if (!tags.some(function(x) { return x.toLowerCase() === t.toLowerCase(); })) tags.push(t);
+    });
+  });
+  return tags;
+}
+function setEmptyState(show, text) {
+  const empty = document.getElementById('emptyState');
+  if (!empty) return;
+  empty.style.display = show ? 'block' : 'none';
+  if (show && text) {
+    const t = empty.querySelector('.empty-text');
+    if (t) t.textContent = text;
+  }
+}
+function setTagFilter(tag) {
+  state.filterTag = tag || '';
+  renderAccounts();
+}
+// 下拉框选项只在标签集合变化时重建：否则用户每选一次都会让下拉框收起、丢掉焦点
+function renderTagFilter() {
+  const sel = document.getElementById('tagFilter');
+  const tags = collectTags();
+  // 正在筛选的标签已经不存在了（删账号 / 改标签）就自动回到「全部」，免得列表一直是空的
+  if (state.filterTag && !tags.some(function(t) { return t === state.filterTag; })) state.filterTag = '';
+
+  if (sel) {
+    const signature = tags.join('\u0001');
+    if (sel.getAttribute('data-tags') !== signature) {
+      sel.innerHTML = '<option value="">全部标签</option>'
+        + tags.map(function(t) { return '<option value="' + escAttr(t) + '">' + esc(t) + '</option>'; }).join('');
+      sel.setAttribute('data-tags', signature);
+    }
+    const cur = state.filterTag || '';
+    sel.value = cur;
+    if (sel.value !== cur) sel.value = '';
+    sel.disabled = tags.length === 0;
+    sel.classList.toggle('active', !!cur);
+  }
+
+  const clearBtn = document.getElementById('tagFilterClear');
+  if (clearBtn) clearBtn.style.display = state.filterTag ? '' : 'none';
+
+  updateTagFilterHint();
+}
+function updateTagFilterHint() {
+  const hint = document.getElementById('tagFilterHint');
+  if (!hint) return;
+  const tag = state.filterTag;
+  if (!tag) { hint.style.display = 'none'; hint.innerHTML = ''; return; }
+  const total = (state.accounts || []).length;
+  const shown = filterByTag(state.accounts || []).length;
+  hint.innerHTML = '<span>当前筛选：<b>' + esc(tag) + '</b> · 显示 ' + shown + ' / ' + total + ' 个账号</span>'
+    + '<span style="flex:1"></span>'
+    + '<button type="button" class="tag-filter-clear-btn" id="tagFilterClearBtn">清除筛选</button>';
+  hint.style.display = 'flex';
+  bindClick('tagFilterClearBtn', function() { setTagFilter(''); });
 }
 
 function cardHtml(a, isActive, idx, isFull, animate) {
@@ -367,7 +498,11 @@ function switchToInactive(id) {
 
 function selectAccount(id) {
   state.selectedId = state.selectedId === id ? null : id;
-  renderAccounts();
+  // 只改选中态，不重建整个列表 —— 重建会让所有卡片重新插入 DOM，看着像整列刷新了一遍
+  document.querySelectorAll('.acct-card').forEach(function (el) {
+    el.classList.toggle('selected', el.getAttribute('data-id') === state.selectedId);
+  });
+  updateActionBar();
 }
 
 function updateActionBar() {
@@ -390,15 +525,16 @@ function updateActionBar() {
 function actEditName() {
   if (!state.selectedId) return;
   const acct = state.accounts.find(a => a.id === state.selectedId);
-  const name = prompt('输入新的显示名称：', acct ? (acct.displayName || acct.username || '') : '');
+  // WebView2 不支持 window.prompt（点了不会弹任何东西，静默失败），交给 C# 用原生输入框
+  send({ type: 'rename-account-dialog', id: acct ? acct.id : '' });
+  const name = null;   // 下面原有的校验逻辑保留，但不会再走到
   if (name && name.trim()) send({type:'edit-display-name', id:state.selectedId, name:name.trim()});
 }
 function actEditTags() {
   if (!state.selectedId) return;
-  const acct = state.accounts.find(a => a.id === state.selectedId);
-  const cur = acct && acct.tags ? acct.tags : '';
-  const tags = prompt('输入标签（逗号分隔）：', cur);
-  if (tags !== null) send({type:'edit-tags', id:state.selectedId, tags});
+  // 标签输入交给 C# 侧的原生输入框：WebView2 不支持 window.prompt，
+  // 用 prompt 会出现「点了『标签』毫无反应」的静默失败。
+  send({type:'edit-tags-dialog', id:state.selectedId});
 }
 function actSetActive() {
   if (!state.selectedId) return;
@@ -444,7 +580,10 @@ document.addEventListener('change', function(e) {
     case 'startMinimizedCheck': send({type:'update-setting', key:'startMinimized', value:e.target.checked}); break;
     case 'autoShowOverlayCheck': send({type:'update-setting', key:'autoShowOverlay', value:e.target.checked}); break;
     case 'autoCheckUpdateCheck': send({type:'update-setting', key:'autoCheckUpdate', value:e.target.checked}); break;
+    case 'autoInstallUpdateCheck': onAutoInstallSwitchChanged(e.target.checked); break;
+    case 'autoInstallUpdateSettingsCheck': onAutoInstallSwitchChanged(e.target.checked); break;
     case 'rotationGroupSize': send({type:'update-setting', key:'userListRotationGroupSize', value:parseInt(e.target.value)}); break;
+    case 'tagFilter': setTagFilter(e.target.value); break;
     case 'particleToggle': toggleParticles(e.target.checked); break;
   }
 });
@@ -459,7 +598,10 @@ const unlockInput = document.getElementById('unlockPasswordInput');
 if (unlockInput) unlockInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') unlockApp(); });
 
 // ===== Debug =====
-function addFakeAccount() { const n = prompt('输入假账号名称：','测试用户'+Math.floor(Math.random()*100)); if(n&&n.trim()) send({type:'add-fake-account',displayName:n.trim()}); }
+function addFakeAccount() {
+  // 同上：prompt 在 WebView2 里无效，改由 C# 弹原生输入框
+  send({ type: 'add-fake-account-dialog' });
+}
 
 // ===== Particle Background =====
 let particleCanvas = null, pCtx = null, pAniId = null, pParticles = [];
@@ -757,6 +899,70 @@ function renderBatchImportResult(msg) {
   }
   if (added > 0) showToast('批量导入完成：成功 ' + added + ' 个' + (failed > 0 ? '，失败 ' + failed + ' 个' : ''), failed > 0 ? 'warn' : 'ok');
   else if (failed > 0) showToast('批量导入失败 ' + failed + ' 个', 'error');
+}
+
+
+// ===== CSV 文件导入 =====
+// 文件选择在 C# 侧弹系统对话框，用户挑文件的时间也算在等待里，所以超时给得比粘贴导入宽得多
+let csvTimer = null;
+const CSV_IMPORT_TIMEOUT = 120000;
+const CSV_FAIL_LINES_SHOWN = 5;
+
+function setCsvBusy(busy) {
+  const btn = document.getElementById('importCsvBtn');
+  if (!btn) return;
+  btn.disabled = !!busy;
+  btn.textContent = busy ? '等待选择文件…' : '选择 CSV 文件导入';
+}
+
+function importCsvFile() {
+  const res = document.getElementById('batchImportResult');
+  if (res) res.innerHTML = '';
+  send({ type: 'import-csv' });
+  setCsvBusy(true);
+  showToast('请在弹窗里选择要导入的 CSV 文件', 'info');
+  if (csvTimer) clearTimeout(csvTimer);
+  csvTimer = setTimeout(function() {
+    csvTimer = null;
+    setCsvBusy(false);
+    showToast('CSV 导入超时，请重试', 'warn');
+  }, CSV_IMPORT_TIMEOUT);
+}
+
+function renderCsvImportResult(msg) {
+  msg = msg || {};
+  if (csvTimer) { clearTimeout(csvTimer); csvTimer = null; }
+  setCsvBusy(false);
+
+  if (msg.cancelled) { showToast('已取消 CSV 导入', 'info'); return; }
+
+  const added = parseInt(msg.added, 10) || 0;
+  const updated = parseInt(msg.updated, 10) || 0;
+  const failed = parseInt(msg.failed, 10) || 0;
+  const fails = (msg.messages || []).filter(function(m) { return !!m; });
+
+  const res = document.getElementById('batchImportResult');
+  if (res) {
+    let html = '<div class="batch-line ' + (failed > 0 ? 'err' : 'ok') + '">CSV 导入完成：新增 '
+      + added + ' 个，更新 ' + updated + ' 个，失败 ' + failed + ' 个</div>';
+    // 明细只列前几条失败原因：整份失败清单对用户没用，还容易把区域撑得很长
+    fails.slice(0, CSV_FAIL_LINES_SHOWN).forEach(function(m) {
+      html += '<div class="batch-line err">' + esc(m) + '</div>';
+    });
+    if (fails.length > CSV_FAIL_LINES_SHOWN) {
+      html += '<div class="batch-line err">…还有 ' + (fails.length - CSV_FAIL_LINES_SHOWN) + ' 条失败原因未显示</div>';
+    }
+    res.innerHTML = html;
+  }
+
+  if (added + updated > 0) {
+    showToast('CSV 导入完成：新增 ' + added + ' 个，更新 ' + updated + ' 个'
+      + (failed > 0 ? '，失败 ' + failed + ' 个' : ''), failed > 0 ? 'warn' : 'ok');
+  } else if (failed > 0) {
+    showToast('CSV 导入失败 ' + failed + ' 个，详见导入明细', 'error');
+  } else {
+    showToast('CSV 文件里没有可导入的账号', 'warn');
+  }
 }
 
 // ===== 配置备份与还原 =====
@@ -1123,6 +1329,278 @@ function closeTerms() {
   if (ov) ov.hidden = true;
 }
 
+// ===== 侧边栏滑动指示条 =====
+// 让「当前在哪一页」有连续的空间感：切换时指示条滑过去，而不是硬切。
+// ===== 侧边栏白色跟随条 =====
+// 鼠标移到哪一项，白条就滑到哪；离开导航区时淡出。
+function moveNavHover(target) {
+  var nav = document.querySelector('nav');
+  var hv = document.getElementById('navHover');
+  if (!nav || !hv) return;
+  if (!target) { hv.style.opacity = '0'; return; }
+  var nr = nav.getBoundingClientRect();
+  var tr = target.getBoundingClientRect();
+  var hh = Math.min(tr.height * 0.44, 16);
+  hv.style.height = hh + 'px';
+  hv.style.opacity = '1';
+  hv.style.transform = 'translateY(' + (tr.top - nr.top + (tr.height - hh) / 2) + 'px)';
+}
+function bindNavHover() {
+  var nav = document.querySelector('nav');
+  if (!nav) return;
+  // 用 mousemove + closest 判断，而不是逐项 mouseenter：
+  // 鼠标从导航项移到导航区的间隙（gap / padding）时并不会触发 mouseleave，
+  // 那样白条就会停在原地不消失。
+  nav.addEventListener('mousemove', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('.nav-item') : null;
+    moveNavHover(el);
+  });
+  nav.addEventListener('mouseleave', function () { moveNavHover(null); });
+  // 鼠标移出窗口或窗口失去焦点时也收起来
+  document.addEventListener('mouseleave', function () { moveNavHover(null); });
+  window.addEventListener('blur', function () { moveNavHover(null); });
+  // 切换页面时鼠标可能已经不在侧边栏，顺手收一次
+  document.querySelectorAll('.nav-item').forEach(function (el) {
+    el.addEventListener('click', function () { setTimeout(function () { moveNavHover(null); }, 260); });
+  });
+}
+
+function moveNavIndicator() {
+  var nav = document.querySelector('nav');
+  var ind = document.getElementById('navIndicator');
+  var active = document.querySelector('.nav-item.active');
+  if (!nav || !ind) return;
+  if (!active) { ind.style.opacity = '0'; return; }
+  var nr = nav.getBoundingClientRect();
+  var ar = active.getBoundingClientRect();
+  var h = Math.min(ar.height * 0.5, 20);
+  ind.style.height = h + 'px';
+  ind.style.opacity = '1';
+  ind.style.transform = 'translateY(' + (ar.top - nr.top + (ar.height - h) / 2) + 'px)';
+}
+window.addEventListener('resize', moveNavIndicator);
+// 首次加载时把指示条摆到位（字体加载完尺寸才准，所以两帧后再量一次）
+// ===== 健康条 =====
+// 默认只显示一句话，把 gateway / hosts / 权限 / 希沃进程这些技术细节收进展开区。
+// 有任何一项异常时自动展开一次，让问题显眼。
+var healthAutoExpanded = false;
+function syncHealthBar() {
+  var summary = document.getElementById('healthSummary');
+  var dot = document.getElementById('healthDot');
+  var text = document.getElementById('healthText');
+  var bar = document.getElementById('selfcheckBar');
+  if (!summary || !dot || !text) return;
+  var raw = (summary.textContent || '').trim();
+  var bad = /异常|失败|未运行|未提权|不可用/.test(raw);
+  dot.className = 'health-dot' + (bad ? ' bad' : '');
+  text.textContent = raw || (bad ? '有项目需要处理' : '一切正常');
+  if (bad && bar && !healthAutoExpanded) {
+    healthAutoExpanded = true;
+    bar.classList.add('open');
+    var hint = document.getElementById('healthHint');
+    if (hint) hint.textContent = '收起 ‹';
+  }
+}
+function bindHealthBar() {
+  var head = document.getElementById('healthBar');
+  var bar = document.getElementById('selfcheckBar');
+  if (head && bar) {
+    head.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('button')) return;
+      var open = bar.classList.toggle('open');
+      var hint = document.getElementById('healthHint');
+      if (hint) hint.textContent = open ? '收起 ‹' : '展开查看细节 ›';
+    });
+  }
+  var items = document.getElementById('selfcheckItems');
+  if (items && window.MutationObserver) {
+    new MutationObserver(syncHealthBar).observe(items, { attributes: true, subtree: true, attributeFilter: ['class'] });
+  }
+  var sum = document.getElementById('healthSummary');
+  if (sum && window.MutationObserver) {
+    new MutationObserver(syncHealthBar).observe(sum, { childList: true, characterData: true, subtree: true });
+  }
+  syncHealthBar();
+}
+
+function bootNavIndicator() {
+  bindAddPage();
+  bindNavHover();
+  bindHealthBar();
+  moveNavIndicator();
+  requestAnimationFrame(function () { requestAnimationFrame(moveNavIndicator); });
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootNavIndicator);
+else bootNavIndicator();
+
+// ===== 扫码前的确认弹窗 =====
+// 扫码凭据由希沃签发且无法在失效后恢复；这里先把利弊讲清楚，再让用户选。
+// ===== 添加账号页：双圆钮展开 / 收缩 =====
+// 点一个展开、另一个变灰；再点已展开的收回；点另一个则先前自动收缩。
+function navigateToAdd() {
+  // 直接进添加账号页，不自动展开任何一侧（由用户自己点圆钮）
+  navigate("add");
+}
+
+function pickSide(which) {
+  var aw = document.getElementById('addwrap');
+  var sP = document.getElementById('sidePw');
+  var sQ = document.getElementById('sideQr');
+  if (!aw || !sP || !sQ) return;
+  var openPw = (which === 'pw');
+  var alreadyOpen = (openPw && sP.classList.contains('open')) || (!openPw && sQ.classList.contains('open'));
+  function apply(side, isOpen, isDim) {
+    side.classList.toggle('open', isOpen);
+    side.classList.toggle('dim', isDim);
+  }
+  if (alreadyOpen) {
+    aw.classList.remove('exp');
+    apply(sP, false, false);
+    apply(sQ, false, false);
+    return;
+  }
+  aw.classList.add('exp');
+  apply(sP, openPw, !openPw);
+  apply(sQ, !openPw, openPw);
+}
+
+// 扫码区四个阶段：idle(模糊+开始按钮) / loading(转圈) / ready(揭开模糊) / success(对勾)
+function setQrStage(stage) {
+  var f = document.getElementById('qrframe');
+  var mk = document.getElementById('qrmask');
+  var sp = document.getElementById('qrspin');
+  var sg = document.getElementById('qrStatus');
+  var ph = document.getElementById('qrPlaceholder');
+  var img = document.getElementById('qrImage');
+  if (!f) return;
+  if (stage === 'loading') {
+    if (mk) mk.style.display = 'none';
+    if (sp) sp.style.display = 'grid';
+    if (sg) sg.innerHTML = '<b>正在获取二维码…</b>';
+    return;
+  }
+  if (stage === 'ready') {
+    if (sp) sp.style.display = 'none';
+    if (mk) mk.style.display = 'none';
+    f.classList.remove('blur');
+    f.classList.add('ready');
+    if (ph) ph.style.display = 'none';
+    if (img) img.style.display = 'block';
+    if (sg) sg.textContent = '请用手机扫描二维码';
+    return;
+  }
+  if (stage === 'success') {
+    f.classList.add('done');
+    if (sg) sg.innerHTML = '<b>登录成功</b>';
+    return;
+  }
+  f.classList.add('blur');
+  f.classList.remove('ready');
+  f.classList.remove('done');
+  if (mk) mk.style.display = 'grid';
+  if (sp) sp.style.display = 'none';
+  if (ph) ph.style.display = 'block';
+  if (img) img.style.display = 'none';
+  if (sg) sg.textContent = '';
+}
+
+// 扫码被后台取消 / 超时 / 失败时，把界面退回初始态并重新露出「开始扫码」按钮。
+// 注意：这里用轮询而不是 MutationObserver —— 回调里会改 qrStatus 的文字，
+// 用 observer 监视它自己会造成无限递归，界面会直接卡死。
+// 判据用 qrframe 是否还停在 ready/done 状态，重置后条件不再成立，天然不会重复执行。
+function watchQrStatus() {
+  if (window.__qrWatchStarted) return;
+  window.__qrWatchStarted = true;
+  setInterval(function () {
+    var f = document.getElementById('qrframe');
+    var sg = document.getElementById('qrStatus');
+    if (!f || !sg) return;
+    var busy = f.classList.contains('ready') || f.classList.contains('done');
+    if (!busy) return;
+    var t = sg.textContent || '';
+    if (!/取消|失败|过期|无效|错误/.test(t)) return;
+    setQrStage('idle');
+    sg.textContent = t;
+  }, 600);
+}
+
+function bindAddPage() {
+  bindClick('cirPw', function () { pickSide('pw'); });
+  bindClick('cirQr', function () { pickSide('qr'); });
+  var sP = document.getElementById('sidePw');
+  var sQ = document.getElementById('sideQr');
+  if (sP) { var l1 = sP.querySelector('.lbl'); if (l1) l1.addEventListener('click', function () { pickSide('pw'); }); }
+  if (sQ) { var l2 = sQ.querySelector('.lbl'); if (l2) l2.addEventListener('click', function () { pickSide('qr'); }); }
+  var fold = document.getElementById('foldBatch');
+  if (fold) {
+    var fb = fold.querySelector('button');
+    if (fb) fb.addEventListener('click', function () { fold.classList.toggle('open'); });
+  }
+  // C# 把二维码图片写进 qrImage.src 后，onload 触发，此时才揭开模糊
+  var img = document.getElementById('qrImage');
+  if (img) img.addEventListener('load', function () { if (this.getAttribute('src')) setQrStage('ready'); });
+  bindClick('startQrBtn', function () {
+    setQrStage('loading');
+    send({ type: 'start-qr' });
+  });
+  bindClick('refreshQrBtn', function () { setQrStage('loading'); });
+  watchQrStatus();
+}
+function confirmQrLogin() {
+  // 直接展开扫码面板并开始，不再弹确认框（说明已常驻面板下方）
+  if (typeof pickSide === "function") pickSide("qr");
+  send({ type: "start-qr" });
+}
+function closeQrWarn() {
+  var ov = document.getElementById('qrWarnOverlay');
+  if (ov) ov.hidden = true;
+}
+// 次选：维持现状，继续用扫码
+bindClick('qrWarnStayBtn', function () {
+  closeQrWarn();
+  send({ type: 'start-qr' });
+});
+// 优先：改用密码方式
+bindClick('qrWarnPwdBtn', function () {
+  closeQrWarn();
+  navigate('add');
+  showToast('在「账号密码」页填写手机号与密码即可；这种方式不受关机时间影响', 'info');
+});
+(function bindQrWarnMask() {
+  var ov = document.getElementById('qrWarnOverlay');
+  if (!ov) return;
+  ov.addEventListener('click', function (e) { if (e.target === ov) closeQrWarn(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !ov.hidden) closeQrWarn();
+  });
+})();
+
+// ===== 切换账号口令 =====
+function setSwitchPin() {
+  var input = document.getElementById('newSwitchPinInput');
+  var pin = input ? input.value.trim() : '';
+  if (pin.length < 4) { showToast('口令至少 4 位', 'error'); return; }
+  send({ type: 'set-switch-pin', pin: pin });
+  if (input) input.value = '';
+}
+function clearSwitchPin() {
+  send({ type: 'clear-switch-pin' });
+}
+// 程序化回填开关状态时，不能触发 change —— 否则启动时把 enabled=false 写进复选框，
+// 会被下面的监听当成「用户取消勾选」而把口令清掉。
+var switchPinSuppressChange = false;
+(function bindSwitchPinToggle() {
+  var box = document.getElementById('useSwitchPinCheck');
+  if (!box) return;
+  box.addEventListener('change', function () {
+    if (switchPinSuppressChange) return;
+    var panel = document.getElementById('switchPinPanel');
+    if (panel) panel.style.display = this.checked ? 'block' : 'none';
+    // 用户主动取消勾选 = 清除口令
+    if (!this.checked) send({ type: 'clear-switch-pin' });
+  });
+})();
+
 // ===== 受信任外链：作者主页 / 项目仓库 =====
 // 前端只负责发起，实际打开由 C# 侧按域名白名单再校验一次后交给系统浏览器
 function openExternalUrl(url) {
@@ -1131,6 +1609,7 @@ function openExternalUrl(url) {
 bindClick('authorLink', function () { openExternalUrl('https://space.bilibili.com/1849305981'); });
 bindClick('madeByLink', function () { openExternalUrl('https://space.bilibili.com/1849305981'); });
 bindClick('openRepoBtn', function () { openExternalUrl('https://github.com/Pro-Qin/SeewoAutoLogin'); });
+bindClick('openSiteBtn', function () { openExternalUrl('https://pro-qin.github.io/SeewoAutoLogin/'); });
 
 bindClick('termsLink', openTerms);
 bindClick('termsCloseBtn', closeTerms);
@@ -1160,5 +1639,8 @@ bindClick('factoryResetBtn', function () {
 bindClick('repairBtn', function() { repairSso(); });
 bindClick('actHealthCheck', function() { runHealthCheck(); });
 bindClick('batchImportBtn', function() { batchImport(); });
+bindClick('importCsvBtn', function() { importCsvFile(); });
+// 标签筛选的「清除」：下拉框右侧的 × 和提示条里的按钮都归零到「全部」
+bindClick('tagFilterClear', function() { setTagFilter(''); });
 bindClick('listBackupsBtn', function() { listBackups(); });
 

@@ -25,6 +25,8 @@
       <span class="brand-text">Seewo Autologin</span>
     </div>
     <nav>
+      <div class="nav-hover" id="navHover"></div>
+      <div class="nav-indicator" id="navIndicator"></div>
       <div class="nav-item active" data-page="accounts" onclick="navigate('accounts')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
         <span>账号列表</span>
@@ -32,10 +34,6 @@
       <div class="nav-item" id="navAdd" data-page="add" onclick="navigate('add')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
         <span>添加账号</span>
-      </div>
-      <div class="nav-item" id="navQr" data-page="qr" onclick="navigate('qr')">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5v4h2V5h4V3H5a2 2 0 0 0-2 2zm2 10H3v4a2 2 0 0 0 2 2h4v-2H5v-4zm14 4h-4v2h4a2 2 0 0 0 2-2v-4h-2v4zM15 5h4v4h2V5a2 2 0 0 0-2-2h-4v2zM7 8h2v2H7V8zm0 6h2v2H7v-2zm4-6h2v2h-2V8zm0 6h2v2h-2v-2zm4-6h2v2h-2V8zm0 4h2v2h-2v-2zm-8 0h2v2H7v-2z"/></svg>
-        <span>扫码登录</span>
       </div>
       <div class="nav-item" data-page="settings" onclick="navigate('settings')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.488.488 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
@@ -68,6 +66,12 @@
       <!-- ===== ACCOUNTS PAGE (two-column) ===== -->
       <div id="page-accounts" class="page active">
         <div style="max-width:900px;margin:0 auto">
+          <!-- 健康条：默认只给一句人话，异常时才展开细节 -->
+          <div class="health-bar" id="healthBar">
+            <span class="health-dot" id="healthDot"></span>
+            <b id="healthText">正在检测…</b>
+            <span class="health-hint" id="healthHint">展开查看细节 ›</span>
+          </div>
           <!-- Self-Check Bar -->
           <div class="selfcheck-bar" id="selfcheckBar">
             <div class="selfcheck-items" id="selfcheckItems">
@@ -86,11 +90,16 @@
               <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path d="M15.53 2.47a.75.75 0 0 0-1.06 0l-8.47 8.47-.71 2.83 2.83-.71 8.47-8.47a.75.75 0 0 0 0-1.06l-1.06-1.06zM10.94 5L13 7.06 6.06 14l-.71.71.71-2.83L10.94 5z"/></svg>
               备注
             </button>
-            <button class="btn btn-secondary action-btn" id="actEditTags" disabled onclick="actEditTags()">标签</button>
+            <button class="btn btn-secondary action-btn" id="actEditTags" disabled title="修改选中账号的标签（逗号分隔，可用于分组筛选）" onclick="actEditTags()">标签</button>
             <button class="btn btn-secondary action-btn" id="actSetActive" disabled onclick="actSetActive()">设为当前</button>
             <button class="btn btn-danger action-btn" id="actDelete" disabled onclick="actDelete()">删除</button>
             <button class="btn btn-secondary action-btn" id="actHealthCheck" title="检测每个账号的登录态是否仍然有效">健康巡检</button>
             <span style="flex:1"></span>
+            <!-- 标签筛选：只影响列表显示，不会改动账号在生效区的真实顺序 -->
+            <span class="tag-filter" id="tagFilterWrap">
+              <select id="tagFilter" class="tag-filter-select" title="按标签筛选显示的账号"></select>
+              <button class="tag-filter-clear" id="tagFilterClear" type="button" title="清除筛选" aria-label="清除筛选" style="display:none">×</button>
+            </span>
             <button class="btn btn-secondary action-btn" id="actMoveUp" disabled title="上移">
               <svg width="12" height="12" viewBox="0 0 10 10" fill="currentColor"><path d="M2 7l3-3 3 3-1 1-2-2-2 2-1-1z"/></svg>
             </button>
@@ -98,6 +107,8 @@
               <svg width="12" height="12" viewBox="0 0 10 10" fill="currentColor"><path d="M8 3l-3 3-3-3 1-1 2 2 2-2 1 1z"/></svg>
             </button>
           </div>
+          <!-- 筛选状态：明确当前筛的是哪个标签，并给一键清除入口 -->
+          <div class="tag-filter-hint" id="tagFilterHint" style="display:none"></div>
           <!-- Two-Column Layout -->
           <div class="accounts-columns">
             <div class="column active-col">
@@ -125,8 +136,8 @@
 
         <!-- 新增账号：蓝色加号悬浮按钮 + 二级菜单 -->
         <div class="fab-group" id="fabGroup">
-          <div class="fab-menu" id="fabMenu">
-            <button class="fab-item" onclick="fabNavigate('add')" title="用账号密码登录并保存">
+          <div class="fab-menu" id="fabMenu" style="display:none">
+            <button class="fab-item" onclick="navigateToAdd()" title="用账号密码登录并保存">
               <span class="fab-item-text">
                 <b>密码添加</b>
                 <i>账号密码登录</i>
@@ -138,7 +149,7 @@
                 </svg>
               </span>
             </button>
-            <button class="fab-item" onclick="fabNavigate('qr')" title="使用希沃App扫码登录">
+            <button class="fab-item" onclick="navigateToAdd()" title="使用希沃App扫码登录">
               <span class="fab-item-text">
                 <b>扫码添加</b>
                 <i>希沃App扫码</i>
@@ -153,81 +164,126 @@
               </span>
             </button>
           </div>
-          <button class="fab" id="fabBtn" aria-label="添加账号" aria-expanded="false" onclick="toggleFab(event)">
+          <button class="fab" id="fabBtn" aria-label="添加账号" aria-expanded="false" onclick="navigateToAdd()">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5.2v13.6M5.2 12h13.6"/></svg>
           </button>
         </div>
       </div>
 
-      <!-- ===== ADD ACCOUNT PAGE ===== -->
+      <!-- ===== ADD ACCOUNT PAGE：双圆钮 + 展开 ===== -->
       <div id="page-add" class="page">
-        <div style="max-width:400px;margin:0 auto;padding-top:20px">
-          <div class="form-group">
-            <label>显示名称</label>
-            <input type="text" id="displayNameInput" class="input" placeholder="可选">
-          </div>
-          <div class="form-group">
-            <label>手机号 / 用户名</label>
-            <input type="text" id="usernameInput" class="input" placeholder="必填">
-          </div>
-          <div class="form-group">
-            <label>密码</label>
-            <input type="password" id="passwordInput" class="input" placeholder="必填">
-          </div>
-          <div id="loginStatus" class="status-msg" style="margin-top:0"></div>
-          <button class="btn btn-primary" onclick="handleLogin()" style="width:160px;display:block;margin:0 auto">登录并保存</button>
+        <div class="addwrap" id="addwrap">
 
-          <!-- 批量导入 -->
-          <div class="batch-import" id="batchImportSection">
-            <div class="batch-import-title">批量导入</div>
-            <textarea id="batchImportText" class="input batch-textarea" rows="6" spellcheck="false" placeholder="每行一个账号，格式 账号,密码 或 账号,密码,备注"></textarea>
-            <div class="batch-import-actions">
-              <button class="btn btn-primary" id="batchImportBtn">批量导入</button>
+          <!-- 左：账号密码 -->
+          <div class="side" id="sidePw">
+            <div class="circle" id="cirPw">
+              <svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg>
             </div>
-            <div id="batchImportResult" class="batch-result"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ===== QR LOGIN PAGE ===== -->
-      <div id="page-qr" class="page">
-        <div class="card" style="max-width:460px;margin:0 auto;text-align:center">
-          <h2 style="font-size:18px;margin:0 0 6px 0">扫码登录</h2>
-          <p style="color:#d7d7d7;font-size:12px;margin:0 0 20px 0">使用希沃官方App或微信扫码登录</p>
-          <div id="qrContainer" style="display:none">
-            <div class="qr-box">
-              <img id="qrImage" width="200" height="200" style="display:block">
+            <div class="lbl">账号密码<span class="side-tag">推荐</span>
+              <small>密码存在本机，凭据过期时会自动重新登录<br>不受关机时间影响</small>
+            </div>
+            <div class="panel">
+              <div class="form-group"><label>显示名称</label><input type="text" id="displayNameInput" class="input" placeholder="可选"></div>
+              <div class="form-group"><label>手机号 / 用户名</label><input type="text" id="usernameInput" class="input" placeholder="必填"></div>
+              <div class="form-group"><label>密码</label><input type="password" id="passwordInput" class="input" placeholder="必填"></div>
+              <div id="loginStatus" class="status-msg" style="margin-top:0"></div>
+              <button class="btn btn-primary" onclick="handleLogin()" style="width:100%;height:40px">登录并保存</button>
+              <div class="fold" id="foldBatch">
+                <button class="btn btn-secondary" style="width:100%;height:38px">批量导入</button>
+                <div class="foldbody">
+                  <div class="batch-import" id="batchImportSection">
+                    <textarea id="batchImportText" class="input batch-textarea" rows="6" spellcheck="false" placeholder="每行一个账号，格式：账号,密码,备注"></textarea>
+                    <div class="batch-import-actions">
+                      <button class="btn btn-primary" id="batchImportBtn">批量导入</button>
+                      <button class="btn btn-secondary" id="importCsvBtn" title="从 CSV 文件导入，自动识别 UTF-8 / GBK 编码">选择 CSV 文件导入</button>
+                    </div>
+                    <div class="batch-import-hint">CSV 字段顺序为「账号,密码,备注」，备注可省略；带表头的文件会自动跳过第一行。用户名相同的账号会被更新，不会重复添加。</div>
+                    <div id="batchImportResult" class="batch-result"></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          <div id="qrStatus" style="font-size:14px;margin:0 0 12px 0"></div>
-          <div id="qrCountdown" style="font-size:12px;color:#525252;margin:0 0 16px 0"></div>
-          <div class="btn-row" style="justify-content:center">
-            <button id="startQrBtn" class="btn btn-primary" onclick="send({type:'start-qr'})">开始扫码</button>
-            <button id="refreshQrBtn" class="btn btn-secondary" style="display:none" onclick="send({type:'start-qr'})">刷新</button>
-            <button id="cancelQrBtn" class="btn btn-secondary" style="display:none" onclick="send({type:'cancel-qr'})">取消</button>
+
+          <!-- 右：扫码登录 -->
+          <div class="side" id="sideQr">
+            <div class="circle" id="cirQr">
+              <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M12 12h.01"/></svg>
+            </div>
+            <div class="lbl">扫码登录
+              <small>用希沃 App 扫一下就好，不用记密码<br>但凭据长时间不开程序可能失效</small>
+            </div>
+            <div class="panel">
+              <div class="qrmini">
+                <div class="qrcol">
+                  <div class="qrframe" id="qrframe">
+                    <img id="qrImage" class="qrpat" width="200" height="200" style="display:none">
+                    <div class="qrph" id="qrPlaceholder"></div>
+                    <div class="qrmask" id="qrmask"><button class="startbtn" id="startQrBtn">开始扫码</button></div>
+                    <div class="qrspin" id="qrspin" style="display:none"><div class="spin"></div></div>
+                    <div class="qrtick2" id="qrtick2"><svg viewBox="0 0 72 72"><circle cx="36" cy="36" r="26"/><path d="M24 37l9 9 17-19"/></svg></div>
+                  </div>
+                  <div id="qrStatus" class="qr-status"></div>
+                  <div id="qrCountdown" class="qr-countdown"></div>
+                </div>
+                <div class="qrside">
+                  <div class="step"><div class="n">1</div><div class="t"><b>打开希沃 App</b>在手机上找到「扫一扫」</div></div>
+                  <div class="step"><div class="n">2</div><div class="t"><b>扫描左侧二维码</b>二维码 120 秒后自动刷新</div></div>
+                  <div class="step"><div class="n">3</div><div class="t"><b>在手机上确认登录</b>确认后这里会自动跳转</div></div>
+                  <div style="display:flex;gap:8px;margin-top:14px">
+                    <button id="refreshQrBtn" class="btn btn-secondary" style="display:none" onclick="send({type:'start-qr'})">刷新</button>
+                    <button id="cancelQrBtn" class="btn btn-secondary" style="display:none" onclick="send({type:'cancel-qr'})">取消</button>
+                  </div>
+                </div>
+              </div>
+              <div class="qr-note">
+                <div class="qr-note-row">
+                  <span class="qr-note-label">扫码方式</span>
+                  <span>凭据由希沃签发，程序运行期间会自动续期；但长时间没有运行本程序时凭据可能失效，届时需要重新扫码。</span>
+                </div>
+                <div class="qr-note-row">
+                  <span class="qr-note-label alt">密码方式</span>
+                  <span>密码保存在本机，凭据过期时会自动用密码重新登录，<b>不受关机时间影响</b>。希望一劳永逸的话，建议用左侧的密码方式。</span>
+                </div>
+              </div>
+            </div>
           </div>
+
         </div>
       </div>
 
       <!-- ===== SETTINGS PAGE ===== -->
       <div id="page-settings" class="page">
+        <!-- 1 启动与运行 -->
         <div class="card">
-          <h2 class="card-title">帮助与维护</h2>
-          <p style="color:#d7d7d7;font-size:12px;margin:0 0 12px 0">第一次用？30 秒看完教程就知道账号怎么加、希沃那边会变成什么样。教程可以随时重看。</p>
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
-            <button class="btn btn-secondary" id="startTourBtn">显示使用教程</button>
-            <button class="btn btn-secondary" id="exportDiagnosticsBtn" onclick="send({type:'export-diagnostics'});var s=document.getElementById('diagnosticsStatus');if(s)s.textContent='正在收集诊断信息，请稍候…';">导出诊断包</button>
-            <button class="btn btn-danger" id="factoryResetBtn">恢复出厂设置</button>
+          <h2 class="card-title">启动与运行</h2>
+          <div class="card-desc">程序怎么启动、窗口怎么显示</div>
+          <label class="checkbox-row"><input type="checkbox" id="autoStartCheck"><span>开机自启</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="minimizeToTrayCheck"><span>关闭时最小化到托盘</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="startMinimizedCheck"><span>启动时不显示主界面</span></label>
+          <hr class="divider">
+          <label class="checkbox-row"><input type="checkbox" id="rotationEnabledCheck"><span>启用用户列表轮换</span></label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+            <span style="color:#d7d7d7;font-size:13px">每组用户数：</span>
+            <select id="rotationGroupSize" class="input" style="width:80px"><option value="4">4</option><option value="6">6</option></select>
           </div>
-          <div id="diagnosticsStatus" style="font-size:12px;margin-top:10px;color:var(--text-tertiary);line-height:1.6"></div>
-          <div id="factoryResetStatus" style="font-size:12px;margin-top:10px;color:var(--text-tertiary);line-height:1.6"></div>
         </div>
+        <!-- 2 外观与显示 -->
         <div class="card">
-          <h2 class="card-title">安全设置</h2>
-          <label class="checkbox-row">
-            <input type="checkbox" id="usePasswordCheck">
-            <span>使用密码保护应用设置</span>
-          </label>
+          <h2 class="card-title">外观与显示</h2>
+          <div class="card-desc">希沃界面上的提示与动效</div>
+          <label class="checkbox-row"><input type="checkbox" id="autoShowOverlayCheck"><span>希沃打开但未登录时自动显示切换遮罩</span></label>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">关闭后仅在托盘菜单「显示遮罩」手动触发</div>
+          <label class="checkbox-row"><input type="checkbox" id="particleToggle" checked><span>粒子背景</span></label>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn btn-secondary" onclick="send({type:'toggle-overlay'})">显示切换遮罩</button>
+          </div>
+        </div>
+        <!-- 3 安全 -->
+        <div class="card">
+          <h2 class="card-title">安全</h2>
+          <div class="card-desc">一台设备多人使用时，避免别人点开你的账号</div>
+          <label class="checkbox-row"><input type="checkbox" id="usePasswordCheck"><span>使用密码保护应用设置</span></label>
           <div id="passwordPanel" style="display:none;margin-top:10px">
             <div style="display:flex;gap:8px">
               <input type="password" id="newPasswordInput" class="input" style="width:200px" placeholder="新密码">
@@ -236,86 +292,80 @@
             </div>
             <div id="passwordStatus" style="font-size:12px;margin-top:8px;color:#d7d7d7"></div>
           </div>
-        </div>
-        <div class="card">
-          <h2 class="card-title">用户列表轮换</h2>
-          <label class="checkbox-row">
-            <input type="checkbox" id="rotationEnabledCheck">
-            <span>启用用户列表轮换</span>
-          </label>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-            <span style="color:#d7d7d7;font-size:13px">每组用户数：</span>
-            <select id="rotationGroupSize" class="input" style="width:80px">
-              <option value="4">4</option>
-              <option value="6">6</option>
-            </select>
-          </div>
-        </div>
-        <div class="card">
-          <h2 class="card-title">通用设置</h2>
-          <label class="checkbox-row">
-            <input type="checkbox" id="autoStartCheck">
-            <span>开机自启</span>
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" id="minimizeToTrayCheck">
-            <span>关闭时最小化到托盘</span>
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" id="startMinimizedCheck">
-            <span>启动时不显示主界面</span>
-          </label>
           <hr class="divider">
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
-            <button class="btn btn-secondary" onclick="send({type:'export-config'})">导出配置</button>
-            <button class="btn btn-secondary" onclick="send({type:'import-config'})">导入配置</button>
-            <button class="btn btn-secondary" onclick="send({type:'open-log-viewer'})">查看日志</button>
-            <button class="btn btn-secondary" onclick="send({type:'open-diagnostic'})">一键诊断</button>
+          <label class="checkbox-row"><input type="checkbox" id="useSwitchPinCheck"><span>切换账号前需要输入口令</span></label>
+          <div id="switchPinPanel" style="display:none;margin-top:10px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input type="password" id="newSwitchPinInput" class="input" style="width:200px" placeholder="新口令（至少 4 位）">
+              <button class="btn btn-secondary" onclick="setSwitchPin()">设置口令</button>
+              <button class="btn btn-secondary" onclick="clearSwitchPin()">清除口令</button>
+            </div>
+            <div id="switchPinStatus" style="font-size:12px;margin-top:8px;color:#d7d7d7"></div>
           </div>
         </div>
-        <div class="card">
-          <h2 class="card-title">配置备份</h2>
-          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">查看应用保存的配置备份，可恢复到指定时间点（恢复会覆盖当前配置）</div>
-          <button class="btn btn-secondary" id="listBackupsBtn">查看备份</button>
-          <div id="backupList" class="backup-list"></div>
-        </div>
+        <!-- 4 更新 -->
         <div class="card">
           <h2 class="card-title">更新</h2>
-          <label class="checkbox-row">
-            <input type="checkbox" id="autoCheckUpdateCheck">
-            <span>启动时自动检查更新</span>
-          </label>
-          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">默认使用 GitHub 官方接口（api.github.com），失败时回退 jsDelivr 只读取版本号；下载地址会校验来源，非官方地址不会被打开</div>
+          <div class="card-desc">新版本怎么检查和安装</div>
+          <label class="checkbox-row"><input type="checkbox" id="autoCheckUpdateCheck"><span>启动时自动检查更新</span></label>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">默认使用 GitHub 官方接口（api.github.com），失败时回退 jsDelivr 只读取版本号；下载地址会自动择优。</div>
+          <label class="checkbox-row"><input type="checkbox" id="autoInstallUpdateSettingsCheck" checked><span>下载完成后自动安装</span></label>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">开启后：下载完成且 SHA256 校验通过即静默安装，并自动退出程序让安装器替换文件；关闭后只下载安装包，由你手动安装。</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button class="btn btn-secondary" onclick="checkUpdate()">立即检查更新</button>
             <button class="btn btn-secondary" onclick="send({type:'open-update-page', url:''})">打开发布页</button>
           </div>
           <div id="settingsUpdateStatus" class="update-status"></div>
         </div>
+        <!-- 5 数据与迁移 -->
         <div class="card">
-          <h2 class="card-title">显示</h2>
-          <label class="checkbox-row">
-            <input type="checkbox" id="autoShowOverlayCheck">
-            <span>希沃打开但未登录时自动显示切换遮罩</span>
-          </label>
-          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">关闭后仅在托盘菜单「显示遮罩」手动触发</div>
-          <label class="checkbox-row">
-            <input type="checkbox" id="particleToggle" checked>
-            <span>粒子背景</span>
-          </label>
-          <div style="display:flex;gap:8px;margin-top:10px">
-            <button class="btn btn-secondary" onclick="send({type:'toggle-overlay'})">显示切换遮罩</button>
+          <h2 class="card-title">数据与迁移</h2>
+          <div class="card-desc">换电脑、备份，或者从旧机器搬过来</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button class="btn btn-secondary" onclick="send({type:'export-config'})">导出配置</button>
+            <button class="btn btn-secondary" onclick="send({type:'import-config'})">导入配置</button>
+            <button class="btn btn-secondary" onclick="send({type:'export-accounts'})">导出账号（加密）</button>
+            <button class="btn btn-secondary" onclick="send({type:'import-accounts'})">导入账号</button>
           </div>
+          <hr class="divider">
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">查看应用保存的配置备份，可恢复到指定时间点（恢复会覆盖当前配置）</div>
+          <button class="btn btn-secondary" id="listBackupsBtn">查看备份</button>
+          <div id="backupList" class="backup-list"></div>
         </div>
+        <!-- 6 维护与诊断 -->
         <div class="card">
-          <h2 class="card-title">Debug</h2>
+          <h2 class="card-title">维护与诊断</h2>
+          <div class="card-desc">出问题时把现场留给我，或者重看一遍教程</div>
+          <p style="color:#d7d7d7;font-size:12px;margin:0 0 12px 0">第一次用？30 秒看完教程就知道账号怎么加、希沃那边会变成什么样。教程可以随时重看。</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button class="btn btn-secondary" id="startTourBtn">显示使用教程</button>
+            <button class="btn btn-secondary" id="exportDiagnosticsBtn" onclick="send({type:'export-diagnostics'});var s=document.getElementById('diagnosticsStatus');if(s)s.textContent='正在收集…'">导出诊断包</button>
+            <button class="btn btn-secondary" onclick="send({type:'open-log-viewer'})">查看日志</button>
+            <button class="btn btn-secondary" onclick="send({type:'open-diagnostic'})">一键诊断</button>
+          </div>
+          <div id="diagnosticsStatus" style="font-size:12px;margin-top:10px;color:var(--text-tertiary);line-height:1.6"></div>
+          <div id="credentialLifetime" style="display:none;font-size:12px;margin-top:12px;color:var(--text-tertiary);line-height:1.6"></div>
+        </div>
+        <!-- 7 危险操作 -->
+        <div class="card card-danger">
+          <h2 class="card-title">危险操作</h2>
+          <div class="card-desc">不可撤销，请确认后再执行</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+            <button class="btn btn-danger" id="factoryResetBtn">恢复出厂设置</button>
+            <span style="font-size:12px;color:#d7d7d7">会清空所有账号、扫码凭据与全部设置</span>
+          </div>
+          <div id="factoryResetStatus" style="font-size:12px;margin-top:10px;color:var(--text-tertiary);line-height:1.6"></div>
+        </div>
+        <!-- 8 调试 -->
+        <div class="card">
+          <h2 class="card-title">调试</h2>
+          <div class="card-desc">排查问题时用，平时可以不管</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button class="btn btn-secondary" onclick="addFakeAccount()">添加假账号</button>
+            <button class="btn btn-secondary" onclick="send({type:'refresh-debug'})">刷新希沃状态</button>
           </div>
           <div id="debugInfo" style="margin-top:10px;font-size:12px;color:var(--text-tertiary);line-height:1.6">
-            <div>希沃状态: <span id="seewoStatus">检测中...</span>
-              <button class="btn btn-small" onclick="send({type:'refresh-debug'})" style="margin-left:6px;height:22px;padding:0 6px;font-size:10px">刷新</button>
-            </div>
+            <div>希沃状态: <span id="seewoStatus">检测中...</span></div>
           </div>
         </div>
       </div>
@@ -334,10 +384,17 @@
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
             <button class="btn btn-secondary" id="checkUpdateBtn" onclick="checkUpdate()">检查更新</button>
             <button class="btn btn-secondary" id="openRepoBtn">GitHub 仓库</button>
+          <button class="btn btn-secondary" id="openSiteBtn">项目主页</button>
             <button class="btn btn-primary" id="downloadUpdateBtn" style="display:none" onclick="openUpdatePage()">下载新版本</button>
             <button class="btn btn-secondary" id="cancelDownloadBtn" style="display:none">取消下载</button>
           </div>
           <div id="updateStatus" class="update-status"></div>
+          <!-- 下载完成后的静默升级开关：与「设置 → 更新」里的同名开关共用同一份配置 -->
+          <label class="checkbox-row" style="justify-content:center;margin:12px 0 0 0">
+            <input type="checkbox" id="autoInstallUpdateCheck" checked>
+            <span>下载完成后自动安装</span>
+          </label>
+          <div style="font-size:12px;color:#d7d7d7;margin:6px 0 0 0">安装包 SHA256 校验通过后会静默安装并自动退出本程序以完成更新；关闭后只下载，需手动安装</div>
           <p class="terms-note">当您使用此软件时，则默认您已经阅读并同意 <a id="termsLink" href="javascript:void(0)">《用户协议》</a></p>
         </div>
       </div>

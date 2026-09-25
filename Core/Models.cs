@@ -26,6 +26,12 @@ namespace SeewoAutoLogin
         public bool AutoShowOverlay { get; set; }
         /// <summary>启动时自动检查更新（默认开启）</summary>
         public bool AutoCheckUpdate { get; set; } = true;
+        /// <summary>
+        /// 更新包下载完成且 SHA256 校验通过后，自动静默安装（默认开启）。
+        /// 关闭时只下载安装包并打开安装程序，由用户手动完成安装向导。
+        /// 注意：旧版配置里没有这个字段，反序列化时会保留这里的默认值 true。
+        /// </summary>
+        public bool AutoInstallAfterDownload { get; set; } = true;
         /// <summary>自定义更新源（留空使用内置 GitHub API + jsDelivr 兜底）</summary>
         public string UpdateSource { get; set; } = "";
         /// <summary>本地 SSO 网关端口（24300 被占用时自动切换并记录在此）</summary>

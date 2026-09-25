@@ -7,7 +7,7 @@
 
 ; 本地构建用的默认版本号；CI（release.yml / build.yml）会在编译前用 csproj 里的 <Version> 覆盖这一行，
 ; 避免出现“发布 vX.Y.Z，安装包却叫 vA.B.C”的问题。
-#define AppVersion "1.11.3"
+#define AppVersion "1.12.9"
 
 #ifndef BundleWebView2
   #define BundleWebView2 0
@@ -73,6 +73,9 @@ Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/si
 ; 程序换了图标之后，缓存里仍是旧的，用户看到的就还是旧图标。这一步让资源管理器重新读取。
 Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden nowait skipifdoesntexist
 Filename: "{app}\SeewoAutoLogin.exe"; Description: "启动希沃自动登录"; Flags: nowait postinstall skipifsilent
+; 静默升级（/SILENT）时上面那条会被 skipifsilent 跳过，装完程序停在关闭状态，用户得手动再开一次。
+; 这里补一条只在静默模式下执行的启动项，让静默升级后程序自动回到托盘。
+Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--minimized"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--uninstall"; RunOnceId: "SeewoAutoLoginCleanup"

@@ -18,6 +18,25 @@ namespace SeewoAutoLogin
         private readonly SeewoQrLoginClient _qrLoginClient;
         private readonly QrLoginCoordinator _qrLoginCoordinator;
         private readonly QrSessionStore _qrSessionStore;
+        /// <summary>凭据有效期观测（只写本机）</summary>
+        private Services.CredentialLifetimeTracker _lifetimeTracker;
+        /// <summary>切换账号口令服务</summary>
+        internal Services.SwitchPinService SwitchPin => _switchPin;
+
+        /// <summary>凭据有效期的观测结论（供设置页展示；样本不足时返回提示语，不编造）</summary>
+        internal string CredentialLifetimeDescription
+        {
+            get
+            {
+                try { return _lifetimeTracker?.DescribeBounds() ?? ""; }
+                catch { return ""; }
+            }
+        }
+
+        /// <summary>本机功能使用统计（只写本机，不上报）</summary>
+        private Services.LocalUsageStats _usageStats;
+        /// <summary>切换账号口令</summary>
+        private Services.SwitchPinService _switchPin;
         private readonly SeewoUserListRotationService _userListRotation;
         private readonly SeewoSsoGateway _gateway;
         private readonly TrayIconService _trayIcon;
@@ -75,6 +94,9 @@ namespace SeewoAutoLogin
             _qrLoginClient = new SeewoQrLoginClient();
             _qrLoginCoordinator = new QrLoginCoordinator(_qrLoginClient);
             _qrSessionStore = new QrSessionStore();
+            _lifetimeTracker = new Services.CredentialLifetimeTracker(AppDataDir);
+            _usageStats = new Services.LocalUsageStats(AppDataDir);
+            _switchPin = new Services.SwitchPinService(AppDataDir);
             _userListRotation = new SeewoUserListRotationService();
             _qrLoginClient.LogMessage += WriteDiagnosticLog;
             _qrLoginCoordinator.LogMessage += WriteDiagnosticLog;
@@ -1000,6 +1022,26 @@ namespace SeewoAutoLogin
             }
         }
 
+        /// <summary>
+        /// 静默升级专用退出：安装器已经拉起，这里先把配置落盘、停掉 SSO 网关，再结束进程，
+        /// 让它能替换掉正在运行的程序文件（托盘图标与其余资源由 OnExit 统一释放）。
+        /// 不弹确认框、不自动重启：新版本由用户（或下次开机自启）启动。
+        /// </summary>
+        internal void BeginSilentUpdateExit()
+        {
+            if (_isExiting) return;
+
+            WriteDiagnosticLog("[Update] 静默安装已启动，程序即将退出以完成更新");
+            try { SaveConfig(); }
+            catch (Exception ex) { WriteDiagnosticLog($"[Update] 退出前保存配置失败: {ex.Message}"); }
+            try { _gateway?.Stop(); }
+            catch (Exception ex) { WriteDiagnosticLog($"[Update] 退出前停止 SSO 网关失败: {ex.Message}"); }
+
+            _isExiting = true;
+            try { _mainWindow?.Close(); } catch { }
+            Shutdown();
+        }
+
         #region Token Refresh
 
         /// <summary>后台保活的检查频率：每 5 分钟看一次有哪些账号该续期了</summary>
@@ -1178,12 +1220,24 @@ namespace SeewoAutoLogin
 
                     if (!result.Success)
                     {
+                        // 记一条失败观测：这个年龄的凭据已经续不动了
+                        if (session.AcquiredAtUtc != default)
+                            _lifetimeTracker?.Record(isQr: true,
+                                (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours, success: false);
                         WriteDiagnosticLog($"[KeepAlive] 扫码凭据续期失败; account-id={account.Id}; 凭据年龄={age}; " +
                                            $"说明=凭据已超出有效期，无法自动恢复，需要重新扫码");
                         return (false, "扫码令牌已失效，需要重新扫码添加");
                     }
 
                     WriteDiagnosticLog($"[KeepAlive] 扫码凭据续期成功; account-id={account.Id}; 凭据年龄={age}");
+                    // 记一条观测：这个年龄的凭据还能续期。攒够样本就能算出真实有效期。
+                    if (session.AcquiredAtUtc != default)
+                        _lifetimeTracker?.Record(isQr: true,
+                            (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours, success: true);
+                    // 记一条观测：这个年龄的凭据还能续期。攒够样本就能算出真实有效期。
+                    if (session.AcquiredAtUtc != default)
+                        _lifetimeTracker?.Record(isQr: true,
+                            (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours, success: true);
                     if (!string.IsNullOrWhiteSpace(service.Token)) OnQrTokenValidated(account, service.Token);
                     if (service.UserInfo != null) account.UserInfo = service.UserInfo;
                     return (true, "已自动续期");

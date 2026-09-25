@@ -3,8 +3,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
     Title="Seewo Autologin"
-    Width="864" Height="600"
-    MinWidth="780" MinHeight="540"
+    Width="1120" Height="760"
+    MinWidth="960" MinHeight="640"
     Background="#1C1C1E"
     WindowStartupLocation="CenterScreen">
     <Window.Resources>

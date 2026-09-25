@@ -31,3 +31,6 @@ docs/promo/*.mp4
 
 # Local verification screenshots (not published)
 _verify/
+
+# 界面设计预览（本地查看用）
+docs/ui-v*.html
