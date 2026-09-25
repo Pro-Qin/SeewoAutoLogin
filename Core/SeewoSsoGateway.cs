@@ -368,9 +368,17 @@ namespace SeewoAutoLogin
         private static bool IsLocalOrigin(string origin)
         {
             if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
-            var host = uri.Host;
-            return host == "localhost" || host == "127.0.0.1" ||
-                   host == "::1" || host == "[::1]" || host == SeeSoLocalHost;
+            return IsAllowedGatewayHost(uri.Host);
+        }
+
+        private static bool IsAllowedGatewayHost(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host)) return false;
+            return string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+                || host == "127.0.0.1"
+                || host == "::1"
+                || host == "[::1]"
+                || string.Equals(host, SeeSoLocalHost, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>hosts 映射是否存在（读写语义统一由 HostsFileService 负责：备份、标记、原编码写回）</summary>
@@ -439,12 +447,38 @@ namespace SeewoAutoLogin
                 return;
             }
 
+            // Host 白名单：HttpListener 只注册了 localhost / 127.0.0.1 / local.id.seewo.com 三个前缀，
+            // 这里再显式收紧一次，避免以后误加通配前缀时把网关暴露给任意本机进程或网页。
+            if (!IsAllowedGatewayHost(req.Url?.Host))
+            {
+                Log($"拒绝未知 Host 的 SSO 请求: {req.Url?.Host} {req.HttpMethod} {path}");
+                try
+                {
+                    resp.StatusCode = 404;
+                    await WriteJson(resp, new { message = "not_found", statusCode = "404" });
+                }
+                catch { }
+                return;
+            }
+
             // CORS：只放行本机来源（localhost / 127.0.0.1 / local.id.seewo.com），不放开 *
             var origin = req.Headers["Origin"];
-            if (!string.IsNullOrEmpty(origin) && IsLocalOrigin(origin))
+            if (!string.IsNullOrEmpty(origin))
             {
-                resp.Headers.Add("Access-Control-Allow-Origin", origin);
-                resp.Headers.Add("Vary", "Origin");
+                if (IsLocalOrigin(origin))
+                {
+                    resp.Headers.Add("Access-Control-Allow-Origin", origin);
+                    resp.Headers.Add("Vary", "Origin");
+                }
+                else if (origin.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                      || origin.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 外部网页跨源请求：直接拒绝，避免被当成 CSRF 跳板触发登录或拉取账号列表。
+                    Log($"拒绝外部 Origin 的 SSO 请求: {origin} {req.HttpMethod} {path}");
+                    resp.StatusCode = 403;
+                    try { await WriteJson(resp, new { message = "forbidden_origin", statusCode = "403" }); } catch { }
+                    return;
+                }
             }
             resp.Headers.Add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
             resp.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization");
