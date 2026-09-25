@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 publish_tmp/
+publish_fixed/
 
 # VS / Rider
 .vs/

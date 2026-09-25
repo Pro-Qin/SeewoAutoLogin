@@ -10,7 +10,7 @@
     <AssemblyName>SeewoAutoLogin</AssemblyName>
     <RootNamespace>SeewoAutoLogin</RootNamespace>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-    <Version>1.12.10</Version>
+    <Version>1.12.11</Version>
     <Company>SeewoAutoLogin</Company>
     <Description>希沃自动登录 - 独立版</Description>
 
