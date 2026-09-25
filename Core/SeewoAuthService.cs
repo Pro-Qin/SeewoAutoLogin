@@ -19,7 +19,9 @@ namespace SeewoAutoLogin
         private const string AUTH_REFER = "EnAppAndroid";
         private const string USER_AGENT = "okhttp/3.12.12";
 
-        private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
+        // 希沃接口没有国内 CDN 时可能较慢；15 秒在弱网 / 代理抖动时容易被误判成"密码失效"。
+        // 放宽到 30 秒，并配合 NetworkRoute 的代理到直连重试，减少后台保活误报。
+        private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
 
         private string _token;
         private SeewoUserInfo _userInfo;
@@ -38,7 +40,14 @@ namespace SeewoAutoLogin
                     $"status={(response.TransportOk ? response.StatusCode.ToString() : "-")}; body={SanitizeJsonForLog(response.Body)}");
 
                 if (!response.TransportOk)
-                    return new SeewoLoginResult { Success = false, ErrorMessage = NetworkRoute.DescribeFailure(response) };
+                {
+                    return new SeewoLoginResult
+                    {
+                        Success = false,
+                        FailureKind = SeewoFailureKind.Network,
+                        ErrorMessage = NetworkRoute.DescribeFailure(response)
+                    };
+                }
 
                 if (!response.IsSuccess)
                 {
@@ -46,6 +55,7 @@ namespace SeewoAutoLogin
                     return new SeewoLoginResult
                     {
                         Success = false,
+                        FailureKind = ClassifyHttpStatus(response.StatusCode),
                         ErrorMessage = string.IsNullOrWhiteSpace(httpMessage) ? $"HTTP {response.StatusCode}" : httpMessage
                     };
                 }
@@ -60,11 +70,21 @@ namespace SeewoAutoLogin
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                return new SeewoLoginResult { Success = false, ErrorMessage = "已取消" };
+                return new SeewoLoginResult
+                {
+                    Success = false,
+                    FailureKind = SeewoFailureKind.Network,
+                    ErrorMessage = "已取消"
+                };
             }
             catch (Exception ex)
             {
-                return new SeewoLoginResult { Success = false, ErrorMessage = FriendlyMessage(ex) };
+                return new SeewoLoginResult
+                {
+                    Success = false,
+                    FailureKind = ClassifyException(ex),
+                    ErrorMessage = FriendlyMessage(ex)
+                };
             }
         }
 
@@ -110,15 +130,22 @@ namespace SeewoAutoLogin
             }
             catch
             {
-                return new SeewoLoginResult { Success = false, ErrorMessage = "登录接口返回了无法解析的数据" };
+                return new SeewoLoginResult
+                {
+                    Success = false,
+                    FailureKind = SeewoFailureKind.Unknown,
+                    ErrorMessage = "登录接口返回了无法解析的数据"
+                };
             }
 
             var errorCode = GetJsonInt(root, "error_code") ?? GetJsonInt(root, "code");
             if (errorCode.HasValue && errorCode.Value != 0)
             {
+                // 希沃返回的 error_code 属于明确业务错误（账户 / 密码 / 风控），继续重试没有意义。
                 return new SeewoLoginResult
                 {
                     Success = false,
+                    FailureKind = SeewoFailureKind.Credential,
                     ErrorMessage = ReadApiMessage(root) ?? $"登录失败（错误码 {errorCode.Value}）"
                 };
             }
@@ -137,6 +164,7 @@ namespace SeewoAutoLogin
             return new SeewoLoginResult
             {
                 Success = false,
+                FailureKind = SeewoFailureKind.Credential,
                 ErrorMessage = ReadApiMessage(root) ?? "登录接口未返回登录令牌，请检查账号与密码"
             };
         }
@@ -167,6 +195,26 @@ namespace SeewoAutoLogin
             if (ex is TaskCanceledException || ex is OperationCanceledException) return "请求超时";
             if (ex is HttpRequestException) return $"网络请求失败：{ex.Message}";
             return ex.Message;
+        }
+
+        /// <summary>
+        /// 按 HTTP 状态码判断失败类型。
+        /// 只有 401/403 才是凭据类问题；408/425/429/5xx 属于临时性网络 / 服务端问题，
+        /// 交给后台保活退避重试，不能当成"密码已改"弹窗打扰上课。
+        /// </summary>
+        private static SeewoFailureKind ClassifyHttpStatus(int statusCode)
+        {
+            if (statusCode == 401 || statusCode == 403) return SeewoFailureKind.Credential;
+            if (statusCode == 408 || statusCode == 425) return SeewoFailureKind.Network;
+            if (statusCode == 429 || statusCode >= 500) return SeewoFailureKind.Server;
+            return SeewoFailureKind.Unknown;
+        }
+
+        private static SeewoFailureKind ClassifyException(Exception ex)
+        {
+            if (ex is TaskCanceledException || ex is OperationCanceledException) return SeewoFailureKind.Network;
+            if (ex is HttpRequestException) return SeewoFailureKind.Network;
+            return SeewoFailureKind.Unknown;
         }
 
         public async Task<SeewoUserInfo> FetchUserInfoAsync(CancellationToken cancellationToken = default)
@@ -317,13 +365,23 @@ namespace SeewoAutoLogin
                 if (!response.TransportOk)
                 {
                     DiagnosticMessage?.Invoke("[TokenExchange] result=transport-error");
-                    return new SeewoLoginResult { Success = false, ErrorMessage = NetworkRoute.DescribeFailure(response) };
+                    return new SeewoLoginResult
+                    {
+                        Success = false,
+                        FailureKind = SeewoFailureKind.Network,
+                        ErrorMessage = NetworkRoute.DescribeFailure(response)
+                    };
                 }
 
                 if (!response.IsSuccess)
                 {
                     DiagnosticMessage?.Invoke($"[TokenExchange] result=http-error; status={response.StatusCode}");
-                    return new SeewoLoginResult { Success = false, ErrorMessage = $"HTTP {response.StatusCode}" };
+                    return new SeewoLoginResult
+                    {
+                        Success = false,
+                        FailureKind = ClassifyHttpStatus(response.StatusCode),
+                        ErrorMessage = $"HTTP {response.StatusCode}"
+                    };
                 }
 
                 using var document = JsonDocument.Parse(body);
@@ -334,7 +392,12 @@ namespace SeewoAutoLogin
                 {
                     var message = ReadApiMessage(root) ?? "Token 换发失败";
                     DiagnosticMessage?.Invoke("[TokenExchange] result=invalid; new-token-present=false");
-                    return new SeewoLoginResult { Success = false, ErrorMessage = message };
+                    return new SeewoLoginResult
+                    {
+                        Success = false,
+                        FailureKind = SeewoFailureKind.Credential,
+                        ErrorMessage = message
+                    };
                 }
 
                 _token = newToken;
@@ -346,17 +409,32 @@ namespace SeewoAutoLogin
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 DiagnosticMessage?.Invoke("[TokenExchange] result=cancelled");
-                return new SeewoLoginResult { Success = false, ErrorMessage = "已取消" };
+                return new SeewoLoginResult
+                {
+                    Success = false,
+                    FailureKind = SeewoFailureKind.Network,
+                    ErrorMessage = "已取消"
+                };
             }
             catch (TaskCanceledException)
             {
                 DiagnosticMessage?.Invoke("[TokenExchange] result=timeout");
-                return new SeewoLoginResult { Success = false, ErrorMessage = "Token 换发超时" };
+                return new SeewoLoginResult
+                {
+                    Success = false,
+                    FailureKind = SeewoFailureKind.Network,
+                    ErrorMessage = "Token 换发超时"
+                };
             }
             catch (Exception ex)
             {
                 DiagnosticMessage?.Invoke($"[TokenExchange] result=error; type={ex.GetType().Name}");
-                return new SeewoLoginResult { Success = false, ErrorMessage = ex.Message };
+                return new SeewoLoginResult
+                {
+                    Success = false,
+                    FailureKind = ClassifyException(ex),
+                    ErrorMessage = ex.Message
+                };
             }
         }
 
@@ -468,11 +546,31 @@ namespace SeewoAutoLogin
         }
     }
 
+    /// <summary>
+    /// 登录 / 续期失败的类型。
+    /// 后台保活据此区分"临时网络故障，自动退避重试"与"凭据真的失效，需要用户处理" --
+    /// 前者绝不能弹"密码是否已修改"，否则一次 15 秒超时就会在上课时突然弹窗 + 响铃。
+    /// </summary>
+    public enum SeewoFailureKind
+    {
+        None = 0,
+        /// <summary>账号 / 密码 / 令牌本身无效，重试无意义，需要用户处理。</summary>
+        Credential,
+        /// <summary>网络、超时、代理等临时性传输问题，稍后重试可能成功。</summary>
+        Network,
+        /// <summary>服务端 5xx / 限流等临时问题，稍后重试可能成功。</summary>
+        Server,
+        /// <summary>无法归类的异常，按"不误报密码问题"处理。</summary>
+        Unknown
+    }
+
     public class SeewoLoginResult
     {
         public bool Success { get; set; }
         public string Token { get; set; }
         public string ErrorMessage { get; set; }
+        /// <summary>失败类型；Success=true 时为 None。</summary>
+        public SeewoFailureKind FailureKind { get; set; } = SeewoFailureKind.None;
         public SeewoUserInfo UserInfo { get; set; }
     }
 

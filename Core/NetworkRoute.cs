@@ -42,6 +42,8 @@ namespace SeewoAutoLogin
 
         private static readonly object Gate = new object();
         private static bool _preferDirect;
+        /// <summary>直连优先的截止时间；过期后重新给代理机会，避免进程内永久粘在直连上。</summary>
+        private static DateTime _preferDirectUntilUtc = DateTime.MinValue;
         private static string _lastDecision = "";
 
         /// <summary>诊断日志出口（由 App 挂到应用日志）。</summary>
@@ -121,10 +123,20 @@ namespace SeewoAutoLogin
                         .ConfigureAwait(false);
                     var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
-                    if (attempt.UseProxy && !_preferDirect)
+                    if (attempt.UseProxy)
+                    {
+                        // 代理重新可用：清除直连优先，下次起恢复按系统代理优先。
+                        lock (Gate)
+                        {
+                            _preferDirect = false;
+                            _preferDirectUntilUtc = DateTime.MinValue;
+                        }
                         NoteDecision($"[网络] {tag} 通过{attempt.Label}成功");
-                    else if (!attempt.UseProxy && _preferDirect)
+                    }
+                    else if (_preferDirect)
+                    {
                         NoteDecision($"[网络] {tag} 已改用{attempt.Label}");
+                    }
 
                     return new HttpTextResponse
                     {
@@ -146,8 +158,12 @@ namespace SeewoAutoLogin
                     if (attempt.UseProxy)
                     {
                         // 代理端口能连上但请求仍失败（代理未启动完成 / 规则异常 / 被服务端拒绝），
-                        // 之后优先直连，同时保留代理作为后续回退项。
-                        lock (Gate) { _preferDirect = true; }
+                        // 之后优先直连，同时保留代理作为后续回退项；10 分钟后重新给代理机会。
+                        lock (Gate)
+                        {
+                            _preferDirect = true;
+                            _preferDirectUntilUtc = DateTime.UtcNow.AddMinutes(10);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -184,7 +200,13 @@ namespace SeewoAutoLogin
                 {
                     var proxyAttempt = new RouteAttempt(true, proxy, proxyUri, $"系统代理 {FormatProxy(proxyUri)}");
                     var directAttempt = new RouteAttempt(false, null, null, "直连");
-                    if (_preferDirect)
+                    bool preferDirect;
+                    lock (Gate)
+                    {
+                        preferDirect = _preferDirect && DateTime.UtcNow < _preferDirectUntilUtc;
+                        if (!preferDirect) _preferDirect = false;
+                    }
+                    if (preferDirect)
                     {
                         attempts.Add(directAttempt);
                         attempts.Add(proxyAttempt);

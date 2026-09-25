@@ -105,6 +105,7 @@ function handleCSharpMessage(raw) {
       if (msg.autoStart!==undefined) document.getElementById('autoStartCheck').checked = msg.autoStart;
       if (msg.minimizeToTray!==undefined) document.getElementById('minimizeToTrayCheck').checked = msg.minimizeToTray;
       if (msg.startMinimized!==undefined) document.getElementById('startMinimizedCheck').checked = msg.startMinimized;
+      if (msg.restoreHostsOnExit!==undefined) document.getElementById('restoreHostsOnExitCheck').checked = msg.restoreHostsOnExit;
       if (msg.autoShowOverlay!==undefined) document.getElementById('autoShowOverlayCheck').checked = msg.autoShowOverlay;
       if (msg.autoCheckUpdate!==undefined) document.getElementById('autoCheckUpdateCheck').checked = msg.autoCheckUpdate;
       if (msg.autoInstallAfterDownload!==undefined) setAutoInstallSwitch(msg.autoInstallAfterDownload);
@@ -437,8 +438,9 @@ function cardHtml(a, isActive, idx, isFull, animate) {
   let renewLine = '';
   if (!a.isPlaceholder && a.lastTokenExchangeAtUtc) {
     const failed = hState === 'bad';
+    const transient = hState === 'warn';
     renewLine = '<div class="renew-line' + (failed ? ' bad' : '') + '">'
-      + (failed ? '续期失败 · ' : '已自动续期 · ')
+      + (failed ? '续期失败 · ' : (transient ? '网络异常，自动重试 · ' : '已自动续期 · '))
       + esc(relativeTime(a.lastTokenExchangeAtUtc))
       + '</div>';
   }
@@ -584,6 +586,7 @@ document.addEventListener('change', function(e) {
     case 'autoStartCheck': send({type:'update-setting', key:'autoStart', value:e.target.checked}); break;
     case 'minimizeToTrayCheck': send({type:'update-setting', key:'minimizeToTray', value:e.target.checked}); break;
     case 'startMinimizedCheck': send({type:'update-setting', key:'startMinimized', value:e.target.checked}); break;
+    case 'restoreHostsOnExitCheck': send({type:'update-setting', key:'restoreHostsOnExit', value:e.target.checked}); break;
     case 'autoShowOverlayCheck': send({type:'update-setting', key:'autoShowOverlay', value:e.target.checked}); break;
     case 'autoCheckUpdateCheck': send({type:'update-setting', key:'autoCheckUpdate', value:e.target.checked}); break;
     case 'autoInstallUpdateCheck': onAutoInstallSwitchChanged(e.target.checked); break;
@@ -811,7 +814,7 @@ function repairSso() {
 }
 
 // ===== 账号健康巡检 =====
-function healthLevel(s) { return s === 'ok' ? 'ok' : (s === 'bad' ? 'bad' : 'unknown'); }
+function healthLevel(s) { return s === 'ok' ? 'ok' : (s === 'bad' ? 'bad' : (s === 'warn' ? 'warn' : 'unknown')); }
 let healthTimer = null;
 function runHealthCheck() {
   const btn = document.getElementById('actHealthCheck');

@@ -543,6 +543,22 @@ namespace SeewoAutoLogin
 
         protected override void OnExit(ExitEventArgs e)
         {
+            // 退出时按设置恢复 hosts：本程序不在运行时，local.id.seewo.com 不应继续指向本机。
+            try
+            {
+                if (_config?.RestoreHostsOnExit != false)
+                {
+                    if (Services.HostsFileService.RemoveLoopbackMapping(out var hostsError))
+                        WriteDiagnosticLog("[Hosts] 退出时已恢复 hosts 映射");
+                    else
+                        WriteDiagnosticLog($"[Hosts] 退出时恢复 hosts 失败（可能需要管理员权限）: {hostsError}");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Hosts] 退出时恢复 hosts 异常: {ex.GetType().Name} - {ex.Message}");
+            }
+
             _dailyTokenRefreshTimer?.Dispose();
             _qrLoginCoordinator?.Dispose();
             _qrLoginClient?.Dispose();
@@ -903,7 +919,9 @@ namespace SeewoAutoLogin
         {
             WriteDiagnosticLog("[Health] 开始账号健康巡检（发现问题会自动重新导入）");
             var (refreshed, failed) = await RunKeepAliveAsync(force: true).ConfigureAwait(true);
-            WriteDiagnosticLog($"[Health] 巡检完成：已自动修复 {refreshed} 个，仍需人工处理 {failed} 个");
+            var transient = _config.Accounts.Count(a =>
+                !IsPlaceholderAccount(a) && a.HealthState == "warn");
+            WriteDiagnosticLog($"[Health] 巡检完成：已自动修复 {refreshed} 个，仍需人工处理 {failed} 个，网络暂缓 {transient} 个");
         }
 
         /// <summary>批量导入账号：每行 “账号,密码[,备注]”</summary>
@@ -1050,6 +1068,7 @@ namespace SeewoAutoLogin
         private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMinutes(25);
 
         private bool _keepAliveRunning;
+        private int _keepAliveRunningFlag;
 
         /// <summary>
         /// 是否为占位账号（由「添加假账号」生成，凭据在希沃侧并不存在）。
@@ -1109,10 +1128,13 @@ namespace SeewoAutoLogin
         internal async Task<(int refreshed, int failed)> RunKeepAliveAsync(bool force = false)
         {
             if (_keepAliveRunning) return (0, 0);
+            // Timer 回调与界面的健康巡检可能并发进来，用原子交换保证同一时间只有一轮。
+            if (Interlocked.CompareExchange(ref _keepAliveRunningFlag, 1, 0) != 0) return (0, 0);
             _keepAliveRunning = true;
 
             var refreshed = 0;
             var failed = 0;
+            var transient = 0;
             var stateChanged = false;
             try
             {
@@ -1131,27 +1153,58 @@ namespace SeewoAutoLogin
                         continue;
                     }
 
+                    // 需要用户处理的凭据问题：不再每 5 分钟自动重试，避免反复用错误密码打接口、触发风控。
+                    // 用户改好密码或重新扫码后，健康巡检（force=true）会立刻重试；
+                    // 另外每 6 小时给一次自动复查机会，便于旧版本误标的 bad 状态自动恢复。
+                    if (!force && account.HealthState == "bad")
+                    {
+                        var lastCheck = account.LastHealthCheckAtUtc ?? DateTime.MinValue;
+                        if (DateTime.UtcNow - lastCheck < TimeSpan.FromHours(6)) continue;
+                    }
+
+                    // 临时性网络故障：退避到 NextRetryAtUtc 之前不再请求希沃接口。
+                    if (!force && account.NextRetryAtUtc.HasValue && now < account.NextRetryAtUtc.Value) continue;
+
                     if (!force && account.LastTokenExchangeAtUtc.HasValue &&
                         now - account.LastTokenExchangeAtUtc.Value < KeepAliveInterval)
                         continue;
 
-                    var (ok, message) = await RefreshAccountCredentialAsync(account).ConfigureAwait(true);
-                    account.HealthState = ok ? "ok" : "bad";
-                    account.HealthMessage = message;
+                    var (ok, message, kind) = await RefreshAccountCredentialAsync(account).ConfigureAwait(true);
                     account.LastHealthCheckAtUtc = DateTime.UtcNow;
-
                     stateChanged = true;
+
                     if (ok)
                     {
+                        account.HealthState = "ok";
+                        account.HealthMessage = message;
                         account.LastTokenExchangeAtUtc = DateTimeOffset.UtcNow;
+                        account.NextRetryAtUtc = null;
+                        account.TransientFailureCount = 0;
                         refreshed++;
                         if (force) WriteDiagnosticLog($"[KeepAlive] 续期成功; account-id={account.Id}; {message}");
+                        continue;
                     }
-                    else
+
+                    // 只有凭据问题才标 bad；网络 / 超时 / 5xx 一律标 warn 并自动退避重试。
+                    if (kind == SeewoFailureKind.Network || kind == SeewoFailureKind.Server)
                     {
-                        failed++;
-                        WriteDiagnosticLog($"[KeepAlive] 续期失败; account-id={account.Id}; reason={message}");
+                        transient++;
+                        account.TransientFailureCount++;
+                        var delay = GetTransientRetryDelay(account.TransientFailureCount);
+                        account.NextRetryAtUtc = DateTimeOffset.UtcNow + delay;
+                        account.HealthState = "warn";
+                        account.HealthMessage = $"网络异常，{FormatRetryDelay(delay)}后自动重试：{message}";
+                        WriteDiagnosticLog(
+                            $"[KeepAlive] 网络原因暂缓续期; account-id={account.Id}; kind={kind}; " +
+                            $"连续第 {account.TransientFailureCount} 次; 下次重试={delay.TotalMinutes:0} 分钟后; reason={message}");
+                        continue;
                     }
+
+                    failed++;
+                    account.HealthState = "bad";
+                    account.HealthMessage = message;
+                    account.NextRetryAtUtc = null;
+                    WriteDiagnosticLog($"[KeepAlive] 续期失败（需要处理）; account-id={account.Id}; kind={kind}; reason={message}");
                 }
 
                 if (stateChanged)
@@ -1160,10 +1213,11 @@ namespace SeewoAutoLogin
                     await RefreshAccountListUiAsync().ConfigureAwait(true);
                 }
 
-                if (refreshed > 0 || failed > 0)
-                    WriteDiagnosticLog($"[KeepAlive] 本轮完成：续期 {refreshed} 个，失败 {failed} 个");
+                if (refreshed > 0 || failed > 0 || transient > 0)
+                    WriteDiagnosticLog($"[KeepAlive] 本轮完成：续期 {refreshed} 个，失败 {failed} 个，网络暂缓 {transient} 个");
 
-                if (failed > 0) NotifyKeepAliveFailure();
+                // 手动健康巡检时只更新界面，不弹窗打扰。
+                if (failed > 0 && !force) NotifyKeepAliveFailure();
             }
             catch (Exception ex)
             {
@@ -1171,7 +1225,11 @@ namespace SeewoAutoLogin
             }
             finally
             {
+                // 无论本轮成功、失败还是异常，都按当前真实账号状态同步一次托盘，
+                // 避免出现"托盘还亮着、点进去已经正常"的残留。
+                UpdateTrayAlertForHealth();
                 _keepAliveRunning = false;
+                Interlocked.Exchange(ref _keepAliveRunningFlag, 0);
             }
 
             return (refreshed, failed);
@@ -1181,7 +1239,7 @@ namespace SeewoAutoLogin
         /// 刷新单个账号的凭据。
         /// 使用独立的服务实例，避免与正在响应希沃请求的网关争用同一份会话状态。
         /// </summary>
-        private async Task<(bool ok, string message)> RefreshAccountCredentialAsync(SeewoAccount account)
+        private async Task<(bool ok, string message, SeewoFailureKind kind)> RefreshAccountCredentialAsync(SeewoAccount account)
         {
             try
             {
@@ -1190,21 +1248,22 @@ namespace SeewoAutoLogin
                 {
                     var password = account.DecryptedPassword;
                     if (string.IsNullOrEmpty(password))
-                        return (false, "本地凭据无法解密，请重新录入密码");
+                        return (false, "本地凭据无法解密，请重新录入密码", SeewoFailureKind.Credential);
 
                     using var service = new SeewoAuthService();
                     service.DiagnosticMessage += WriteDiagnosticLog;
                     var result = await service.LoginAsync(account.Username, password).ConfigureAwait(true);
-                    if (!result.Success) return (false, result.ErrorMessage ?? "密码登录失败");
+                    if (!result.Success)
+                        return (false, result.ErrorMessage ?? "密码登录失败", result.FailureKind);
                     if (result.UserInfo != null) account.UserInfo = result.UserInfo;
-                    return (true, "已自动重新登录");
+                    return (true, "已自动重新登录", SeewoFailureKind.None);
                 }
 
                 // 扫码账号：用当前令牌换发新令牌，换发成功后立即写回本地加密凭据
                 if (!string.IsNullOrWhiteSpace(account.QrCredentialId))
                 {
                     if (!_qrSessionStore.TryLoad(account.QrCredentialId, out var session))
-                        return (false, "扫码凭据不可用，需要重新扫码");
+                        return (false, "扫码凭据不可用，需要重新扫码", SeewoFailureKind.Credential);
 
                     using var service = new SeewoAuthService();
                     service.DiagnosticMessage += WriteDiagnosticLog;
@@ -1220,13 +1279,21 @@ namespace SeewoAutoLogin
 
                     if (!result.Success)
                     {
-                        // 记一条失败观测：这个年龄的凭据已经续不动了
+                        // 网络 / 服务端问题不能算"扫码令牌失效"，否则会误导用户重新扫码。
+                        if (result.FailureKind == SeewoFailureKind.Network || result.FailureKind == SeewoFailureKind.Server)
+                        {
+                            WriteDiagnosticLog($"[KeepAlive] 扫码凭据续期遇到临时故障; account-id={account.Id}; " +
+                                               $"凭据年龄={age}; kind={result.FailureKind}; reason={result.ErrorMessage}");
+                            return (false, result.ErrorMessage ?? "Token 换发失败", result.FailureKind);
+                        }
+
+                        // 真正的凭据失效：这个年龄的凭据已经续不动了
                         if (session.AcquiredAtUtc != default)
                             _lifetimeTracker?.Record(isQr: true,
                                 (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours, success: false);
                         WriteDiagnosticLog($"[KeepAlive] 扫码凭据续期失败; account-id={account.Id}; 凭据年龄={age}; " +
                                            $"说明=凭据已超出有效期，无法自动恢复，需要重新扫码");
-                        return (false, "扫码令牌已失效，需要重新扫码添加");
+                        return (false, "扫码令牌已失效，需要重新扫码添加", SeewoFailureKind.Credential);
                     }
 
                     WriteDiagnosticLog($"[KeepAlive] 扫码凭据续期成功; account-id={account.Id}; 凭据年龄={age}");
@@ -1234,20 +1301,16 @@ namespace SeewoAutoLogin
                     if (session.AcquiredAtUtc != default)
                         _lifetimeTracker?.Record(isQr: true,
                             (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours, success: true);
-                    // 记一条观测：这个年龄的凭据还能续期。攒够样本就能算出真实有效期。
-                    if (session.AcquiredAtUtc != default)
-                        _lifetimeTracker?.Record(isQr: true,
-                            (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours, success: true);
                     if (!string.IsNullOrWhiteSpace(service.Token)) OnQrTokenValidated(account, service.Token);
                     if (service.UserInfo != null) account.UserInfo = service.UserInfo;
-                    return (true, "已自动续期");
+                    return (true, "已自动续期", SeewoFailureKind.None);
                 }
 
-                return (false, "没有可用于续期的凭据");
+                return (false, "没有可用于续期的凭据", SeewoFailureKind.Credential);
             }
             catch (Exception ex)
             {
-                return (false, ex.Message);
+                return (false, ex.Message, SeewoFailureKind.Unknown);
             }
         }
 
@@ -1263,16 +1326,46 @@ namespace SeewoAutoLogin
         ///   · 账号列表里逐条标注状态 —— 想细看的时候随时能看
         ///   · 弹窗每天最多一次，并列出具体是哪些账号
         /// </summary>
+        /// <summary>
+        /// 托盘感叹号只跟随需要用户处理的凭据问题（bad）。
+        /// 网络暂缓（warn）会在账号列表标黄并自动退避重试，不应点亮红色感叹号，
+        /// 否则网络恢复后很容易出现"托盘还亮着、点进去一切正常"的残留。
+        /// </summary>
+        private void UpdateTrayAlertForHealth()
+        {
+            try
+            {
+                var needAttention = _config.Accounts.Any(a =>
+                    !IsPlaceholderAccount(a) && a.HealthState == "bad");
+                _trayIcon?.SetAlert(needAttention);
+            }
+            catch { }
+        }
+
+        /// <summary>网络故障的退避时间：1、5、15、30 分钟，最多 30 分钟。</summary>
+        private static TimeSpan GetTransientRetryDelay(int consecutiveFailures)
+        {
+            return consecutiveFailures switch
+            {
+                <= 1 => TimeSpan.FromMinutes(1),
+                2 => TimeSpan.FromMinutes(5),
+                3 => TimeSpan.FromMinutes(15),
+                _ => TimeSpan.FromMinutes(30)
+            };
+        }
+
+        private static string FormatRetryDelay(TimeSpan delay)
+            => delay.TotalMinutes < 1 ? $"{delay.TotalSeconds:0} 秒" : $"{delay.TotalMinutes:0} 分钟";
+
         private void NotifyKeepAliveFailure()
         {
             try
             {
+                // 只对需要用户处理的凭据问题弹窗；网络 / 服务端临时故障由 UpdateTrayAlertForHealth
+                // 点亮托盘并自动退避重试，绝不弹窗 + 响铃。
                 var bad = _config.Accounts
                     .Where(a => a.HealthState == "bad" && !IsPlaceholderAccount(a))
                     .ToList();
-
-                // 托盘感叹号跟随实际状态，恢复正常后自动熄灭
-                _trayIcon?.SetAlert(bad.Count > 0);
 
                 if (bad.Count == 0) return;
 
@@ -1334,6 +1427,8 @@ namespace SeewoAutoLogin
         /// <summary>让主界面刷新账号列表（主界面未打开或已销毁时静默跳过）</summary>
         private async Task RefreshAccountListUiAsync()
         {
+            // 账号增删、健康状态变化后同步托盘告警，避免已删除账号的告警残留。
+            UpdateTrayAlertForHealth();
             try
             {
                 if (MainWindow is ManagementWindow window && window.IsLoaded)

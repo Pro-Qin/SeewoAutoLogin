@@ -610,6 +610,7 @@ nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
 }
 .health-dot.ok { background: var(--success); box-shadow: 0 0 6px rgba(52,199,89,0.6); }
 .health-dot.bad { background: var(--danger); box-shadow: 0 0 6px rgba(255,59,48,0.6); }
+.health-dot.warn { background: #f0a020; box-shadow: 0 0 6px rgba(240,160,32,0.6); }
 .health-dot.unknown { background: rgba(255,255,255,0.25); }
 
 /* ===== 批量导入 ===== */

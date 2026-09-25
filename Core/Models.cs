@@ -27,6 +27,12 @@ namespace SeewoAutoLogin
         /// <summary>启动时自动检查更新（默认开启）</summary>
         public bool AutoCheckUpdate { get; set; } = true;
         /// <summary>
+        /// 退出时恢复 hosts：删除本程序写入的 local.id.seewo.com 到 127.0.0.1 映射（默认开启）。
+        /// 避免程序不再运行或被直接删除后 hosts 残留，导致希沃 SSO 请求一直指向本机。
+        /// 下次启动会自动重新写入；写 hosts 需要管理员权限，失败只记录日志。
+        /// </summary>
+        public bool RestoreHostsOnExit { get; set; } = true;
+        /// <summary>
         /// 更新包下载完成且 SHA256 校验通过后，自动静默安装（默认开启）。
         /// 关闭时只下载安装包并打开安装程序，由用户手动完成安装向导。
         /// 注意：旧版配置里没有这个字段，反序列化时会保留这里的默认值 true。
@@ -61,12 +67,23 @@ namespace SeewoAutoLogin
         public int RequestCount { get; set; } = 0;
         /// <summary>最近一次 SSO 请求时间</summary>
         public DateTime? LastRequestAtUtc { get; set; }
-        /// <summary>健康巡检结果：ok / bad / unknown（空表示尚未巡检）</summary>
+        /// <summary>
+        /// 健康巡检结果：ok / warn / bad / unknown（空表示尚未巡检）。
+        /// warn = 临时性故障（网络 / 服务端），后台会自动退避重试，不需要用户改密码；
+        /// bad = 需要用户处理的凭据问题（密码已改 / 扫码令牌失效）。
+        /// </summary>
         public string HealthState { get; set; } = "";
         /// <summary>健康巡检说明（失败原因等）</summary>
         public string HealthMessage { get; set; } = "";
         /// <summary>最近一次健康巡检时间</summary>
         public DateTime? LastHealthCheckAtUtc { get; set; }
+        /// <summary>
+        /// 临时性故障（网络 / 服务端）的下次重试时间（UTC）。
+        /// 到点前后台保活会跳过该账号，避免每 5 分钟打一次接口、也避免把网络抖动反复放大。
+        /// </summary>
+        public DateTimeOffset? NextRetryAtUtc { get; set; }
+        /// <summary>连续临时性故障次数，用于指数退避；续期成功后清零。</summary>
+        public int TransientFailureCount { get; set; }
 
         /// <summary>凭据解密失败时的诊断出口（由 App 注入，便于在日志中显式记录而不是静默失败）</summary>
         [System.Text.Json.Serialization.JsonIgnore]

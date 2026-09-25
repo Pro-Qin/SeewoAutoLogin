@@ -76,7 +76,11 @@ namespace SeewoAutoLogin.Services
             }
 
             if (_notifyIcon == null) return;
-            if (_alertState == alert) return;
+
+            // 不只看缓存的 _alertState：图标或文本可能被其它路径改过，
+            // 这里把期望状态和控件实际状态对齐，避免托盘与账号列表不一致。
+            var targetText = alert ? Truncate(AlertText, 63) : Truncate(Strings.AppTitle, 63);
+            if (_alertState == alert && _notifyIcon.Text == targetText) return;
             _alertState = alert;
 
             try
