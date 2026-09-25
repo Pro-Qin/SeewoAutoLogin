@@ -262,6 +262,14 @@ namespace SeewoAutoLogin.Services
                 return false;
             }
 
+            // 更新源只允许官方域名与白名单镜像（GitHub 官方 / jsDelivr 等），
+            // 防止自定义源返回伪造的版本号与下载地址；不在白名单时回退到默认官方源。
+            if (!IsTrustedDownloadUrl(formatted))
+            {
+                reason = $"更新源域名不在允许列表（仅 GitHub 官方与 jsDelivr 等镜像）：{uri.Host}";
+                return false;
+            }
+
             url = formatted;
             return true;
         }
@@ -662,11 +670,19 @@ private static string Truncate(string text, int max)
         public string FullPath { get; set; } = "";
         public string ExpectedSha256 { get; set; } = "";
         public string ActualSha256 { get; set; } = "";
+        /// <summary>是否要求 Authenticode 签名（配置了可信签名指纹时为 true）</summary>
+        public bool SignatureRequired { get; set; }
+        /// <summary>Authenticode 签名有效且签名者指纹命中白名单</summary>
+        public bool SignatureVerified { get; set; }
+        /// <summary>签名者证书指纹（验证通过时填充）</summary>
+        public string SignerThumbprint { get; set; } = "";
         /// <summary>未通过时的原因（中文，可直接展示给用户）</summary>
         public string Reason { get; set; } = "";
 
-        /// <summary>路径与哈希都通过：文件可信，可以交给用户手动安装</summary>
-        public bool Verified => PathTrusted && HashVerified;
+        /// <summary>
+        /// 路径、哈希以及（配置了签名白名单时的）Authenticode 签名都通过：文件可信，可以交给用户手动安装。
+        /// </summary>
+        public bool Verified => PathTrusted && HashVerified && (!SignatureRequired || SignatureVerified);
 
         /// <summary>可信的 Inno Setup 安装包：可以静默安装并在安装前让本程序退出</summary>
         public bool CanSilentInstall => Verified && IsSetupPackage;
@@ -780,6 +796,26 @@ private static string Truncate(string text, int max)
             }
 
             check.HashVerified = true;
+
+            // Authenticode：配置了可信签名指纹时，必须签名有效且证书指纹命中白名单，否则拒绝启动。
+            check.SignatureRequired = AuthenticodeVerifier.HasConfiguredTrust;
+            if (check.SignatureRequired)
+            {
+                if (!AuthenticodeVerifier.Verify(full, out var thumbprint, out var sigReason))
+                {
+                    check.Reason = "Authenticode 签名校验失败：" + sigReason;
+                    log?.Invoke($"[Update] 安装包签名校验失败，拒绝启动：{full}；{sigReason}");
+                    return check;
+                }
+                check.SignatureVerified = true;
+                check.SignerThumbprint = thumbprint;
+                log?.Invoke($"[Update] 安装包签名校验通过：{Path.GetFileName(full)}；签名者指纹={thumbprint}");
+            }
+            else
+            {
+                log?.Invoke("[Update] 未配置可信签名指纹，跳过 Authenticode 校验（仍依赖 SHA256）");
+            }
+
             log?.Invoke($"[Update] 安装包校验通过：{Path.GetFileName(full)}；SHA256={check.ActualSha256}");
             return check;
         }
