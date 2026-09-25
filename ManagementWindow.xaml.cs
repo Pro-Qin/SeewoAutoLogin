@@ -1078,6 +1078,7 @@ namespace SeewoAutoLogin
                 case "userListRotationGroupSize": _app.Config.UserListRotationGroupSize = SeewoUserListRotationService.NormalizeGroupSize(val.GetInt32()); break;
                 case "minimizeToTray": _app.Config.MinimizeToTray = val.GetBoolean(); break;
                 case "startMinimized": _app.Config.StartMinimized = val.GetBoolean(); break;
+                case "restoreHostsOnExit": _app.Config.RestoreHostsOnExit = val.GetBoolean(); break;
                 case "autoShowOverlay": _app.Config.AutoShowOverlay = val.GetBoolean(); break;
                 case "autoCheckUpdate": _app.Config.AutoCheckUpdate = val.GetBoolean(); break;
                 case "autoInstallAfterDownload":
@@ -1912,6 +1913,7 @@ namespace SeewoAutoLogin
                 maxVisibleAccounts = PluginConfig.MaxVisibleAccounts,
                 minimizeToTray = _app.Config.MinimizeToTray,
                 startMinimized = _app.Config.StartMinimized,
+                restoreHostsOnExit = _app.Config.RestoreHostsOnExit,
                 autoShowOverlay = _app.Config.AutoShowOverlay,
                 autoCheckUpdate = _app.Config.AutoCheckUpdate,
                 autoInstallAfterDownload = _app.Config.AutoInstallAfterDownload

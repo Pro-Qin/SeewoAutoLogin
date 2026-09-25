@@ -261,6 +261,8 @@
           <label class="checkbox-row"><input type="checkbox" id="autoStartCheck"><span>开机自启</span></label>
           <label class="checkbox-row"><input type="checkbox" id="minimizeToTrayCheck"><span>关闭时最小化到托盘</span></label>
           <label class="checkbox-row"><input type="checkbox" id="startMinimizedCheck"><span>启动时不显示主界面</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="restoreHostsOnExitCheck"><span>退出时恢复 hosts 映射</span></label>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">开启后每次退出都会删除本程序写入的 local.id.seewo.com 映射，避免残留；下次启动会自动重新写入（需要管理员权限时可能失败）。</div>
           <hr class="divider">
           <label class="checkbox-row"><input type="checkbox" id="rotationEnabledCheck"><span>启用用户列表轮换</span></label>
           <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
@@ -327,6 +329,7 @@
             <button class="btn btn-secondary" onclick="send({type:'export-accounts'})">导出账号（加密）</button>
             <button class="btn btn-secondary" onclick="send({type:'import-accounts'})">导入账号</button>
           </div>
+          <div style="font-size:12px;color:#d7d7d7;margin-top:10px">卸载或迁移前请运行卸载程序，避免残留 hosts 映射与开机自启任务。</div>
           <hr class="divider">
           <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">查看应用保存的配置备份，可恢复到指定时间点（恢复会覆盖当前配置）</div>
           <button class="btn btn-secondary" id="listBackupsBtn">查看备份</button>

@@ -117,3 +117,25 @@ Release 提供两种安装包，功能完全一致，区别只是 WebView2 运�
 ## 许可
 
 GPL-3.0，见 [LICENSE](LICENSE)。上游项目同样为 GPL-3.0。
+
+
+## 代码签名与自动更新
+
+发布流水线支持 Authenticode 签名，需要自备代码签名证书：
+
+1. 在 GitHub 仓库 Settings -> Secrets and variables -> Actions 添加：
+   - `SIGNING_PFX_BASE64`：PFX 证书文件的 Base64，可用 `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx"))` 生成
+   - `SIGNING_PFX_PASSWORD`：PFX 密码
+2. 把证书指纹填进 `Services/AuthenticodeVerifier.cs` 的 `AllowedSignerThumbprints`（SHA-256 或 SHA-1 都支持）。
+3. 打 tag 后，release.yml 会先给单文件 exe 和安装包签名，再生成 SHA256SUMS.txt。
+
+没有配置 secrets 时流水线仍可发布，但更新器只校验 SHA256。注意：`WinVerifyTrust` 要求证书链受信任；如果使用自签名证书，需要先把根证书安装到目标机器的"受信任的根证书颁发机构"。
+
+更新源只允许 GitHub 官方域名和 jsDelivr 等白名单镜像；自定义源命中白名单之外会回退到默认官方源。
+
+## 卸载与迁移
+
+- 卸载或迁移前必须运行安装目录里的卸载程序（`unins000.exe`），或执行 `SeewoAutoLogin.exe --uninstall`。
+  只有卸载流程会清理开机自启计划任务、hosts 中的 `local.id.seewo.com` 映射和本地数据。
+- 设置里可以开启"退出时恢复 hosts"；开启后每次正常退出都会移除本程序的 hosts 映射，下次启动自动写回。
+- 直接删除程序目录不会触发上述清理，可能残留 hosts 映射和开机自启任务。
