@@ -568,6 +568,12 @@ function renderQrState(msg) {
   if (s('qrStatus')) s('qrStatus').textContent = msg.text||'';
   if (msg.state === 'succeeded' && s('qrContainer')) s('qrContainer').style.display = 'none';
   if (!active && msg.state !== 'succeeded') { if(s('qrContainer')) s('qrContainer').style.display = 'none'; if(s('qrCountdown')) s('qrCountdown').textContent = ''; }
+  // 扫码状态联动界面：成功亮起对勾，取消/过期/失败退回可重新开始的状态
+  if (typeof setQrStage === "function") {
+    var st = (msg && msg.state) || "";
+    if (st === "succeeded") setQrStage("success");
+    else if (st === "cancelled" || st === "expired" || st === "failed") setQrStage("idle");
+  }
 }
 
 // ===== Settings =====

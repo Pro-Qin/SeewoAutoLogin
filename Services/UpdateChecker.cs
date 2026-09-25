@@ -284,7 +284,9 @@ namespace SeewoAutoLogin.Services
             {
                 Tag = tag ?? "",
                 Version = NormalizeVersion(tag),
-                Notes = root.TryGetProperty("body", out var bodyElement) ? Truncate(bodyElement.GetString(), 1000) : "",
+                Notes = root.TryGetProperty("body", out var bodyElement)
+                    ? ExtractChangelog(bodyElement.GetString())
+                    : "",
                 PageUrl = pageUrl,
                 Source = HostOf(url)
             };
@@ -610,7 +612,31 @@ namespace SeewoAutoLogin.Services
         private static string HostOf(string url)
             => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
 
-        private static string Truncate(string text, int max)
+                /// <summary>
+        /// 从完整的发布说明里只取「本次更新」那一段。
+        ///
+        /// 完整说明是写给下载页访客看的：先讲三个产物怎么选，再列本次改动，
+        /// 最后是许可与免责声明。软件内不需要这些 —— 用户已经在用这个程序，
+        /// 他只想知道这一版改了什么，所以这里把其余部分全部丢掉。
+        /// </summary>
+        private static string ExtractChangelog(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body)) return "";
+
+            var section = System.Text.RegularExpressions.Regex.Match(
+                body,
+                @"^##\s*本次更新[^\n]*\n(?<c>[\s\S]*?)(?=\n##\s|\n---\s*\n\s*##|\z)",
+                System.Text.RegularExpressions.RegexOptions.Multiline);
+            if (section.Success)
+                return section.Groups["c"].Value.Trim().TrimEnd('-').Trim();
+
+            var items = body.Split('\n')
+                .Select(l => l.TrimEnd())
+                .Where(l => l.TrimStart().StartsWith("- "))
+                .ToList();
+            return items.Count > 0 ? string.Join("\n", items) : Truncate(body.Trim(), 600);
+        }
+private static string Truncate(string text, int max)
         {
             if (string.IsNullOrWhiteSpace(text)) return "";
             var trimmed = text.Trim();
