@@ -91,9 +91,14 @@ namespace SeewoAutoLogin.Services
         /// <summary>校验清单文件名（由 release.yml 在打包步骤后生成并上传）</summary>
         private const string Sha256SumsFileName = "SHA256SUMS.txt";
 
-        /// <summary>默认更新源（按顺序自动降级，可用自定义源覆盖）；只保留 GitHub 官方接口，第三方代理镜像已全部移除</summary>
+        /// <summary>
+        /// 默认更新源（按顺序自动降级，可用自定义源覆盖）。
+        /// 镜像源优先：gh-proxy.com 实测可代理 GitHub API，国内直连明显快于官方；
+        /// 官方源保留在第二位，镜像失效时自动回退。
+        /// </summary>
         private static readonly string[] DefaultSources =
         {
+            "https://gh-proxy.com/https://api.github.com/repos/{0}/{1}/releases/latest",
             "https://api.github.com/repos/{0}/{1}/releases/latest"
         };
 
@@ -264,9 +269,9 @@ namespace SeewoAutoLogin.Services
 
             // 更新源只允许官方域名与白名单镜像（GitHub 官方 / jsDelivr 等），
             // 防止自定义源返回伪造的版本号与下载地址；不在白名单时回退到默认官方源。
-            if (!IsTrustedDownloadUrl(formatted))
+            if (!IsTrustedDownloadUrl(formatted) && !DownloadAccelerator.IsAcceleratorHost(uri.Host))
             {
-                reason = $"更新源域名不在允许列表（仅 GitHub 官方与 jsDelivr 等镜像）：{uri.Host}";
+                reason = $"更新源域名不在允许列表（仅 GitHub 官方与已配置镜像）：{uri.Host}";
                 return false;
             }
 

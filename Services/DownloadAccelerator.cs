@@ -34,11 +34,12 @@ namespace SeewoAutoLogin.Services
         /// </summary>
         public static string[] AcceleratorPrefixes =
         {
-            "https://ghfast.top/",
+            // 实测可用：既能代理 Release 文件下载，也能代理 api.github.com
             "https://gh-proxy.com/",
+            // 实测可用：文件下载稳定，部分地区速度更好（不代理 API）
             "https://ghproxy.net/",
-            "https://mirror.ghproxy.com/",
-            "https://ghproxy.cc/"
+            // 备用：部分网络可用；失效时探测会自动跳过
+            "https://ghfast.top/"
         };
 
         /// <summary>官方可信下载主机（忽略大小写）</summary>
@@ -387,6 +388,21 @@ namespace SeewoAutoLogin.Services
             if (!Uri.TryCreate((url ?? "").Trim(), UriKind.Absolute, out var uri)) return false;
             if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
             return IsOfficialHost(uri.Host);
+        }
+
+        /// <summary>主机是否为已配置的加速镜像域名。</summary>
+        public static bool IsAcceleratorHost(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host)) return false;
+            foreach (var prefix in AcceleratorPrefixes ?? Array.Empty<string>())
+            {
+                var normalized = NormalizePrefix(prefix);
+                if (normalized == null) continue;
+                if (Uri.TryCreate(normalized, UriKind.Absolute, out var uri) &&
+                    string.Equals(host, uri.Host, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         private static bool IsOfficialHost(string host)
