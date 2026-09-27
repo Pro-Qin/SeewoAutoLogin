@@ -157,3 +157,36 @@ jobs:
             publish/SHA256SUMS.txt
             bin/Release/net8.0-windows10.0.19041.0/publish/SeewoAutoLogin.exe
           body_path: RELEASE_BODY.md
+
+
+  sync-docs:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Sync docs version from csproj
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          [xml]$csproj = Get-Content SeewoAutoLogin.csproj
+          $version = ($csproj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "无法从 SeewoAutoLogin.csproj 读取 <Version>" }
+          $path = "docs/index.html"
+          if (-not (Test-Path $path)) { Write-Warning "找不到 $path，跳过官网版本同步"; exit 0 }
+          $html = Get-Content $path -Raw
+          $updated = $html -replace 'v\d+\.\d+\.\d+', "v$version"
+          if ($updated -eq $html) {
+            Write-Host "官网版本号已是 v$version，无需更新"
+            exit 0
+          }
+          Set-Content -Path $path -Value $updated -NoNewline -Encoding UTF8
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html
+          git commit -m "docs: 同步官网版本号到 v$version"
+          git push origin main
