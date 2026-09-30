@@ -139,3 +139,9 @@ GPL-3.0，见 [LICENSE](LICENSE)。上游项目同样为 GPL-3.0。
   只有卸载流程会清理开机自启计划任务、hosts 中的 `local.id.seewo.com` 映射和本地数据。
 - 设置里可以开启"退出时恢复 hosts"；开启后每次正常退出都会移除本程序的 hosts 映射，下次启动自动写回。
 - 直接删除程序目录不会触发上述清理，可能残留 hosts 映射和开机自启任务。
+
+## 更多文档
+
+- [安全与威胁模型](docs/SECURITY.md)
+- [部署与迁移](docs/DEPLOYMENT.md)
+- [兼容性矩阵](docs/COMPATIBILITY.md)
