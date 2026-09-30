@@ -75,7 +75,7 @@ Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden nowait ski
 Filename: "{app}\SeewoAutoLogin.exe"; Description: "启动希沃自动登录"; Flags: nowait postinstall skipifsilent
 ; 静默升级（/SILENT）时上面那条会被 skipifsilent 跳过，装完程序停在关闭状态，用户得手动再开一次。
 ; 这里补一条只在静默模式下执行的启动项，让静默升级后程序自动回到托盘。
-Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--minimized"; Flags: nowait; Check: WizardSilent
+Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--elevated --minimized --updated"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--uninstall"; RunOnceId: "SeewoAutoLoginCleanup"

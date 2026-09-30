@@ -47,6 +47,12 @@ namespace SeewoAutoLogin
         public SeewoOverlay CurrentOverlay => _overlay;
         private Mutex _instanceMutex;
         private bool _isExiting;
+        /// <summary>本次启动是否为更新后的第一次启动（安装器传入 --updated）。</summary>
+        private bool _isPostUpdateBoot;
+        /// <summary>静默更新退出时跳过 hosts 恢复，避免安装期间希沃请求落空。</summary>
+        private bool _skipHostsRestoreOnExit;
+        /// <summary>后台静默更新是否正在运行（0/1，Interlocked 保护）。</summary>
+        private int _silentUpdateRunning;
         /// <summary>希沃客户端版本变化检测结果（启动时检测一次，供主界面首次显示时提示）</summary>
         private Services.SeewoVersionCheckResult _seewoVersionChange;
 
@@ -118,19 +124,37 @@ namespace SeewoAutoLogin
             LoadConfig();
             MigratePlaceholderFlags();
 
+            if (_isPostUpdateBoot)
+            {
+                WriteDiagnosticLog($"[Update] 更新后启动，当前版本 {CurrentAppVersion}");
+                // 安装器已经完成文件替换，清掉待安装状态，避免下次启动重复拉起安装器。
+                if (!string.IsNullOrWhiteSpace(_config.PendingUpdateStage))
+                    ClearPendingUpdateState();
+            }
+
             _gateway = new SeewoSsoGateway(_authService, () => _config, TryRestoreQrSession,
                 GetVisibleAccounts,
                 account => { account.UserInfo = _authService.UserInfo; SaveConfig(); },
                 OnQrTokenValidated, _userListRotation, SaveConfig);
             // 希沃固定请求 24300：始终以该端口为首选（配置里记录的值只用于诊断展示，不作为首选端口）
             _gateway.Port = SeewoSsoGateway.SeewoExpectedPort;
-            _gateway.ConfirmStopEasiAgent = (pid, path) => Dispatcher.Invoke(() =>
+            _gateway.ConfirmStopEasiAgent = (pid, path) =>
+            {
+                // 更新后第一次启动：静默接管 24300。EasiAgent 被结束后希沃会重新拉起它并重新请求账号列表，
+                // 快捷登录随之恢复；这里不能再弹窗，否则静默更新就断在最后一步了。
+                if (_isPostUpdateBoot)
+                {
+                    WriteDiagnosticLog($"[Update] 更新后启动：自动结束 EasiAgent 以接管 SSO 端口; pid={pid}");
+                    return true;
+                }
+                return Dispatcher.Invoke(() =>
                 MessageBox.Show(
                     $"本地 SSO 网关端口被希沃 EasiAgent 占用（pid={pid}）。\n\n" +
                     "结束它可以立刻让快捷登录生效，但可能中断正在进行的希沃操作。\n\n" +
                     "  · 是   → 结束 EasiAgent 并使用该端口\n" +
                     "  · 否   → 不结束任何进程，自动改用备用端口（希沃可能仍请求原端口）",
                     Strings.AppTitle, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes);
+            };
             _gateway.PortChanged += port =>
             {
                 _config.SsoGatewayPort = port;
@@ -231,6 +255,9 @@ namespace SeewoAutoLogin
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // 安装器静默升级完成后会带 --updated 启动：用于跳过提权询问、自动接管 SSO 端口并清理待更新状态。
+            _isPostUpdateBoot = e.Args.Contains("--updated");
 
             // 卸载清理：setup.iss 的 UninstallRun 会调用 --uninstall。
             // 注意：必须放在单实例判定之后执行，否则运行中的实例会把配置/日志重新写回，导致清理不干净。
@@ -364,6 +391,8 @@ namespace SeewoAutoLogin
             try
             {
                 _trayIcon.Initialize();
+                if (_isPostUpdateBoot)
+                    _trayIcon.SetStatusText($"已更新到 v{CurrentAppVersion}");
             }
             catch (Exception ex)
             {
@@ -508,6 +537,10 @@ namespace SeewoAutoLogin
                     NotifyError("窗口错误", $"无法显示主窗口:\n{ex.Message}");
                 }
             }
+
+            // ClassIsland 同款静默更新：后台检查、自动下载、静默安装，不依赖主界面是否打开。
+            if (_config.AutoCheckUpdate)
+                _ = RunSilentUpdateCoordinatorAsync();
         }
 
         private void ShowMainWindow()
@@ -546,7 +579,7 @@ namespace SeewoAutoLogin
             // 退出时按设置恢复 hosts：本程序不在运行时，local.id.seewo.com 不应继续指向本机。
             try
             {
-                if (_config?.RestoreHostsOnExit != false)
+                if (_config?.RestoreHostsOnExit != false && !_skipHostsRestoreOnExit)
                 {
                     if (Services.HostsFileService.RemoveLoopbackMapping(out var hostsError))
                         WriteDiagnosticLog("[Hosts] 退出时已恢复 hosts 映射");
@@ -1049,6 +1082,9 @@ namespace SeewoAutoLogin
         {
             if (_isExiting) return;
 
+            // 安装期间保持 hosts 映射：新版本启动后会重新确认映射并接管 24300，
+            // 希沃这边的下一次 SSOLOGIN 请求就能正常拿到账号列表。
+            _skipHostsRestoreOnExit = true;
             WriteDiagnosticLog("[Update] 静默安装已启动，程序即将退出以完成更新");
             try { SaveConfig(); }
             catch (Exception ex) { WriteDiagnosticLog($"[Update] 退出前保存配置失败: {ex.Message}"); }
@@ -1059,6 +1095,152 @@ namespace SeewoAutoLogin
             try { _mainWindow?.Close(); } catch { }
             Shutdown();
         }
+
+        #region Silent Update
+
+        /// <summary>当前程序版本（三段式）。</summary>
+        private static string CurrentAppVersion
+        {
+            get
+            {
+                var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                return version == null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
+            }
+        }
+
+        /// <summary>后台静默更新是否正在运行（供主界面手动更新入口判断，避免重复下载）。</summary>
+        internal bool IsSilentUpdateRunning => _silentUpdateRunning > 0;
+
+        /// <summary>
+        /// ClassIsland 同款静默更新：启动后延迟检查，有新版本且开启自动安装时后台下载，
+        /// 校验通过后记录待安装状态并拉起 Inno Setup 静默安装，最后退出主程序由安装器完成替换；
+        /// 新版本带 --updated 启动后收尾。不依赖主界面是否打开。
+        /// </summary>
+        private async Task RunSilentUpdateCoordinatorAsync()
+        {
+            // 启动 25 秒后再开始，避开首次引导、网关启动和界面加载。
+            await Task.Delay(TimeSpan.FromSeconds(25));
+            if (_isExiting || _config == null) return;
+            if (Interlocked.CompareExchange(ref _silentUpdateRunning, 1, 0) != 0) return;
+
+            try
+            {
+                if (!_config.AutoCheckUpdate) return;
+
+                // 上次已下载但没装成：先续装，不再重新检查版本。
+                if (await TryResumePendingUpdateAsync()) return;
+
+                var info = await Services.UpdateChecker.CheckLatestAsync(
+                    _config.UpdateSource, WriteDiagnosticLog, CancellationToken.None);
+                if (info == null || string.IsNullOrWhiteSpace(info.Version)) return;
+                if (Services.UpdateChecker.CompareVersions(info.Version, CurrentAppVersion) <= 0) return;
+
+                WriteDiagnosticLog($"[Update] 静默更新发现新版本 {info.Tag}（当前 {CurrentAppVersion}）");
+                if (!_config.AutoInstallAfterDownload)
+                {
+                    WriteDiagnosticLog("[Update] 静默更新：自动安装已关闭，只记录新版本");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(info.SetupUrl) || string.IsNullOrWhiteSpace(info.Sha256))
+                {
+                    WriteDiagnosticLog("[Update] 静默更新：缺少安装包直链或 SHA256，跳过自动下载");
+                    return;
+                }
+
+                _trayIcon?.SetStatusText($"正在后台下载 v{info.Version}");
+                WriteDiagnosticLog($"[Update] 静默更新开始后台下载：{info.SetupUrl}");
+                var progress = new Progress<(long received, long total)>(_ => { });
+                var localPath = await Services.DownloadAccelerator.DownloadAsync(
+                    info.SetupUrl, info.Sha256, progress,
+                    msg => WriteDiagnosticLog($"[Update] {msg}"), CancellationToken.None);
+                if (_isExiting) return;
+
+                var check = await Task.Run(() =>
+                    Services.UpdateInstaller.VerifyPackage(localPath, info.Sha256, WriteDiagnosticLog));
+                if (!check.Verified || !check.CanSilentInstall)
+                {
+                    WriteDiagnosticLog($"[Update] 静默更新：安装包校验未通过（{check.Reason}），取消自动安装");
+                    return;
+                }
+
+                _config.PendingUpdateVersion = info.Version;
+                _config.PendingUpdatePath = localPath;
+                _config.PendingUpdateSha256 = info.Sha256;
+                _config.PendingUpdateStage = "downloaded";
+                SaveConfig();
+
+                _trayIcon?.SetStatusText($"正在静默安装 v{info.Version}");
+                WriteDiagnosticLog($"[Update] 静默更新准备安装 v{info.Version}");
+                if (!Services.UpdateInstaller.StartSilentInstall(check, WriteDiagnosticLog))
+                {
+                    WriteDiagnosticLog("[Update] 静默更新：安装器启动失败，安装包已保留，下次启动会重试");
+                    return;
+                }
+
+                await Task.Delay(1000);
+                Dispatcher.Invoke(new Action(BeginSilentUpdateExit));
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Update] 静默更新流程异常: {ex.GetType().Name} - {ex.Message}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _silentUpdateRunning, 0);
+            }
+        }
+
+        /// <summary>恢复上次已经下载但尚未安装的更新包。</summary>
+        private async Task<bool> TryResumePendingUpdateAsync()
+        {
+            if (!string.Equals(_config.PendingUpdateStage, "downloaded", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var path = _config.PendingUpdatePath;
+            var sha = _config.PendingUpdateSha256;
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                WriteDiagnosticLog("[Update] 待安装的更新包已不存在，清除待更新状态");
+                ClearPendingUpdateState();
+                return false;
+            }
+
+            var check = await Task.Run(() =>
+                Services.UpdateInstaller.VerifyPackage(path, sha, WriteDiagnosticLog));
+            if (!check.Verified || !check.CanSilentInstall)
+            {
+                WriteDiagnosticLog($"[Update] 待安装更新包校验未通过（{check.Reason}），清除待更新状态");
+                ClearPendingUpdateState();
+                return false;
+            }
+
+            WriteDiagnosticLog($"[Update] 恢复未完成的静默更新：v{_config.PendingUpdateVersion}");
+            if (!Services.UpdateInstaller.StartSilentInstall(check, WriteDiagnosticLog)) return false;
+
+            await Task.Delay(800);
+            Dispatcher.Invoke(new Action(BeginSilentUpdateExit));
+            return true;
+        }
+
+        /// <summary>清空待更新状态并落盘。</summary>
+        private void ClearPendingUpdateState()
+        {
+            try
+            {
+                _config.PendingUpdatePath = "";
+                _config.PendingUpdateSha256 = "";
+                _config.PendingUpdateVersion = "";
+                _config.PendingUpdateStage = "";
+                SaveConfig();
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Update] 清理待更新状态失败: {ex.Message}");
+            }
+        }
+
+        #endregion
 
         #region Token Refresh
 

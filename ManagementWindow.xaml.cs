@@ -584,6 +584,13 @@ namespace SeewoAutoLogin
         /// </summary>
         private async void HandleDownloadUpdate()
         {
+            if (_app.IsSilentUpdateRunning)
+            {
+                _app.WriteDiagnosticLog("[Update] 后台静默更新正在运行，忽略手动下载请求");
+                await SendToJs(new { type = "toast", text = "后台正在自动更新，无需重复下载", level = "info" });
+                return;
+            }
+
             var info = _latestUpdate;
             if (info == null || string.IsNullOrWhiteSpace(info.SetupUrl))
             {
@@ -725,6 +732,13 @@ namespace SeewoAutoLogin
 
                 if (_silentInstallStarted) return;
                 _silentInstallStarted = true;
+
+                // 手动静默升级同样写入待更新状态：安装器带 --updated 启动后会自动提示版本并清理状态。
+                _app.Config.PendingUpdateVersion = info.Version;
+                _app.Config.PendingUpdatePath = localPath;
+                _app.Config.PendingUpdateSha256 = info.Sha256;
+                _app.Config.PendingUpdateStage = "downloaded";
+                _app.SaveConfig();
 
                 await SendToJs(new { type = "update-progress", state = "installing", text = "正在静默安装，本程序即将退出…" });
 

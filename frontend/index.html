@@ -311,8 +311,8 @@
           <div class="card-desc">新版本怎么检查和安装</div>
           <label class="checkbox-row"><input type="checkbox" id="autoCheckUpdateCheck"><span>启动时自动检查更新</span></label>
           <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">默认使用 GitHub 官方接口（api.github.com），失败时回退 jsDelivr 只读取版本号；下载地址会自动择优。</div>
-          <label class="checkbox-row"><input type="checkbox" id="autoInstallUpdateSettingsCheck" checked><span>下载完成后自动安装</span></label>
-          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">开启后：下载完成且 SHA256 校验通过即静默安装，并自动退出程序让安装器替换文件；关闭后只下载安装包，由你手动安装。</div>
+          <label class="checkbox-row"><input type="checkbox" id="autoInstallUpdateSettingsCheck" checked><span>后台静默更新</span></label>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">开启后：发现新版本会后台自动下载，校验通过即静默安装并自动重启回托盘；更新后自动接管希沃快捷登录，不弹安装向导。</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button class="btn btn-secondary" onclick="checkUpdate()">立即检查更新</button>
             <button class="btn btn-secondary" onclick="send({type:'open-update-page', url:''})">打开发布页</button>
@@ -395,9 +395,9 @@
           <!-- 下载完成后的静默升级开关：与「设置 → 更新」里的同名开关共用同一份配置 -->
           <label class="checkbox-row" style="justify-content:center;margin:12px 0 0 0">
             <input type="checkbox" id="autoInstallUpdateCheck" checked>
-            <span>下载完成后自动安装</span>
+            <span>后台静默更新</span>
           </label>
-          <div style="font-size:12px;color:#d7d7d7;margin:6px 0 0 0">安装包 SHA256 校验通过后会静默安装并自动退出本程序以完成更新；关闭后只下载，需手动安装</div>
+          <div style="font-size:12px;color:#d7d7d7;margin:6px 0 0 0">发现新版本会自动后台下载并静默安装，完成后自动重启回托盘；关闭后需手动下载安装</div>
           <p class="terms-note">当您使用此软件时，则默认您已经阅读并同意 <a id="termsLink" href="javascript:void(0)">《用户协议》</a></p>
         </div>
       </div>

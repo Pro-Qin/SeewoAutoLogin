@@ -38,6 +38,17 @@ namespace SeewoAutoLogin
         /// 注意：旧版配置里没有这个字段，反序列化时会保留这里的默认值 true。
         /// </summary>
         public bool AutoInstallAfterDownload { get; set; } = true;
+        /// <summary>
+        /// 待安装的更新包路径。静默更新下载完成但未安装时持久化，下次启动可直接续装。
+        /// 安装成功后由 --updated 启动流程清除。
+        /// </summary>
+        public string PendingUpdatePath { get; set; } = "";
+        /// <summary>待安装更新包的 SHA256，重启后重新校验用。</summary>
+        public string PendingUpdateSha256 { get; set; } = "";
+        /// <summary>待安装更新包的版本号，安装成功后用于托盘提示。</summary>
+        public string PendingUpdateVersion { get; set; } = "";
+        /// <summary>待更新阶段：空 / downloaded。downloaded 表示安装包已下载并通过校验。</summary>
+        public string PendingUpdateStage { get; set; } = "";
         /// <summary>自定义更新源（留空使用内置 GitHub API + jsDelivr 兜底）</summary>
         public string UpdateSource { get; set; } = "";
         /// <summary>本地 SSO 网关端口（24300 被占用时自动切换并记录在此）</summary>
