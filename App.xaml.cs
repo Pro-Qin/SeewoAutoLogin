@@ -137,6 +137,7 @@ namespace SeewoAutoLogin
                 // 安装器已经完成文件替换，清掉待安装状态，避免下次启动重复拉起安装器。
                 if (!string.IsNullOrWhiteSpace(_config.PendingUpdateStage))
                     ClearPendingUpdateState();
+                _ = ConfirmUpdateHealthAsync();
             }
 
             _gateway = new SeewoSsoGateway(_authService, () => _config, TryRestoreQrSession,
@@ -262,6 +263,15 @@ namespace SeewoAutoLogin
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // 回滚 watcher 专用入口：不启动正常逻辑，只监控健康标记并在超时后回滚。
+            if (e.Args.Contains("--rollback-watch"))
+            {
+                Services.UpdateHealthGuard.RunRollbackWatch(e.Args, WriteDiagnosticLog);
+                _isExiting = true;
+                Shutdown();
+                return;
+            }
 
             // 安装器静默升级完成后会带 --updated 启动：用于跳过提权询问、自动接管 SSO 端口并清理待更新状态。
             _isPostUpdateBoot = e.Args.Contains("--updated");
@@ -1101,6 +1111,28 @@ namespace SeewoAutoLogin
             _isExiting = true;
             try { _mainWindow?.Close(); } catch { }
             Shutdown();
+        }
+
+        /// <summary>更新后健康确认：60 秒内确认网关与配置可用，通过则取消回滚保护。</summary>
+        private async Task ConfirmUpdateHealthAsync()
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(60));
+                var healthy = _gateway?.IsRunning == true && _config != null;
+                if (healthy)
+                {
+                    Services.UpdateHealthGuard.ConfirmHealthy(WriteDiagnosticLog);
+                }
+                else
+                {
+                    WriteDiagnosticLog("[Update] 健康确认未通过：网关未监听，保留回滚保护");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Update] 健康确认异常: {ex.GetType().Name} - {ex.Message}");
+            }
         }
 
         #region Silent Update
