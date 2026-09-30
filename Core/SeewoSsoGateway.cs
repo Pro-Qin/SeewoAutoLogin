@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -26,6 +27,14 @@ namespace SeewoAutoLogin
         private readonly SeewoUserListRotationService _userListRotation;
         private readonly Action _saveConfig;
         private DateTime _lastConfigSaveUtc;
+        private readonly ConcurrentDictionary<string, RequestWindow> _requestWindows = new();
+        private const int MaxRequestsPerMinute = 120;
+
+        private sealed class RequestWindow
+        {
+            public int Count;
+            public DateTime WindowStartUtc;
+        }
         /// <summary>最近一次希沃发起 SSO 请求的时间（UTC），用于检测希沃是否还活跃</summary>
         public DateTime? LastSsoRequestAtUtc { get; private set; }
 
@@ -425,11 +434,42 @@ namespace SeewoAutoLogin
             }
         }
 
+        private bool AllowRequest(string key)
+        {
+            var now = DateTime.UtcNow;
+            var window = _requestWindows.GetOrAdd(key, _ => new RequestWindow { WindowStartUtc = now });
+            lock (window)
+            {
+                if ((now - window.WindowStartUtc).TotalMinutes >= 1)
+                {
+                    window.WindowStartUtc = now;
+                    window.Count = 0;
+                }
+                window.Count++;
+                return window.Count <= MaxRequestsPerMinute;
+            }
+        }
+
+        private static string TruncateForLog(string value, int max)
+            => string.IsNullOrEmpty(value) || value.Length <= max ? (value ?? "") : value.Substring(0, max);
+
         private async Task HandleRequest(HttpListenerContext context)
         {
             var req = context.Request;
             var resp = context.Response;
             var path = req.Url?.AbsolutePath?.TrimEnd('/') ?? "";
+            var remoteKey = req.RemoteEndPoint?.Address?.ToString() ?? "unknown";
+            if (!AllowRequest(remoteKey))
+            {
+                Log($"SSO 网关限流：{remoteKey} 超过每分钟 {MaxRequestsPerMinute} 次，返回 429");
+                try
+                {
+                    resp.StatusCode = 429;
+                    await WriteJson(resp, new { message = "too_many_requests", statusCode = "429" });
+                }
+                catch { }
+                return;
+            }
 
             // 安全：网关只服务本机（希沃通过 hosts 映射访问 127.0.0.1）。
             // 由于需要注册 local.id.seewo.com 前缀，http.sys 会把端口绑定到所有网卡，
@@ -495,6 +535,7 @@ namespace SeewoAutoLogin
                 if (req.HttpMethod == "GET" && path.Equals("/getData/SSOLOGIN", StringComparison.OrdinalIgnoreCase))
                 {
                     LastSsoRequestAtUtc = DateTime.UtcNow;
+                    Log($"SSOLOGIN 来源: remote={remoteKey}; ua={TruncateForLog(req.UserAgent, 80)}; referer={TruncateForLog(req.Headers["Referer"], 120)}");
                     var config = _getConfig();
                     var sourceAccounts = (_getVisibleAccounts?.Invoke() ?? Array.Empty<SeewoAccount>())
                         .Where(a => !string.IsNullOrEmpty(a.Username))
@@ -541,6 +582,7 @@ namespace SeewoAutoLogin
                 if (req.HttpMethod == "GET" && path.StartsWith("/getData/SSOLOGIN/", StringComparison.OrdinalIgnoreCase))
                 {
                     LastSsoRequestAtUtc = DateTime.UtcNow;
+                    Log($"SSOLOGIN 来源: remote={remoteKey}; ua={TruncateForLog(req.UserAgent, 80)}; referer={TruncateForLog(req.Headers["Referer"], 120)}");
                     var userId = path.Substring("/getData/SSOLOGIN/".Length);
                     Log($"SSOLOGIN/{{userid}}: 收到请求 userId={userId}");
                     var config = _getConfig();
