@@ -37,4 +37,11 @@
     <EmbeddedResource Include="Resources\terms.txt" />
   </ItemGroup>
 
+  <!-- 测试工程单独编译，不进入主程序 -->
+  <ItemGroup>
+    <Compile Remove="tests\**" />
+    <None Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+  </ItemGroup>
+
 </Project>

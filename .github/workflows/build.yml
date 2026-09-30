@@ -24,6 +24,9 @@ jobs:
       - name: Build (Release, win-x64)
         run: dotnet build SeewoAutoLogin.csproj -c Release -r win-x64 --no-restore
 
+      - name: Run tests
+        run: dotnet test tests\SeewoAutoLogin.Tests\SeewoAutoLogin.Tests.csproj -c Release
+
       - name: Publish single-file (win-x64)
         run: dotnet publish SeewoAutoLogin.csproj -c Release -r win-x64 --self-contained false -o bin\Release\net8.0-windows10.0.19041.0\publish --no-restore
 
