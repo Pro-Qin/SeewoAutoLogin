@@ -291,6 +291,12 @@ namespace SeewoAutoLogin
                 return;
             }
 
+            // 崩溃可观测性与安全模式：先注册异常处理并记录本次启动尝试。
+            Services.CrashReporter.Install(this, WriteDiagnosticLog);
+            Services.CrashReporter.MarkStartupAttempt(WriteDiagnosticLog);
+            var safeMode = Services.CrashReporter.IsSafeModeRequested;
+            if (safeMode) WriteDiagnosticLog("[Crash] 本次启动进入安全模式：跳过 WebView2、遮罩与自动更新");
+
             // 安装器静默升级完成后会带 --updated 启动：用于跳过提权询问、自动接管 SSO 端口并清理待更新状态。
             _isPostUpdateBoot = e.Args.Contains("--updated");
 
@@ -412,20 +418,13 @@ namespace SeewoAutoLogin
                     WriteDiagnosticLog("[Elevate] 提权重启后仍未获得管理员权限，以降级模式运行");
             }
 
-            // 注册全局异常处理器
-            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-                NotifyError("未处理异常", $"发生未处理异常:\n{args.ExceptionObject}");
-
-            DispatcherUnhandledException += (_, args) =>
-            {
-                WriteDiagnosticLog($"[FATAL] UI 线程异常: {args.Exception}");
-                args.Handled = true;
-            };
+            // 全局异常处理器已由 CrashReporter 注册。
 
             // 初始化托盘图标
             try
             {
                 _trayIcon.Initialize();
+                if (safeMode) _trayIcon.SetStatusText("安全模式：已跳过界面与自动更新");
                 if (_isPostUpdateBoot)
                     _trayIcon.SetStatusText($"已更新到 v{CurrentAppVersion}");
             }
@@ -436,7 +435,7 @@ namespace SeewoAutoLogin
 
             // WebView2 预热：提前在后台创建运行时环境与浏览器进程，缩短主界面首次加载的等待
             // （托盘常驻场景同样预热，用户点开主界面时无需再等浏览器进程启动）
-            Services.WebView2Runtime.Prewarm(WriteDiagnosticLog);
+            if (!safeMode) Services.WebView2Runtime.Prewarm(WriteDiagnosticLog);
 
             // 开机自启自愈：配置要求自启、但系统里没有启动项（被杀软清理、程序换目录、旧版本从未写入）时自动重建
             try
@@ -556,7 +555,7 @@ namespace SeewoAutoLogin
 
             // 显示主窗口（除非设置了启动隐藏或传了 --minimized）。
             // 例外：刚走完首次引导时一定显示 —— 否则用户答完教程询问后什么都看不到，会以为程序没启动。
-            bool startMinimized = !welcomeShown && (e.Args.Contains("--minimized") || _config.StartMinimized);
+            bool startMinimized = safeMode || (!welcomeShown && (e.Args.Contains("--minimized") || _config.StartMinimized));
             if (startMinimized)
             {
                 try { _trayIcon?.SetStatusText(Strings.StartMinimized); } catch { }
@@ -574,8 +573,12 @@ namespace SeewoAutoLogin
             }
 
             // ClassIsland 同款静默更新：后台检查、自动下载、静默安装，不依赖主界面是否打开。
-            if (_config.AutoCheckUpdate && _updateCoordinator != null)
+            if (!safeMode && _config.AutoCheckUpdate && _updateCoordinator != null)
                 _ = _updateCoordinator.RunAsync();
+
+            // 启动 60 秒后仍然存活：清除失败计数与安全模式标记。
+            _ = Task.Delay(TimeSpan.FromSeconds(60)).ContinueWith(_ =>
+                Services.CrashReporter.MarkStartupSuccess(WriteDiagnosticLog));
         }
 
         private void ShowMainWindow()
