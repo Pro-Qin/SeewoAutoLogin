@@ -41,6 +41,19 @@ namespace SeewoAutoLogin
         private readonly SeewoSsoGateway _gateway;
         private readonly TrayIconService _trayIcon;
         private UpdateCoordinator _updateCoordinator;
+
+        /// <summary>当前程序版本（三段式）。</summary>
+        private static string CurrentAppVersion
+        {
+            get
+            {
+                var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                return version == null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
+            }
+        }
+
+        /// <summary>后台静默更新是否正在运行（供主界面手动更新入口判断，避免重复下载）。</summary>
+        internal bool IsSilentUpdateRunning => _updateCoordinator?.IsRunning == true;
         private PluginConfig _config = new PluginConfig();
         private Timer _dailyTokenRefreshTimer;
         private ManagementWindow _mainWindow;
@@ -53,7 +66,6 @@ namespace SeewoAutoLogin
         /// <summary>静默更新退出时跳过 hosts 恢复，避免安装期间希沃请求落空。</summary>
         private bool _skipHostsRestoreOnExit;
         /// <summary>后台静默更新是否正在运行（0/1，Interlocked 保护）。</summary>
-        private int _silentUpdateRunning;
         /// <summary>希沃客户端版本变化检测结果（启动时检测一次，供主界面首次显示时提示）</summary>
         private Services.SeewoVersionCheckResult _seewoVersionChange;
 
@@ -133,10 +145,16 @@ namespace SeewoAutoLogin
 
             if (_isPostUpdateBoot)
             {
-                WriteDiagnosticLog($"[Update] 更新后启动，当前版本 {CurrentAppVersion}");
+                WriteDiagnosticLog("[Update] 更新后启动");
                 // 安装器已经完成文件替换，清掉待安装状态，避免下次启动重复拉起安装器。
                 if (!string.IsNullOrWhiteSpace(_config.PendingUpdateStage))
-                    ClearPendingUpdateState();
+                {
+                    _config.PendingUpdatePath = "";
+                    _config.PendingUpdateSha256 = "";
+                    _config.PendingUpdateVersion = "";
+                    _config.PendingUpdateStage = "";
+                    SaveConfig();
+                }
                 _ = ConfirmUpdateHealthAsync();
             }
 
@@ -1135,151 +1153,6 @@ namespace SeewoAutoLogin
             }
         }
 
-        #region Silent Update
-
-        /// <summary>当前程序版本（三段式）。</summary>
-        private static string CurrentAppVersion
-        {
-            get
-            {
-                var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                return version == null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
-            }
-        }
-
-        /// <summary>后台静默更新是否正在运行（供主界面手动更新入口判断，避免重复下载）。</summary>
-        internal bool IsSilentUpdateRunning => _updateCoordinator?.IsRunning == true;
-
-        /// <summary>
-        /// ClassIsland 同款静默更新：启动后延迟检查，有新版本且开启自动安装时后台下载，
-        /// 校验通过后记录待安装状态并拉起 Inno Setup 静默安装，最后退出主程序由安装器完成替换；
-        /// 新版本带 --updated 启动后收尾。不依赖主界面是否打开。
-        /// </summary>
-        private async Task RunSilentUpdateCoordinatorAsync()
-        {
-            // 启动 25 秒后再开始，避开首次引导、网关启动和界面加载。
-            await Task.Delay(TimeSpan.FromSeconds(25));
-            if (_isExiting || _config == null) return;
-            if (Interlocked.CompareExchange(ref _silentUpdateRunning, 1, 0) != 0) return;
-
-            try
-            {
-                if (!_config.AutoCheckUpdate) return;
-
-                // 上次已下载但没装成：先续装，不再重新检查版本。
-                if (await TryResumePendingUpdateAsync()) return;
-
-                var info = await Services.UpdateChecker.CheckLatestAsync(
-                    _config.UpdateSource, WriteDiagnosticLog, CancellationToken.None);
-                if (info == null || string.IsNullOrWhiteSpace(info.Version)) return;
-                if (Services.UpdateChecker.CompareVersions(info.Version, CurrentAppVersion) <= 0) return;
-
-                WriteDiagnosticLog($"[Update] 静默更新发现新版本 {info.Tag}（当前 {CurrentAppVersion}）");
-                if (!_config.AutoInstallAfterDownload)
-                {
-                    WriteDiagnosticLog("[Update] 静默更新：自动安装已关闭，只记录新版本");
-                    return;
-                }
-                if (string.IsNullOrWhiteSpace(info.SetupUrl) || string.IsNullOrWhiteSpace(info.Sha256))
-                {
-                    WriteDiagnosticLog("[Update] 静默更新：缺少安装包直链或 SHA256，跳过自动下载");
-                    return;
-                }
-
-                _trayIcon?.SetStatusText($"正在后台下载 v{info.Version}");
-                WriteDiagnosticLog($"[Update] 静默更新开始后台下载：{info.SetupUrl}");
-                var progress = new Progress<(long received, long total)>(_ => { });
-                var localPath = await Services.DownloadAccelerator.DownloadAsync(
-                    info.SetupUrl, info.Sha256, progress,
-                    msg => WriteDiagnosticLog($"[Update] {msg}"), CancellationToken.None);
-                if (_isExiting) return;
-
-                var check = await Task.Run(() =>
-                    Services.UpdateInstaller.VerifyPackage(localPath, info.Sha256, WriteDiagnosticLog));
-                if (!check.Verified || !check.CanSilentInstall)
-                {
-                    WriteDiagnosticLog($"[Update] 静默更新：安装包校验未通过（{check.Reason}），取消自动安装");
-                    return;
-                }
-
-                _config.PendingUpdateVersion = info.Version;
-                _config.PendingUpdatePath = localPath;
-                _config.PendingUpdateSha256 = info.Sha256;
-                _config.PendingUpdateStage = "downloaded";
-                SaveConfig();
-
-                _trayIcon?.SetStatusText($"正在静默安装 v{info.Version}");
-                WriteDiagnosticLog($"[Update] 静默更新准备安装 v{info.Version}");
-                if (!Services.UpdateInstaller.StartSilentInstall(check, WriteDiagnosticLog))
-                {
-                    WriteDiagnosticLog("[Update] 静默更新：安装器启动失败，安装包已保留，下次启动会重试");
-                    return;
-                }
-
-                await Task.Delay(1000);
-                Dispatcher.Invoke(new Action(BeginSilentUpdateExit));
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                WriteDiagnosticLog($"[Update] 静默更新流程异常: {ex.GetType().Name} - {ex.Message}");
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _silentUpdateRunning, 0);
-            }
-        }
-
-        /// <summary>恢复上次已经下载但尚未安装的更新包。</summary>
-        private async Task<bool> TryResumePendingUpdateAsync()
-        {
-            if (!string.Equals(_config.PendingUpdateStage, "downloaded", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            var path = _config.PendingUpdatePath;
-            var sha = _config.PendingUpdateSha256;
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            {
-                WriteDiagnosticLog("[Update] 待安装的更新包已不存在，清除待更新状态");
-                ClearPendingUpdateState();
-                return false;
-            }
-
-            var check = await Task.Run(() =>
-                Services.UpdateInstaller.VerifyPackage(path, sha, WriteDiagnosticLog));
-            if (!check.Verified || !check.CanSilentInstall)
-            {
-                WriteDiagnosticLog($"[Update] 待安装更新包校验未通过（{check.Reason}），清除待更新状态");
-                ClearPendingUpdateState();
-                return false;
-            }
-
-            WriteDiagnosticLog($"[Update] 恢复未完成的静默更新：v{_config.PendingUpdateVersion}");
-            if (!Services.UpdateInstaller.StartSilentInstall(check, WriteDiagnosticLog)) return false;
-
-            await Task.Delay(800);
-            Dispatcher.Invoke(new Action(BeginSilentUpdateExit));
-            return true;
-        }
-
-        /// <summary>清空待更新状态并落盘。</summary>
-        private void ClearPendingUpdateState()
-        {
-            try
-            {
-                _config.PendingUpdatePath = "";
-                _config.PendingUpdateSha256 = "";
-                _config.PendingUpdateVersion = "";
-                _config.PendingUpdateStage = "";
-                SaveConfig();
-            }
-            catch (Exception ex)
-            {
-                WriteDiagnosticLog($"[Update] 清理待更新状态失败: {ex.Message}");
-            }
-        }
-
-        #endregion
 
         #region Token Refresh
 
