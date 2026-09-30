@@ -329,7 +329,7 @@ namespace SeewoAutoLogin.Services
         private static string BuildSystemInfo(DiagnosticBundleContext context)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("希沃自动登录 - 系统信息");
+            sb.AppendLine("SeewoAutoLogin - 系统信息");
             sb.AppendLine("生成时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             sb.AppendLine();
 
@@ -654,7 +654,7 @@ namespace SeewoAutoLogin.Services
         private static string BuildReadme(DiagnosticBundleContext context, List<string> warnings)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("希沃自动登录 - 诊断包");
+            sb.AppendLine("SeewoAutoLogin - 诊断包");
             sb.AppendLine("========================================");
             sb.AppendLine("生成时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             sb.AppendLine("程序版本：" + (context.AppVersion ?? ""));

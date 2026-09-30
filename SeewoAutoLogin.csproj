@@ -12,7 +12,7 @@
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <Version>1.13.0</Version>
     <Company>SeewoAutoLogin</Company>
-    <Description>希沃自动登录 - 独立版</Description>
+    <Description>SeewoAutoLogin - 希沃自动登录</Description>
 
     <!-- 单文件发布配置 -->
     <PublishSingleFile Condition="'$(Configuration)'=='Release'">true</PublishSingleFile>

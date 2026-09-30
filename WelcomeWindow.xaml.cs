@@ -43,7 +43,7 @@ namespace SeewoAutoLogin
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"欢迎窗口初始化失败：{ex.Message}", "希沃自动登录",
+                MessageBox.Show($"欢迎窗口初始化失败：{ex.Message}", Strings.AppTitle,
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 throw;
             }
@@ -202,7 +202,7 @@ namespace SeewoAutoLogin
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"关闭窗口失败：{ex.Message}", "希沃自动登录",
+                MessageBox.Show($"关闭窗口失败：{ex.Message}", Strings.AppTitle,
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -214,7 +214,7 @@ namespace SeewoAutoLogin
             {
                 var result = MessageBox.Show(
                     "您尚未同意用户协议，应用将退出。下次启动时可重新查看协议。",
-                    "希沃自动登录",
+                    Strings.AppTitle,
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Information);
 
@@ -239,7 +239,7 @@ namespace SeewoAutoLogin
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"无法打开链接：{ex.Message}", "希沃自动登录",
+                MessageBox.Show($"无法打开链接：{ex.Message}", Strings.AppTitle,
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }

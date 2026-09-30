@@ -1308,7 +1308,7 @@ function renderTerms(text) {
     const t = line.trim();
     const div = document.createElement('div');
     if (!t) { div.className = 't-gap'; }
-    else if (t.indexOf('用户协议') === 0 && t.indexOf('希沃自动登录') === 0) { div.className = 't-title'; div.textContent = t; }
+    else if (t.indexOf('SeewoAutoLogin') === 0 || t.indexOf('用户协议') === 0) { div.className = 't-title'; div.textContent = t; }
     else if (t.indexOf('版本 ') === 0 || t.indexOf('（本协议全文完）') === 0) { div.className = 't-meta'; div.textContent = t; }
     else if (/^(第[一二三四五六七八九十]+条|附：)/.test(t)) { div.className = 't-head'; div.textContent = t; }
     else if (/^【/.test(t)) { div.className = 't-warn'; div.textContent = t; }

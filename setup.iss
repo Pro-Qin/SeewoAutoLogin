@@ -20,12 +20,12 @@
 #endif
 
 [Setup]
-AppName=希沃自动登录
+AppName=SeewoAutoLogin
 AppVersion={#AppVersion}
 AppPublisher=SeewoAutoLogin
 AppPublisherURL=https://github.com/Pro-Qin/SeewoAutoLogin
 DefaultDirName={autopf}\SeewoAutoLogin
-DefaultGroupName=希沃自动登录
+DefaultGroupName=SeewoAutoLogin
 DisableProgramGroupPage=yes
 OutputDir=.\publish
 OutputBaseFilename=SeewoAutoLogin_Setup_v{#AppVersion}{#OutputSuffix}
@@ -58,10 +58,15 @@ Source: "bin\Release\net8.0-windows10.0.19041.0\publish\SeewoAutoLogin.exe"; Des
 Source: "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 #endif
 
+[InstallDelete]
+; 清理旧版本以希沃自动登录命名的快捷方式，避免主标题改名后残留
+Type: files; Name: "{commondesktop}\希沃自动登录.lnk"
+Type: files; Name: "{group}\希沃自动登录.lnk"
+
 [Icons]
-Name: "{group}\希沃自动登录"; Filename: "{app}\SeewoAutoLogin.exe"
-Name: "{commondesktop}\希沃自动登录"; Filename: "{app}\SeewoAutoLogin.exe"; Tasks: desktopicon
-Name: "{group}\卸载希沃自动登录"; Filename: "{uninstallexe}"
+Name: "{group}\SeewoAutoLogin"; Filename: "{app}\SeewoAutoLogin.exe"
+Name: "{commondesktop}\SeewoAutoLogin"; Filename: "{app}\SeewoAutoLogin.exe"; Tasks: desktopicon
+Name: "{group}\卸载 SeewoAutoLogin"; Filename: "{uninstallexe}"
 
 [Run]
 #if BundleWebView2
@@ -72,7 +77,7 @@ Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/si
 ; 快捷方式本身会被安装程序重建，但桌面/开始菜单上的图标来自系统缓存：
 ; 程序换了图标之后，缓存里仍是旧的，用户看到的就还是旧图标。这一步让资源管理器重新读取。
 Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden nowait skipifdoesntexist
-Filename: "{app}\SeewoAutoLogin.exe"; Description: "启动希沃自动登录"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\SeewoAutoLogin.exe"; Description: "启动 SeewoAutoLogin"; Flags: nowait postinstall skipifsilent
 ; 静默升级（/SILENT）时上面那条会被 skipifsilent 跳过，装完程序停在关闭状态，用户得手动再开一次。
 ; 这里补一条只在静默模式下执行的启动项，让静默升级后程序自动回到托盘。
 Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--elevated --minimized --updated"; Flags: nowait; Check: WizardSilent

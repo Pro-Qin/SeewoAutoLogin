@@ -1,4 +1,4 @@
-# 希沃自动登录（独立版）
+# SeewoAutoLogin（希沃自动登录）
 
 基于 [CJKmkp/SeewoAutoLogin](https://github.com/CJKmkp/SeewoAutoLogin)（ICC-CE 插件版）重构的 **Windows 独立应用（WPF）**，为希沃白板提供 SSO 快捷登录能力。
 

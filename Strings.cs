@@ -11,7 +11,7 @@ namespace SeewoAutoLogin
         public static StringsInstance Default { get; } = new StringsInstance();
 
         // App
-        public static string AppTitle => IsEnglish ? "Seewo Auto Login" : "希沃自动登录";
+        public static string AppTitle => "SeewoAutoLogin";
         public static string AppDescription => IsEnglish ? "Standalone SSO gateway for Seewo Whiteboard" : "希沃白板 SSO 快捷登录独立服务";
         public static string GatewayStatus => IsEnglish ? "SSO Gateway running on port" : "SSO 网关运行于端口";
         public static string GatewayStopped => IsEnglish ? "SSO Gateway stopped" : "SSO 网关已停止";
