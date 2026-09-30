@@ -30,6 +30,13 @@ jobs:
       - name: Publish single-file (win-x64)
         run: dotnet publish SeewoAutoLogin.csproj -c Release -r win-x64 --self-contained false -o bin\Release\net8.0-windows10.0.19041.0\publish --no-restore
 
+      - name: Generate SBOM (optional)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          dotnet tool install --global CycloneDX --ignore-failed-sources
+          dotnet CycloneDX SeewoAutoLogin.csproj -o publish -f json -fn sbom.json
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

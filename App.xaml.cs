@@ -500,6 +500,8 @@ namespace SeewoAutoLogin
 
                 if (_seewoVersionChange != null && _seewoVersionChange.Changed)
                     _trayIcon?.SetStatusText($"检测到希沃客户端已更新（{_seewoVersionChange.Previous} → {_seewoVersionChange.Current}）");
+                if (!string.IsNullOrWhiteSpace(_seewoVersionChange?.Current))
+                    WriteDiagnosticLog($"[SeewoVersion] 兼容性: {Services.CompatibilityMatrix.Describe(_seewoVersionChange.Current)}");
             }
             catch (Exception ex)
             {
