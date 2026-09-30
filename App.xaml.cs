@@ -1751,11 +1751,19 @@ namespace SeewoAutoLogin
             foreach (var acct in _config.Accounts)
             {
                 if (string.IsNullOrEmpty(acct.Password)) continue;
-                if (Services.SecureStore.IsEncrypted(acct.Password)) continue;
+                if (Services.SecureStore.IsV2Encrypted(acct.Password)) continue;
 
-                // 旧版无前缀：可能是 DPAPI 密文，也可能是明文；先尝试解密
-                string plaintext = Services.SecureStore.TryDecryptLegacy(acct.Password);
-                if (plaintext == null) plaintext = acct.Password;
+                string plaintext;
+                if (Services.SecureStore.IsLegacyEncrypted(acct.Password))
+                {
+                    // 旧 dpapi: 格式：先解出明文，再用 v2 随机主密钥重新加密
+                    plaintext = Services.SecureStore.Decrypt(acct.Password);
+                }
+                else
+                {
+                    // 旧版无前缀：可能是 DPAPI 密文，也可能是明文；先尝试解密
+                    plaintext = Services.SecureStore.TryDecryptLegacy(acct.Password) ?? acct.Password;
+                }
 
                 acct.Password = Services.SecureStore.Encrypt(plaintext); // 失败抛异常，中止保存
                 changed = true;
