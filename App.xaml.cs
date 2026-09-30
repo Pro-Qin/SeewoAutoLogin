@@ -40,6 +40,7 @@ namespace SeewoAutoLogin
         private readonly SeewoUserListRotationService _userListRotation;
         private readonly SeewoSsoGateway _gateway;
         private readonly TrayIconService _trayIcon;
+        private UpdateCoordinator _updateCoordinator;
         private PluginConfig _config = new PluginConfig();
         private Timer _dailyTokenRefreshTimer;
         private ManagementWindow _mainWindow;
@@ -123,6 +124,12 @@ namespace SeewoAutoLogin
 
             LoadConfig();
             MigratePlaceholderFlags();
+
+            _updateCoordinator = new UpdateCoordinator(
+                _config, WriteDiagnosticLog, SaveConfig,
+                status => _trayIcon?.SetStatusText(status),
+                BeginSilentUpdateExit,
+                action => Dispatcher.Invoke(action));
 
             if (_isPostUpdateBoot)
             {
@@ -539,8 +546,8 @@ namespace SeewoAutoLogin
             }
 
             // ClassIsland 同款静默更新：后台检查、自动下载、静默安装，不依赖主界面是否打开。
-            if (_config.AutoCheckUpdate)
-                _ = RunSilentUpdateCoordinatorAsync();
+            if (_config.AutoCheckUpdate && _updateCoordinator != null)
+                _ = _updateCoordinator.RunAsync();
         }
 
         private void ShowMainWindow()
@@ -1109,7 +1116,7 @@ namespace SeewoAutoLogin
         }
 
         /// <summary>后台静默更新是否正在运行（供主界面手动更新入口判断，避免重复下载）。</summary>
-        internal bool IsSilentUpdateRunning => _silentUpdateRunning > 0;
+        internal bool IsSilentUpdateRunning => _updateCoordinator?.IsRunning == true;
 
         /// <summary>
         /// ClassIsland 同款静默更新：启动后延迟检查，有新版本且开启自动安装时后台下载，
