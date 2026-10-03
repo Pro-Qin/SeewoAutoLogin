@@ -127,6 +127,22 @@ svg{display:block;flex:none}
 .shot-tag .ico{width:14px;height:14px}
 .shot figcaption{margin-top:12px;font-size:.82rem;color:var(--fg-3)}
 
+/* ===== film (B 站嵌入) ===== */
+.film{position:relative;margin:0}
+.film-glow{position:absolute;inset:-9% -7% -7%;z-index:-1;pointer-events:none;filter:blur(12px);
+  background:radial-gradient(58% 62% at 50% 46%,rgba(117,199,42,.24),transparent 72%)}
+.film-frame{position:relative;border-radius:24px;padding:9px;
+  background:linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.022));
+  border:1px solid var(--line-2);box-shadow:0 34px 74px -42px rgba(0,0,0,.95)}
+.film-frame::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.13)}
+.film-box{position:relative;aspect-ratio:16/9;border-radius:15px;overflow:hidden;background:#000}
+.film-box iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
+.film figcaption{display:flex;flex-wrap:wrap;align-items:center;gap:.7rem 1.1rem;margin-top:15px;
+  font-size:.86rem;color:var(--fg-3)}
+.film figcaption b{color:var(--fg-2);font-weight:600}
+.film figcaption .btn{margin-left:auto}
+
 /* ===== sections ===== */
 .section{padding:clamp(56px,8vw,104px) 0;border-top:1px solid var(--line)}
 .section,#main{scroll-margin-top:66px}
@@ -375,6 +391,7 @@ code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.06);bo
       <span class="brand-text">SeewoAutoLogin<em>希沃自动登录</em></span>
     </a>
     <nav class="nav-links" aria-label="页面导航">
+      <a href="#film">宣传片</a>
       <a href="#problem">解决的问题</a>
       <a href="#features">功能</a>
       <a href="#faq">常见问题</a>
@@ -416,6 +433,32 @@ code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.06);bo
         </div>
         <span class="shot-tag"><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12.6l5.2 5.2L20 6.4"/></svg>点一下这个头像就进去了</span>
         <figcaption>希沃登录界面实际效果（红框内为本程序提供的快捷登录头像）</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ========== film ========== -->
+  <section class="section" id="film">
+    <div class="wrap">
+      <header class="sec-head reveal">
+        <h2>32 秒宣传片</h2>
+        <p>从希沃登录界面上多出来的那排头像，到本地 SSO 网关、多账号轮换和凭据加密——一条片子把这套东西讲完。</p>
+      </header>
+
+      <figure class="film reveal">
+        <div class="film-glow" aria-hidden="true"></div>
+        <div class="film-frame">
+          <div class="film-box">
+            <iframe src="https://player.bilibili.com/player.html?isOutside=true&amp;aid=117376959910109&amp;bvid=BV1fGHe6mE8Y&amp;cid=42427679293&amp;p=1&amp;autoplay=0&amp;danmaku=0&amp;high_quality=1&amp;as_wide=1"
+                    title="SeewoAutoLogin 正式宣传片（哔哩哔哩播放器）"
+                    scrolling="no" frameborder="0" framespacing="0"
+                    allowfullscreen="true" loading="lazy"></iframe>
+          </div>
+        </div>
+        <figcaption>
+          <span>本片由 <b>DeepSeek v4.1f</b> 制作：分镜、画面与配乐全部由代码生成，未使用任何外部美术素材。</span>
+          <a class="btn btn-ghost btn-sm" href="https://www.bilibili.com/video/BV1fGHe6mE8Y/" target="_blank" rel="noopener noreferrer">在 B 站打开<span class="meta">BV1fGHe6mE8Y</span></a>
+        </figcaption>
       </figure>
     </div>
   </section>
