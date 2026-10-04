@@ -38,6 +38,8 @@ namespace SeewoAutoLogin
             maxVisibleAccounts = PluginConfig.MaxVisibleAccounts
         };
 
+        private int _autoRepairRunning;
+
         /// <summary>一键修复：重写 hosts 映射并重启 SSO 网关</summary>
         internal async Task<string> RepairSsoAsync()
         {
@@ -67,6 +69,82 @@ namespace SeewoAutoLogin
             var summary = string.Join("；", messages);
             WriteDiagnosticLog("[SelfCheck] 一键修复: " + summary);
             return summary;
+        }
+
+        /// <summary>
+        /// 自动修复：定时自检并就地恢复 hosts、SSO 网关与开机自启。
+        /// 只做能自动恢复的事；需要管理员权限但当前没有时只记录日志。
+        /// </summary>
+        internal async Task<string> RunAutoRepairAsync()
+        {
+            if (_config == null || !_config.AutoRepairEnabled) return "";
+            if (Interlocked.CompareExchange(ref _autoRepairRunning, 1, 0) != 0) return "";
+            try
+            {
+                var actions = new List<string>();
+
+                if (!Services.HostsFileService.HasLoopbackMapping())
+                {
+                    if (Services.HostsFileService.EnsureLoopbackMapping(out var hostsError))
+                        actions.Add("已重建 hosts 映射");
+                    else
+                        actions.Add("hosts 修复失败：" + hostsError);
+                }
+
+                if (_gateway != null && (!_gateway.IsRunning || _gateway.IsPortMismatched))
+                {
+                    try
+                    {
+                        if (_gateway.IsRunning) _gateway.Stop();
+                        await Task.Run(() => _gateway.Start()).ConfigureAwait(true);
+                        actions.Add(_gateway.IsPortMismatched
+                            ? $"网关端口 {_gateway.Port} 仍与希沃请求的 {SeewoSsoGateway.SeewoExpectedPort} 不一致"
+                            : $"已重启 SSO 网关（端口 {_gateway.Port}）");
+                    }
+                    catch (Exception ex)
+                    {
+                        actions.Add("网关修复失败：" + ex.Message);
+                    }
+                }
+
+                if (_config.AutoStartEnabled && !Services.AutoStartService.IsEnabledForCurrentPath())
+                {
+                    if (Services.AutoStartService.Enable(out var autoStartError, out var mode))
+                        actions.Add("已重建开机自启（" + mode + "）");
+                    else
+                        actions.Add("开机自启修复失败：" + autoStartError);
+                }
+
+                if (actions.Count == 0) return "";
+
+                var summary = string.Join("；", actions);
+                WriteDiagnosticLog("[AutoRepair] " + summary);
+                try { _trayIcon?.SetStatusText("自动修复：" + summary); } catch { }
+                return summary;
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _autoRepairRunning, 0);
+            }
+        }
+
+        /// <summary>自动修复循环：启动后延迟首检，之后每 3 分钟巡检一次，不依赖主界面。</summary>
+        private async Task RunAutoRepairLoopAsync()
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15));
+                while (!_isExiting)
+                {
+                    await RunAutoRepairAsync();
+                    await Task.Delay(TimeSpan.FromMinutes(3));
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog("[AutoRepair] 循环异常: " + ex.GetType().Name + " - " + ex.Message);
+            }
         }
 
         /// <summary>

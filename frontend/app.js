@@ -106,6 +106,7 @@ function handleCSharpMessage(raw) {
       if (msg.minimizeToTray!==undefined) document.getElementById('minimizeToTrayCheck').checked = msg.minimizeToTray;
       if (msg.startMinimized!==undefined) document.getElementById('startMinimizedCheck').checked = msg.startMinimized;
       if (msg.restoreHostsOnExit!==undefined) document.getElementById('restoreHostsOnExitCheck').checked = msg.restoreHostsOnExit;
+      if (msg.autoRepairEnabled!==undefined) document.getElementById('autoRepairCheck').checked = msg.autoRepairEnabled;
       if (msg.autoShowOverlay!==undefined) document.getElementById('autoShowOverlayCheck').checked = msg.autoShowOverlay;
       if (msg.autoCheckUpdate!==undefined) document.getElementById('autoCheckUpdateCheck').checked = msg.autoCheckUpdate;
       if (msg.autoInstallAfterDownload!==undefined) setAutoInstallSwitch(msg.autoInstallAfterDownload);
@@ -587,6 +588,7 @@ document.addEventListener('change', function(e) {
     case 'minimizeToTrayCheck': send({type:'update-setting', key:'minimizeToTray', value:e.target.checked}); break;
     case 'startMinimizedCheck': send({type:'update-setting', key:'startMinimized', value:e.target.checked}); break;
     case 'restoreHostsOnExitCheck': send({type:'update-setting', key:'restoreHostsOnExit', value:e.target.checked}); break;
+    case 'autoRepairCheck': send({type:'update-setting', key:'autoRepairEnabled', value:e.target.checked}); break;
     case 'autoShowOverlayCheck': send({type:'update-setting', key:'autoShowOverlay', value:e.target.checked}); break;
     case 'autoCheckUpdateCheck': send({type:'update-setting', key:'autoCheckUpdate', value:e.target.checked}); break;
     case 'autoInstallUpdateCheck': onAutoInstallSwitchChanged(e.target.checked); break;

@@ -168,9 +168,9 @@ namespace SeewoAutoLogin
             {
                 // 更新后第一次启动：静默接管 24300。EasiAgent 被结束后希沃会重新拉起它并重新请求账号列表，
                 // 快捷登录随之恢复；这里不能再弹窗，否则静默更新就断在最后一步了。
-                if (_isPostUpdateBoot)
+                if (_isPostUpdateBoot || _config?.AutoRepairEnabled == true)
                 {
-                    WriteDiagnosticLog($"[Update] 更新后启动：自动结束 EasiAgent 以接管 SSO 端口; pid={pid}");
+                    WriteDiagnosticLog($"[AutoRepair] 自动结束 EasiAgent 以接管 SSO 端口; pid={pid}; 更新后启动={_isPostUpdateBoot}");
                     return true;
                 }
                 return Dispatcher.Invoke(() =>
@@ -581,6 +581,9 @@ namespace SeewoAutoLogin
             // 启动 60 秒后仍然存活：清除失败计数与安全模式标记。
             _ = Task.Delay(TimeSpan.FromSeconds(60)).ContinueWith(_ =>
                 Services.CrashReporter.MarkStartupSuccess(WriteDiagnosticLog));
+
+            // 自动修复：启动后定时自检 hosts、网关与开机自启，不依赖主界面。
+            _ = RunAutoRepairLoopAsync();
         }
 
         private void ShowMainWindow()

@@ -262,6 +262,8 @@
           <label class="checkbox-row"><input type="checkbox" id="minimizeToTrayCheck"><span>关闭时最小化到托盘</span></label>
           <label class="checkbox-row"><input type="checkbox" id="startMinimizedCheck"><span>启动时不显示主界面</span></label>
           <label class="checkbox-row"><input type="checkbox" id="restoreHostsOnExitCheck"><span>退出时恢复 hosts 映射</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="autoRepairCheck"><span>自动修复</span></label>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">开启后程序启动与运行期间定时自检：hosts 缺失自动重建、网关异常自动重启、端口被 EasiAgent 占用时自动接管、开自启缺失自动重建，无需打开主界面。</div>
           <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">开启后每次退出都会删除本程序写入的 local.id.seewo.com 映射，避免残留；下次启动会自动重新写入（需要管理员权限时可能失败）。</div>
           <hr class="divider">
           <label class="checkbox-row"><input type="checkbox" id="rotationEnabledCheck"><span>启用用户列表轮换</span></label>

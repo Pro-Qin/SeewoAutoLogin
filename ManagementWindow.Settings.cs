@@ -36,6 +36,7 @@ namespace SeewoAutoLogin
                 minimizeToTray = _app.Config.MinimizeToTray,
                 startMinimized = _app.Config.StartMinimized,
                 restoreHostsOnExit = _app.Config.RestoreHostsOnExit,
+autoRepairEnabled = _app.Config.AutoRepairEnabled,
                 autoShowOverlay = _app.Config.AutoShowOverlay,
                 autoCheckUpdate = _app.Config.AutoCheckUpdate,
                 autoInstallAfterDownload = _app.Config.AutoInstallAfterDownload

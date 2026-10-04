@@ -33,6 +33,12 @@ namespace SeewoAutoLogin
         /// </summary>
         public bool RestoreHostsOnExit { get; set; } = true;
         /// <summary>
+        /// 自动修复（默认开启）：启动后与运行期间定时自检，hosts 缺失自动重建、
+        /// 网关异常自动重启、端口被 EasiAgent 占用时自动接管、开机自启缺失自动重建。
+        /// 生产环境一体机通常无人值守，故障修复不应依赖用户打开主界面。
+        /// </summary>
+        public bool AutoRepairEnabled { get; set; } = true;
+        /// <summary>
         /// 更新包下载完成且 SHA256 校验通过后，自动静默安装（默认开启）。
         /// 关闭时只下载安装包并打开安装程序，由用户手动完成安装向导。
         /// 注意：旧版配置里没有这个字段，反序列化时会保留这里的默认值 true。

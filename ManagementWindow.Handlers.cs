@@ -195,6 +195,7 @@ namespace SeewoAutoLogin
                 case "minimizeToTray": _app.Config.MinimizeToTray = val.GetBoolean(); break;
                 case "startMinimized": _app.Config.StartMinimized = val.GetBoolean(); break;
                 case "restoreHostsOnExit": _app.Config.RestoreHostsOnExit = val.GetBoolean(); break;
+                case "autoRepairEnabled": _app.Config.AutoRepairEnabled = val.GetBoolean(); break;
                 case "autoShowOverlay": _app.Config.AutoShowOverlay = val.GetBoolean(); break;
                 case "autoCheckUpdate": _app.Config.AutoCheckUpdate = val.GetBoolean(); break;
                 case "autoInstallAfterDownload":
