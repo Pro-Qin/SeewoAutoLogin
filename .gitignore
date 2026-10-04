@@ -22,13 +22,8 @@ publish_fixed/
 Thumbs.db
 Desktop.ini
 
-# 宣传片渲染中间产物（可用 make-music.py / render-film.mjs 重新生成）
-docs/promo/frames/
-docs/promo/.edge-profile/
-docs/promo/*.wav
-
-# 宣传短片是本地产物，不入库（脚本仍保留，可随时重新生成）
-docs/promo/*.mp4
+# 宣传片工作目录：本地素材、脚本与渲染产物，不入库
+docs/promo/
 
 # Local verification screenshots (not published)
 _verify/
