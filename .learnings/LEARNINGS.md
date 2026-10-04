@@ -134,3 +134,28 @@ Edge headless 截图有两个坑：--window-size 有最小宽度，data URI 大�
 - See Also: LRN-20260925-004
 
 ---
+
+
+## [LRN-20261004-001] best_practice
+
+**Logged**: 2026-10-04T12:00:00+08:00
+**Priority**: high
+**Status**: active
+**Area**: product
+
+### Summary
+生产环境是教室一体机，故障修复必须默认自动完成，不能依赖用户打开主界面点一键修复。
+
+### Details
+一体机通常无人值守，出问题后没有机会打开界面。常见故障（hosts 映射丢失、SSO 网关未监听、
+端口被 EasiAgent 占用、开机自启缺失）都要有自动修复路径，并在设置中默认开启。
+手动一键修复只作为兜底，不再作为主要恢复手段。
+
+### Suggested Action
+新增故障处理时先问：能否在启动或定时巡检中自动恢复？能则实现自动修复并默认开启，
+只在无法自动恢复时才提示用户或写诊断日志。
+
+### Metadata
+- Source: user_feedback
+- Related Files: App.Health.cs, Core/Models.cs, ManagementWindow.Settings.cs, frontend/index.html
+- Tags: auto-repair, unattended, product-principle
