@@ -1,8 +1,8 @@
 # SeewoAutoLogin（希沃自动登录）
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/project-map-dark.svg">
-  <img alt="SeewoAutoLogin 项目版图" src="docs/assets/project-map-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/project-map-dark.svg?v=20261004b">
+  <img alt="SeewoAutoLogin 项目版图" src="docs/assets/project-map-light.svg?v=20261004b">
 </picture>
 
 基于 [CJKmkp/SeewoAutoLogin](https://github.com/CJKmkp/SeewoAutoLogin)（ICC-CE 插件版）重构的 **Windows 独立应用（WPF）**，为希沃白板提供 SSO 快捷登录能力。
