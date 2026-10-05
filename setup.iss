@@ -14,10 +14,11 @@
 ;
 ; 内置运行时包支持两种来源，都通过 /DWebView2Bundle 指定文件名（文件放 publish\ 下）：
 ;   a) 微软更新目录（catalog.update.microsoft.com）下载的**完整 .msu** —— 可以按版本挑到 109，
-;      这是 Win7 上最稳的来源（更新目录的下载链接是长期地址，不像 CDN 临时链接会失效）：
+;      这是 Win7 上最稳的来源（更新目录给的是长期地址，不像 CDN 临时链接会失效）：
 ;        iscc /DBundleWebView2=1 /DWebView2Bundle="WebView2Runtime_109.0.1518.78.msu" setup.iss
 ;      安装阶段会自动改用 wusa 静默安装。
-;   b) 官方 Evergreen 离线安装器 exe（它总是指向最新版，Win7 上只能用 109 时期那一份）：
+;   b) 官方 Evergreen 离线安装器 exe（https://go.microsoft.com/fwlink/?linkid=2124701，约 203MB）——
+;      它总是指向最新版，Win7 上只能用 109 时期那一份：
 ;        iscc /DBundleWebView2=1 /DWebView2Bundle="MicrosoftEdgeWebView2RuntimeInstallerX64_109.exe" setup.iss
 ;
 ; 轻量包（不内置）在 Win7 上不会去装最新版，而是引导用户手动安装 109；Win10/11 走 Evergreen。
