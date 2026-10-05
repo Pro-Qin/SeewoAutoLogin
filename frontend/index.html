@@ -345,6 +345,7 @@
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button class="btn btn-secondary" id="startTourBtn">显示使用教程</button>
             <button class="btn btn-secondary" id="exportDiagnosticsBtn" onclick="send({type:'export-diagnostics'});var s=document.getElementById('diagnosticsStatus');if(s)s.textContent='正在收集…'">导出诊断包</button>
+            <button class="btn btn-secondary" onclick="send({type:'export-logs-to-desktop'});var s=document.getElementById('diagnosticsStatus');if(s)s.textContent='正在整合日志…'">导出日志到桌面</button>
             <button class="btn btn-secondary" onclick="send({type:'open-log-viewer'})">查看日志</button>
             <button class="btn btn-secondary" onclick="send({type:'open-diagnostic'})">一键诊断</button>
           </div>
