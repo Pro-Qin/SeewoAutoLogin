@@ -38,6 +38,25 @@ namespace SeewoAutoLogin.Services
         private static readonly object Gate = new object();
         private static Task<CoreWebView2Environment> _environmentTask;
 
+        /// <summary>
+        /// 是否 Windows 7 / 8 / 8.1（系统版本 6.1 / 6.2 / 6.3）。
+        /// 主干跑在 Windows 10 19041 以上，这里恒为 false，相关分支不会生效。
+        /// </summary>
+        public static bool IsLegacyWindows
+        {
+            get
+            {
+                var version = Environment.OSVersion.Version;
+                return version.Major == 6 && version.Minor <= 3;
+            }
+        }
+
+        /// <summary>
+        /// 强制软件渲染（等价 --disable-gpu）。Win7 上老显卡驱动会让 WebView2 的 GPU 进程起不来，
+        /// 界面初始化失败后用这个开关重建环境再试一次。
+        /// </summary>
+        public static bool ForceSoftwareRendering { get; set; }
+
         /// <summary>WebView2 用户数据目录（放在 LOCALAPPDATA，避免 Program Files 写权限问题）。</summary>
         public static string UserDataFolder => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -178,7 +197,14 @@ namespace SeewoAutoLogin.Services
         private static Task<CoreWebView2Environment> CreateEnvironmentAsync()
         {
             Directory.CreateDirectory(UserDataFolder);
-            return CoreWebView2Environment.CreateAsync(null, UserDataFolder, null);
+
+            // Win7 上老显卡驱动会让 WebView2 的 GPU 进程起不来（表现为界面初始化失败）：
+            // 软件渲染重试时显式关掉 GPU，不影响其它平台（主干这个开关恒为 false）。
+            var options = ForceSoftwareRendering
+                ? new CoreWebView2EnvironmentOptions("--disable-gpu")
+                : null;
+
+            return CoreWebView2Environment.CreateAsync(null, UserDataFolder, options);
         }
 
         /// <summary>

@@ -197,8 +197,10 @@ namespace SeewoAutoLogin.Services
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
-                    StandardOutputEncoding = encoding ?? Encoding.UTF8,
-                    StandardErrorEncoding = encoding ?? Encoding.UTF8
+                    // Encoding.Default 在 net8 上就是 UTF-8；在 net48（Win7 分支）上是系统 ANSI 代码页，
+                    // 正好用于中文系统 schtasks 的 GBK 输出（查 /XML 的那条另行指定 Unicode）。
+                    StandardOutputEncoding = encoding ?? Encoding.Default,
+                    StandardErrorEncoding = encoding ?? Encoding.Default
                 };
                 foreach (var a in args) psi.ArgumentList.Add(a);
 

@@ -72,13 +72,39 @@ namespace SeewoAutoLogin
             catch (Exception ex)
             {
                 _app?.WriteDiagnosticLog($"[WebView2] 初始化失败: {ex}");
-                ShowStatusPanel("界面初始化失败",
-                    $"WebView2 初始化失败：{ex.Message}\n\n可点击「重新检测」重试，或「查看日志」了解详情。",
+
+                // Win7 上老显卡驱动会让 WebView2 的 GPU 进程起不来，症状和"初始化失败"混在一起。
+                // 关掉 GPU 用软件渲染重建环境再试一次：成了就静默继续，别让用户以为程序坏了。
+                if (WebView2Runtime.IsLegacyWindows && !WebView2Runtime.ForceSoftwareRendering)
+                {
+                    _app?.WriteDiagnosticLog("[WebView2] 改用软件渲染重试一次（--disable-gpu）");
+                    WebView2Runtime.ForceSoftwareRendering = true;
+                    WebView2Runtime.ResetEnvironment();
+                    try
+                    {
+                        await InitializeWebViewAsync();
+                        await intro;
+                        return;
+                    }
+                    catch (Exception retryEx)
+                    {
+                        _app?.WriteDiagnosticLog($"[WebView2] 软件渲染重试仍失败: {retryEx}");
+                        ShowStatusPanel("界面初始化失败", FailingPanelText(retryEx),
+                            showRetry: true, showInstall: !WebView2Runtime.IsInstalled, showDownload: true);
+                        await intro;
+                        return;
+                    }
+                }
+
+                ShowStatusPanel("界面初始化失败", FailingPanelText(ex),
                     showRetry: true, showInstall: !WebView2Runtime.IsInstalled, showDownload: true);
             }
 
             await intro;
         }
+
+        private static string FailingPanelText(Exception ex)
+            => $"WebView2 初始化失败：{ex.Message}\n\n可点击「重新检测」重试，或「查看日志」了解详情。";
 
 
 
