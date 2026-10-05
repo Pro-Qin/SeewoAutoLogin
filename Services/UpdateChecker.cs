@@ -102,6 +102,20 @@ namespace SeewoAutoLogin.Services
             "https://api.github.com/repos/{0}/{1}/releases/latest"
         };
 
+        /// <summary>
+        /// Win7 兼容分支的更新源：主干用 releases/latest，而本分支的发布是 pre-release、tag 带 -win7，
+        /// releases/latest 永远拿不到它，所以这里读发布列表后自行筛选。
+        /// </summary>
+        private static readonly string[] Windows7BranchSources =
+        {
+            // per_page 限制条数：列表响应比 releases/latest 大得多（每条都带 body 与 assets）
+            "https://gh-proxy.com/https://api.github.com/repos/{0}/{1}/releases?per_page=10",
+            "https://api.github.com/repos/{0}/{1}/releases?per_page=10"
+        };
+
+        /// <summary>Win7 分支发布的 tag 后缀，与 release.yml / build-release-body.ps1 的约定一致。</summary>
+        private const string Windows7TagSuffix = "-win7";
+
         /// <summary>可信下载主机白名单（忽略大小写）</summary>
         private static readonly string[] TrustedDownloadHosts =
         {
@@ -147,20 +161,18 @@ namespace SeewoAutoLogin.Services
         }
 
         /// <summary>
-        /// Windows 7 兼容分支开关。
-        /// 主干发布的安装包是 .NET 8 + Windows 10 19041 构建，Win7 上装上直接打不开；
-        /// 所以本分支不参与主干的更新通道：版本检查整体跳过，升级请手动下载 Win7 版安装包。
+        /// Windows 7 兼容分支开关（由分支维护的编译期常量，主干这里为 false）。
         /// </summary>
         public static readonly bool IsWindows7Branch = true;
 
         public static async Task<UpdateInfo> CheckLatestAsync(string overrideSource, Action<string> log,
             CancellationToken cancellationToken)
         {
+            // win7 分支有自己的更新通道：本分支的发布是 pre-release、tag 带 -win7，主干用的
+            // releases/latest 看不到它；而主干的安装包是 .NET 8 构建、装到 Win7 上直接打不开。
+            // 两边必须分开走，否则要么查不到更新，要么把用户升成一个跑不起来的版本。
             if (IsWindows7Branch)
-            {
-                log?.Invoke("[Update] 当前是 Windows 7 兼容分支：跳过主干更新检查（目标框架不同，装上去会打不开），请手动下载 Win7 版安装包");
-                return null;
-            }
+                return await CheckWindows7BranchAsync(overrideSource, log, cancellationToken);
 
             var failures = new List<string>();
 
@@ -230,18 +242,127 @@ namespace SeewoAutoLogin.Services
             throw new InvalidOperationException("所有更新源均不可用（" + string.Join("；", failures) + "）");
         }
 
+        /// <summary>
+        /// Win7 分支的更新检查：读发布列表 → 只挑 tag 带 -win7 的 → 取版本最高的那个。
+        /// 找不到（例如本分支还没发过版）返回 null，由界面显示「暂无可用更新」，不算失败。
+        /// </summary>
+        private static async Task<UpdateInfo> CheckWindows7BranchAsync(string overrideSource, Action<string> log,
+            CancellationToken cancellationToken)
+        {
+            var failures = new List<string>();
+
+            foreach (var template in BuildSources(overrideSource, Windows7BranchSources, listMode: true))
+            {
+                try
+                {
+                    if (!TryBuildSourceUrl(template, out var url, out var reason))
+                    {
+                        var label = HostOf((template ?? "").Trim());
+                        failures.Add($"{label}: {reason}");
+                        log?.Invoke($"[Update] 跳过无效更新源 {label}：{reason}");
+                        continue;
+                    }
+
+                    using (var client = CreateClient())
+                    using (var response = await client
+                        .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                        .ConfigureAwait(false))
+                    {
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            failures.Add($"{HostOf(url)}: HTTP {(int)response.StatusCode}");
+                            continue;
+                        }
+
+                        // 发布列表比 releases/latest 大得多（实测 10 条约 92KB），这里单独放宽体积上限
+                        var json = await ReadBodyLimitedAsync(response, log, cancellationToken, 4 * 1024 * 1024);
+                        var info = ParseWindows7ReleaseList(json, url, log);
+                        if (info != null)
+                        {
+                            log?.Invoke($"[Update] {HostOf(url)} 命中 Win7 分支最新版本 {info.Tag}");
+                            await AttachSha256Async(info, log, cancellationToken);
+                            return info;
+                        }
+
+                        failures.Add($"{HostOf(url)}: 发布列表里没有 -win7 的版本");
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{HostOf((template ?? "").Trim())}: {ex.Message}");
+                }
+            }
+
+            // 与主干不同：这里不抛异常 —— 「本分支还没发过版」是正常状态，
+            // 不该在界面上显示成「检查更新失败」。
+            log?.Invoke("[Update] 没有找到 Win7 分支的可用发布：" + string.Join("；", failures));
+            return null;
+        }
+
+        /// <summary>
+        /// 从发布列表里挑出 Win7 分支的最新一版。
+        /// tag 约定为 vX.Y.Z-win7（见 release.yml），版本比较用 NormalizeVersion 取出的数字部分。
+        /// </summary>
+        private static UpdateInfo ParseWindows7ReleaseList(string json, string url, Action<string> log)
+        {
+            using (var document = JsonDocument.Parse(json))
+            {
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Array) return null;
+
+                JsonElement? best = null;
+                var bestVersion = "";
+
+                foreach (var release in root.EnumerateArray())
+                {
+                    var tag = release.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() ?? "" : "";
+                    if (tag.IndexOf(Windows7TagSuffix, StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                    var version = NormalizeVersion(tag);
+                    if (string.IsNullOrWhiteSpace(version)) continue;
+
+                    if (best == null || CompareVersions(version, bestVersion) > 0)
+                    {
+                        best = release;
+                        bestVersion = version;
+                    }
+                }
+
+                if (best == null) return null;
+
+                // 复用主干那套解析：资源筛选、发布页校验、直链推导与兜底都在 ParseRelease 里
+                return ParseRelease(best.Value.GetRawText(), url, log);
+            }
+        }
+
         private static IEnumerable<string> BuildSources(string overrideSource)
+            => BuildSources(overrideSource, DefaultSources, listMode: false);
+
+        /// <summary>
+        /// 展开更新源。<paramref name="listMode"/> 为 true 时用 GitHub 的发布**列表**接口
+        /// （win7 分支要自己筛 pre-release），否则用 releases/latest。
+        /// </summary>
+        private static IEnumerable<string> BuildSources(string overrideSource, string[] defaults, bool listMode)
         {
             if (!string.IsNullOrWhiteSpace(overrideSource))
             {
                 var custom = overrideSource.Trim();
-                // 只填了基地址（如 https://api.github.com）时按 GitHub API 规范补全路径
-                yield return custom.IndexOf("{0}", StringComparison.Ordinal) >= 0
-                    ? custom
-                    : custom.TrimEnd('/') + "/repos/{0}/{1}/releases/latest";
+                if (custom.IndexOf("{0}", StringComparison.Ordinal) >= 0)
+                {
+                    yield return custom;
+                }
+                else
+                {
+                    // 只填了基地址（如 https://api.github.com）时按 GitHub API 规范补全路径
+                    yield return custom.TrimEnd('/') + "/repos/{0}/{1}/releases" + (listMode ? "?per_page=10" : "/latest");
+                }
             }
 
-            foreach (var source in DefaultSources) yield return source;
+            foreach (var source in defaults) yield return source;
         }
 
         /// <summary>
@@ -591,8 +712,11 @@ namespace SeewoAutoLogin.Services
             return Encoding.UTF8.GetString(buffer.ToArray());
         }
 
+        /// <summary>Win7 分支的安装包文件名带 _Win7 后缀（对应 setup.iss 的 OutputSuffix）。</summary>
+        private static string SetupFileNameSuffix => IsWindows7Branch ? "_Win7" : "";
+
         private static string BuildSetupUrl(string tag, string version)
-            => $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{tag}/SeewoAutoLogin_Setup_v{version}.exe";
+            => $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{tag}/SeewoAutoLogin_Setup_v{version}{SetupFileNameSuffix}.exe";
 
         private static HttpClient CreateClient()
         {

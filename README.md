@@ -113,7 +113,7 @@ iscc /DBundleWebView2=1 setup.iss
 | 位数 | x64 | x64（32 位系统直接拒绝安装） |
 | 发布形态 | 单文件 exe | exe + 依赖 DLL 目录（免安装版打包成 zip） |
 | 安装包名 | `..._Setup_vX.Y.Z.exe` | `..._Setup_vX.Y.Z_Win7.exe` |
-| 自动更新 | 有 | **关闭**（主干安装包是 .NET 8 构建，装上去 Win7 打不开） |
+| 自动更新 | 走主干 Release | **走 Win7 分支自己的 Release**（tag 带 `-win7`、标记为 pre-release；只会看到 Win7 版，绝不会把用户升级成主干版本） |
 
 为保证两边能互相覆盖安装（同一个 `AppId` 与安装目录），安装包本身不做区分，靠文件名后缀和 `MinVersion` 区分。
 
@@ -153,7 +153,7 @@ iscc /DBundleWebView2=1 setup.iss
 - 应用清单没有声明 DPI 感知级别：WPF 在 net48 上默认是 System DPI aware，而 Win7 会忽略
   `dpiAwareness`（该写法从 Win10 1607 起才生效），所以高 DPI（125%/150%）下界面按系统缩放渲染，可能不如主干清晰。
   这是 Win7 的固有限制，加 manifest 也提不到 Per-Monitor。
-- 分支不参与主干更新通道，升级要手动换安装包。
+- 更新通道与主干物理隔离：Win7 版只会看到 tag 带 `-win7` 的发布，主干版本用同一条规则把自己排除在外，两边互不干扰。
 
 ## 怎么在没有 Win7 真机的情况下验证
 

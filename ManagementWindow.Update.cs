@@ -38,6 +38,23 @@ namespace SeewoAutoLogin
             {
                 var info = await UpdateChecker.CheckLatestAsync(_app.Config.UpdateSource, _app.WriteDiagnosticLog,
                     CancellationToken.None);
+
+                if (info == null)
+                {
+                    // 更新源没有返回可用版本（例如本分支还没发过版）：不能当成「已是最新」误导用户，
+                    // 也不能当成失败——这里单独给一条状态。
+                    await SendToJs(new
+                    {
+                        type = "update-status",
+                        state = "ok",
+                        hasUpdate = false,
+                        latest = current,
+                        pageUrl = UpdateChecker.ReleasesPageUrl,
+                        text = $"当前没有可用的更新（v{current}）"
+                    });
+                    return;
+                }
+
                 var hasUpdate = UpdateChecker.CompareVersions(info.Version, current) > 0;
 
                 if (hasUpdate)

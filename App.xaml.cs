@@ -294,11 +294,6 @@ namespace SeewoAutoLogin
             // 崩溃可观测性与安全模式：先注册异常处理并记录本次启动尝试。
             Services.CrashReporter.Install(this, WriteDiagnosticLog);
             Services.CrashReporter.MarkStartupAttempt(WriteDiagnosticLog);
-
-            // Win7 上 HTTPS 可能因为 Schannel 未启用 TLS 1.2 而整体失败（症状：添加账号失败）。
-            // 这里只把检测结论写进日志：ServicePointManager 保持 SystemDefault（微软建议不要硬编码协议版本），
-            // 系统层配置由用户按日志指引处理，程序不擅自改。
-            Services.NetworkCompat.ReportTls12Availability(WriteDiagnosticLog);
             var safeMode = Services.CrashReporter.IsSafeModeRequested;
             if (safeMode) WriteDiagnosticLog("[Crash] 本次启动进入安全模式：跳过 WebView2、遮罩与自动更新");
 
@@ -424,6 +419,12 @@ namespace SeewoAutoLogin
             }
 
             // 全局异常处理器已由 CrashReporter 注册。
+
+            // Win7/8.1 上 HTTPS 能否跑通，取决于系统 Schannel 有没有启用 TLS 1.2 客户端：
+            // 程序保持 ServicePointManager 的 SystemDefault（微软建议不要硬编码协议版本），
+            // 改为把系统层的 TLS 1.2 打开（与微软 KB3140245 的指引一致）。
+            // 写注册表需要管理员权限，所以放在提权判定之后。
+            Services.NetworkCompat.EnsureTls12ForLegacyWindows(WriteDiagnosticLog);
 
             // 初始化托盘图标
             try
