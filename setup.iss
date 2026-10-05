@@ -1,22 +1,37 @@
-; 希沃自动登录安装脚本
+; 希沃自动登录安装脚本 —— Windows 7 兼容分支
 ; 使用 Inno Setup 编译此脚本生成安装程序
 ;   iscc setup.iss                     → 轻量安装包（不内置 WebView2；运行时缺失时由程序自动下载安装）
 ;   iscc /DBundleWebView2=1 setup.iss  → 内置 WebView2 版（内嵌官方离线运行时安装器，
 ;                                        需先把安装器放到 publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe）
-; 官方离线安装器下载：https://go.microsoft.com/fwlink/?linkid=2124701（约 203MB，断网也能装）
+;
+; ── 本分支与主干（main）的四处差异 ──────────────────────────────────────────────
+; 1) 目标框架是 net48（.NET Framework 4.8），Win7 SP1 可装；主干是 .NET 8 / Win10 19041+。
+;    所以这里 MinVersion 放宽到 6.1sp1，并在 [Code] 里显式检测 .NET Framework 4.8。
+; 2) 产物是 x64：WebView2Loader.dll 是原生 DLL，位数必须与进程一致，
+;    32 位系统会被 ArchitecturesAllowed 直接拒绝（装了也起不来）。
+; 3) net48 不支持单文件发布，[Files] 改成整目录拷贝。
+; 4) Win7 上 WebView2 运行时最高只能到 109.0.1518.78（之后微软不再支持 Win7/8.1）：
+;    - 内置版请放这个版本的离线安装器，更高版本在 Win7 上装完也起不来；
+;    - 轻量版的自动安装只在 Win10/11 走 Evergreen，Win7 上程序会引导手动安装 109。
+;
+; 官方下载入口：https://developer.microsoft.com/microsoft-edge/webview2/
+; （固定版本 Fixed Version → x64；安装器体积约 100-200MB，断网也能装）
 
 ; 本地构建用的默认版本号；CI（release.yml / build.yml）会在编译前用 csproj 里的 <Version> 覆盖这一行，
 ; 避免出现“发布 vX.Y.Z，安装包却叫 vA.B.C”的问题。
-#define AppVersion "1.12.10"
+#define AppVersion "1.14.1"
+
+; Win7 上 WebView2 运行时的最后一版（再高的版本不支持 Win7/8.1）
+#define WebView2RuntimeVersion "109.0.1518.78"
 
 #ifndef BundleWebView2
   #define BundleWebView2 0
 #endif
 
 #if BundleWebView2
-  #define OutputSuffix "_WithWebView2"
+  #define OutputSuffix "_Win7_WithWebView2"
 #else
-  #define OutputSuffix ""
+  #define OutputSuffix "_Win7"
 #endif
 
 [Setup]
@@ -34,8 +49,11 @@ Compression=lzma
 SolidCompression=yes
 UninstallDisplayIcon={app}\SeewoAutoLogin.exe
 PrivilegesRequired=admin
+; Win7 SP1 起（6.1.7601）。主干分支这里是 MinVersion=10.0.19041。
+MinVersion=6.1sp1
+; 产物是 x64，32 位系统直接拒绝，避免「装完打不开」
+ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0.19041
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
@@ -50,12 +68,12 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 ; 历史残留的启动项会由程序内的自启开关负责清理，因此这里不再声明任何注册表条目。
 
 [Files]
-Source: "bin\Release\net8.0-windows10.0.19041.0\publish\SeewoAutoLogin.exe"; DestDir: "{app}"; Flags: ignoreversion
-; 如果使用非单文件发布，取消下面注释
-; Source: "bin\Release\net8.0-windows10.0.19041.0\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+; net48 不支持单文件发布，整目录拷贝（主 exe + 依赖 DLL + exe.config）
+Source: "bin\Release\net48\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 #if BundleWebView2
 ; 内置 WebView2：解开到临时目录，安装时静默运行，装完自动删除（不留在安装目录）
+; 必须是 {#WebView2RuntimeVersion} 或更早的离线安装器，更高版本在 Win7 上不可用
 Source: "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 #endif
 
@@ -101,4 +119,33 @@ begin
   else if RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version) and
      (Version <> '') and (Version <> '0.0.0.0') then
     Result := False;
+end;
+
+{ .NET Framework 4.8 是否已安装：注册表 Release 值 >= 528040（Win7 上 4.8 写的是 528049）。
+  Win7 默认不带 4.8，缺了它程序在任何提示出现之前就会弹「应用程序无法启动」。 }
+function IsDotNet48Installed: Boolean;
+var
+  Release: Cardinal;
+begin
+  Result := RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full', 'Release', Release) and
+            (Release >= 528040);
+end;
+
+function InitializeSetup(): Boolean;
+var
+  ErrorCode: Integer;
+begin
+  Result := False;
+
+  if not IsDotNet48Installed then
+  begin
+    if MsgBox('未检测到 .NET Framework 4.8，本程序无法启动。' + #13#10 + #13#10 +
+              'Windows 7 SP1 需要先安装 .NET Framework 4.8（安装前请确认系统已打好 SP1 补丁）。' + #13#10 +
+              '是否现在打开微软官方下载页？', mbConfirmation, MB_YESNO) = IDYES then
+      ShellExec('open', 'https://dotnet.microsoft.com/download/dotnet-framework/net48',
+                '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
+    Exit;
+  end;
+
+  Result := True;
 end;

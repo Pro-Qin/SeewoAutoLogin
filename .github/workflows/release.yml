@@ -1,5 +1,15 @@
 name: Release
 
+# Windows 7 兼容分支的发版流程。
+# 与主干的差别：
+#   1) 目标是 net48，产物是「exe + 依赖 DLL」目录（net48 没有单文件发布），
+#      所以免安装版是一个 zip，而不是单个 exe；
+#   2) 安装包带 _Win7 后缀，与主干安装包在同一个 Release 里不会撞名；
+#   3) 不自动下载 WebView2 最新版 —— Win7 只能用 109.0.1518.78，
+#      发布前人工把它放到 publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe，
+#      没放就只出轻量安装包（绝不会把不支持的版本塞进内置包）。
+# Win7 分支的 tag 建议用 vX.Y.Z-win7，避免与主干的 vX.Y.Z 指向同一个 tag 名。
+
 on:
   push:
     tags: [ 'v*' ]
@@ -19,21 +29,50 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore (win-x64)
-        run: dotnet restore SeewoAutoLogin.csproj -r win-x64
+      - name: Restore
+        run: dotnet restore SeewoAutoLogin.csproj
 
-      - name: Publish single-file (win-x64)
-        run: dotnet publish SeewoAutoLogin.csproj -c Release -r win-x64 --self-contained false -o bin\Release\net8.0-windows10.0.19041.0\publish --no-restore
+      - name: Test
+        run: dotnet test tests\SeewoAutoLogin.Tests\SeewoAutoLogin.Tests.csproj -c Release
 
-      # 可选：对单文件 exe 做 Authenticode 签名。未配置 secrets 时自动跳过。
-      - name: Sign single-file exe (optional)
+      - name: Publish (net48, 非单文件)
+        run: dotnet publish SeewoAutoLogin.csproj -c Release -o bin\Release\net48\publish --no-restore
+
+      - name: 校验 x64 产物
+        shell: pwsh
+        run: |
+          foreach ($f in @('bin\Release\net48\publish\SeewoAutoLogin.exe', 'bin\Release\net48\publish\WebView2Loader.dll')) {
+            if (-not (Test-Path $f)) { throw "缺少产物 $f" }
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path $f))
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            if ($machine -ne 0x8664) { throw "$f 不是 x64（Machine=0x$($machine.ToString('X4'))）" }
+          }
+          Write-Host "x64 校验通过"
+
+      # 免安装版：net48 不是单文件，必须把整个目录打成 zip，
+      # 只发一个 exe 用户下载下来会缺依赖 DLL 打不开。
+      - name: 打包免安装版
+        shell: pwsh
+        run: |
+          [xml]$csproj = Get-Content SeewoAutoLogin.csproj
+          $version = ($csproj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "无法从 SeewoAutoLogin.csproj 读取 <Version>" }
+          New-Item -ItemType Directory -Force -Path publish | Out-Null
+          $zip = "publish\SeewoAutoLogin_v${version}_Win7_Portable.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "bin\Release\net48\publish\*" -DestinationPath $zip -CompressionLevel Optimal
+          Get-Item $zip | Select-Object Name, Length
+
+      # 可选：对主 exe 做 Authenticode 签名。未配置 secrets 时自动跳过。
+      - name: Sign exe (optional)
         shell: pwsh
         env:
           SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
           SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64)) {
-            Write-Warning "未配置 SIGNING_PFX_BASE64，跳过 Authenticode 签名（更新器将只校验 SHA256）。"
+            Write-Warning "未配置 SIGNING_PFX_BASE64，跳过 Authenticode 签名。"
             exit 0
           }
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
@@ -41,7 +80,7 @@ jobs:
           if (-not $signtool) { throw "找不到 signtool.exe" }
           $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
-          $target = "bin\Release\net8.0-windows10.0.19041.0\publish\SeewoAutoLogin.exe"
+          $target = "bin\Release\net48\publish\SeewoAutoLogin.exe"
           & $signtool sign /f $pfx /p $env:SIGNING_PFX_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $target
           if ($LASTEXITCODE -ne 0) { throw "signtool 签名失败：$LASTEXITCODE" }
           & $signtool verify /pa /v $target
@@ -78,18 +117,19 @@ jobs:
           $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
           iscc setup.iss
 
-      - name: Download offline WebView2 runtime installer
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path publish | Out-Null
-          $out = "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2124701" -OutFile $out
-          Get-Item $out | Select-Object Name, Length
-
-      - name: Build installer with bundled WebView2 (Inno Setup)
+      # 内置 WebView2 版：只有仓库里已备好 109 的离线安装器时才打包。
+      # 刻意不自动下载 —— go.microsoft.com 的那些链接给的都是最新 Evergreen 版本，
+      # 在 Windows 7 上装完也起不来。
+      - name: Build installer with bundled WebView2 (Inno Setup, optional)
         shell: pwsh
         run: |
           $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
+          $runtimeInstaller = "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+          if (-not (Test-Path $runtimeInstaller)) {
+            Write-Warning "未找到 $runtimeInstaller；跳过内置 WebView2 版安装包（Win7 上必须使用 109.0.1518.78）"
+            exit 0
+          }
+          Get-Item $runtimeInstaller | Select-Object Name, Length
           iscc /DBundleWebView2=1 setup.iss
 
       # 可选：对安装包做 Authenticode 签名。必须在生成 SHA256SUMS.txt 之前完成。
@@ -120,15 +160,14 @@ jobs:
         shell: pwsh
         run: Get-ChildItem publish | Select-Object Name, Length
 
-      # 对「将要上传的 exe」生成校验清单（每行 "<sha256>  <文件名>"），
-      # 客户端下载后可用它做强校验（UpdateChecker 读取同 Release 的 SHA256SUMS.txt）
+      # 对「将要上传的文件」生成校验清单（每行 "<sha256>  <文件名>"），
+      # 客户端下载后可用它做强校验（UpdateChecker 读取同 Release 的 SHA256SUMS.txt）。
       - name: Generate SHA256SUMS.txt
         shell: pwsh
         run: |
           $targets = @()
           $targets += Get-ChildItem -Path publish -Filter 'SeewoAutoLogin_Setup_*.exe' -File
-          $single = "bin\Release\net8.0-windows10.0.19041.0\publish\SeewoAutoLogin.exe"
-          if (Test-Path $single) { $targets += Get-Item $single }
+          $targets += Get-ChildItem -Path publish -Filter 'SeewoAutoLogin_v*_Win7_Portable.zip' -File
           if ($targets.Count -eq 0) { throw "没有找到需要计算 SHA256 的发布文件" }
 
           $lines = foreach ($file in $targets) {
@@ -143,8 +182,7 @@ jobs:
           Write-Host "已生成 $out"
           Get-Content $out
 
-      # 生成发布说明：固定开头（三个产物怎么选）＋ CHANGELOG 里对应版本的段落。
-      # 不再使用自动生成的 release notes —— 提交信息里可能带上不适合公开的排查细节。
+      # 生成发布说明：固定开头（产物怎么选）＋ CHANGELOG 里对应版本的段落。
       - name: Build release body
         shell: pwsh
         run: ./.github/scripts/build-release-body.ps1
@@ -152,41 +190,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          prerelease: true
           files: |
             publish/SeewoAutoLogin_Setup_*.exe
+            publish/SeewoAutoLogin_v*_Win7_Portable.zip
             publish/SHA256SUMS.txt
-            bin/Release/net8.0-windows10.0.19041.0/publish/SeewoAutoLogin.exe
           body_path: RELEASE_BODY.md
-
-
-  sync-docs:
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-
-      - name: Sync docs version from csproj
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          [xml]$csproj = Get-Content SeewoAutoLogin.csproj
-          $version = ($csproj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
-          if ([string]::IsNullOrWhiteSpace($version)) { throw "无法从 SeewoAutoLogin.csproj 读取 <Version>" }
-          $path = "docs/index.html"
-          if (-not (Test-Path $path)) { Write-Warning "找不到 $path，跳过官网版本同步"; exit 0 }
-          $html = Get-Content $path -Raw
-          $updated = $html -replace 'v\d+\.\d+\.\d+', "v$version"
-          if ($updated -eq $html) {
-            Write-Host "官网版本号已是 v$version，无需更新"
-            exit 0
-          }
-          Set-Content -Path $path -Value $updated -NoNewline -Encoding UTF8
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/index.html
-          git commit -m "docs: 同步官网版本号到 v$version"
-          git push origin main

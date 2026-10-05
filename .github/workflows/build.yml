@@ -2,9 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, win7 ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, win7 ]
   workflow_dispatch:
 
 jobs:
@@ -13,22 +13,39 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # net48 目标同样用 .NET 8 SDK 编译：windows-latest 自带 .NET Framework 4.8 targeting pack，
+      # 不需要额外安装 VS / 4.8 Developer Pack。
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore (win-x64)
-        run: dotnet restore SeewoAutoLogin.csproj -r win-x64
+      - name: Restore
+        run: dotnet restore SeewoAutoLogin.csproj
 
-      - name: Build (Release, win-x64)
-        run: dotnet build SeewoAutoLogin.csproj -c Release -r win-x64 --no-restore
+      - name: Build (Release, net48)
+        run: dotnet build SeewoAutoLogin.csproj -c Release --no-restore
 
       - name: Run tests
         run: dotnet test tests\SeewoAutoLogin.Tests\SeewoAutoLogin.Tests.csproj -c Release
 
-      - name: Publish single-file (win-x64)
-        run: dotnet publish SeewoAutoLogin.csproj -c Release -r win-x64 --self-contained false -o bin\Release\net8.0-windows10.0.19041.0\publish --no-restore
+      # net48 不支持单文件发布，产物是「exe + 依赖 DLL」，安装脚本按整目录拷贝
+      - name: Publish (net48, 非单文件)
+        run: dotnet publish SeewoAutoLogin.csproj -c Release -o bin\Release\net48\publish --no-restore
+
+      - name: 校验 x64 产物
+        shell: pwsh
+        run: |
+          # WebView2Loader.dll 是原生 DLL，位数必须与主 exe 一致，否则 WebView2 初始化必然失败。
+          # 这条检查就是防「误删 PlatformTarget 后 AnyCPU 拷错 loader」这类回归。
+          foreach ($f in @('bin\Release\net48\publish\SeewoAutoLogin.exe', 'bin\Release\net48\publish\WebView2Loader.dll')) {
+            if (-not (Test-Path $f)) { throw "缺少产物 $f" }
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path $f))
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            if ($machine -ne 0x8664) { throw "$f 不是 x64（Machine=0x$($machine.ToString('X4'))）" }
+            Write-Host "$f : x64 ✓"
+          }
 
       - name: Generate SBOM (optional)
         shell: pwsh
@@ -40,8 +57,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: SeewoAutoLogin-win-x64
-          path: bin\Release\net8.0-windows10.0.19041.0\publish
+          name: SeewoAutoLogin-net48-win7
+          path: bin\Release\net48\publish
 
       - name: Install Inno Setup
         shell: pwsh
@@ -68,7 +85,8 @@ jobs:
           if ($iss -notmatch '#define AppVersion "') { throw "setup.iss 未找到 AppVersion 定义" }
           Set-Content -Path setup.iss -Value ($iss -replace '#define AppVersion "[^"]*"', ('#define AppVersion "' + $version + '"')) -NoNewline -Encoding UTF8
           Select-String -Path setup.iss -Pattern '#define AppVersion'
-          # 占位文件用于验证「内置 WebView2」分支能否编译；真实离线安装器（约 203MB）只在发布流程下载
+          # 占位文件用于验证「内置 WebView2」分支能否编译。真实离线安装器必须是
+          # 109.0.1518.78（Win7 能用的最后一版），由发布流程或人工准备，不要自动下载最新版。
           New-Item -ItemType Directory -Force -Path publish | Out-Null
           Set-Content -Path "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" -Value "placeholder"
           iscc setup.iss
