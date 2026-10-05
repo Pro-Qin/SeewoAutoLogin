@@ -7,11 +7,13 @@
 
 基于 [CJKmkp/SeewoAutoLogin](https://github.com/CJKmkp/SeewoAutoLogin)（ICC-CE 插件版）重构的 **Windows 独立应用（WPF）**，为希沃白板提供 SSO 快捷登录能力。
 
-> **这个工作区是 `win7` 分支**：把目标框架降到 .NET Framework 4.8，让 Windows 7 SP1 也能跑。
+> [!IMPORTANT]
+> **这是 `win7` 兼容分支**：目标框架降到 .NET Framework 4.8，让 Windows 7 SP1 也能跑。
 > 主干（`main`）要求 Windows 10 19041+，两边构建出来的安装包**不能混装**。
 
-> **运行环境（win7 分支）**：Windows 7 **SP1** / 8.1 / 10 / 11，**64 位**。
-> 需要 .NET Framework 4.8 与 WebView2 运行时（Win7 上只能是 109.0.1518.78）——见下方「Windows 7 兼容说明」。
+> [!WARNING]
+> **运行环境**：Windows 7 **SP1** / 8.1 / 10 / 11，**64 位**（32 位系统不支持）。
+> 需要 .NET Framework 4.8 与 WebView2 运行时（Win7 上最高 109 系列）——详见下方「Windows 7 兼容说明」。
 
 > 项目主页：<https://pro-qin.github.io/SeewoAutoLogin/> | 下载：<https://github.com/Pro-Qin/SeewoAutoLogin/releases/latest>
 
