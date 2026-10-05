@@ -121,15 +121,17 @@ iscc /DBundleWebView2=1 setup.iss
 
 1. **Windows 7 SP1，64 位**。SP1 之前或 32 位系统不在支持范围内。
 2. **.NET Framework 4.8**。Win7 默认不带；安装包启动时检测 `HKLM\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full` 的 `Release`，
-   低于 528040 就提示去官方页面下载并中止安装。装 4.8 前 Win7 还需先打齐系统补丁
-   （SP1、SHA-2 代码签名支持 `KB4474419` / 根证书更新、以及提供 `d3dcompiler_47.dll` 的 `KB4019990`），
-   否则安装器会报「证书链错误 / 时间戳签名无法验证」。
+   低于 528040 就提示去官方页面下载并中止安装。
+   官方对 Win7 的要求是 **SP1 + 离线安装前先装 Microsoft Root Certificate Authority 2011**
+   （[安装说明](https://learn.microsoft.com/en-us/previous-versions/dotnet/framework/install/on-windows-7)）；
+   实践中安装器报「证书链错误 / 时间戳签名无法验证」通常还缺 SHA-2 代码签名支持（`KB4474419`）
+   与提供 `d3dcompiler_47.dll` 的 `KB4019990`。
    自己确认是否已装：
 
    ```powershell
    (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full').Release   # >= 528040 即已装 4.8
    ```
-3. **WebView2 运行时 109.0.1518.78**。这是 Win7/8.1 上能用的**最后一版**
+3. **WebView2 运行时 109**（109 系列，最后一版，例如 `109.0.1518.78`）。这是 Win7/8.1 上能用的**最后一版**
    （[微软公告](https://blogs.windows.com/msedgedev/2022/12/09/microsoft-edge-and-webview2-ending-support-for-windows-7-and-windows-8-8-1/)：
    Edge 与 WebView2 运行时自 110 起不再支持 Win7/8.1，WebView2 **SDK 1.0.1519.0** 起同样如此，
    所以本项目把 SDK 锁在 `1.0.1462.37`，升级依赖时不要动它）。
@@ -141,8 +143,16 @@ iscc /DBundleWebView2=1 setup.iss
 - Win7 上如果被别的软件（如 Edge）升到了 110+ 的运行时，主界面会加载不出来：需要卸载该运行时并重装 109 版本。程序日志会记录检测到的版本号。
 - 109 是 Win7 上 WebView2 的终点，**不再有功能与安全更新**（Win7 本身也已于 2023-01-10 结束支持）。
   这个分支解决的是「还能不能用」，不等于安全基线仍然达标 —— 能升到 Win10/11 的机器请优先用主干版本。
-- 程序显式开启 TLS 1.2（Win7 的 Schannel 默认只开 TLS 1.0/1.1），若系统未打 `KB3140245`，HTTPS 仍可能握手失败——日志里表现为「添加账号失败 / 网络错误」。
-- 应用清单里没有声明 DPI 感知级别，高 DPI（125%/150%）下界面按系统缩放渲染，可能不如主干清晰。
+- **Win7 需要在系统层启用 TLS 1.2**：.NET Framework 4.7+ 的 `ServicePointManager` 默认是 `SystemDefault`（由 Schannel 决定协议），
+  微软明确不建议硬编码协议版本，所以程序不动这个设置；而 Win7 SP1 的 Schannel 默认不开 TLS 1.2 客户端，
+  只接受 TLS 1.2+ 的服务端（希沃接口）会握手失败，症状是「添加账号失败 / 网络错误 / 登录信息过期」。
+  程序启动时会把检测结果写进日志（`[网络] ...` 一行）。启用办法（管理员，改完重启系统）：
+  先装 [`KB3140245`](https://support.microsoft.com/help/3140245)，再在
+  `HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Client`
+  下建 `Enabled`=DWORD `1`、`DisabledByDefault`=DWORD `0`。
+- 应用清单没有声明 DPI 感知级别：WPF 在 net48 上默认是 System DPI aware，而 Win7 会忽略
+  `dpiAwareness`（该写法从 Win10 1607 起才生效），所以高 DPI（125%/150%）下界面按系统缩放渲染，可能不如主干清晰。
+  这是 Win7 的固有限制，加 manifest 也提不到 Per-Monitor。
 - 分支不参与主干更新通道，升级要手动换安装包。
 
 ## 怎么在没有 Win7 真机的情况下验证
@@ -178,7 +188,10 @@ dotnet test  tests\SeewoAutoLogin.Tests\SeewoAutoLogin.Tests.csproj -c Release
 **不建议的做法**：Windows 的「兼容模式」不改 API 可用性，对这类问题没有任何参考价值；
 用 Win10 假装 Win7 也不成立。真机/虚拟机成本其实很低：
 
-- 一次性验收：VirtualBox / VMware 装一个 Win7 SP1（自备 ISO），装 .NET Framework 4.8 + WebView2 109，跑一遍上面 5 条。
+- 一次性验收：自备 Win7 SP1 ISO，用 VirtualBox / VMware 建一台虚拟机，
+  装上 .NET Framework 4.8 与 WebView2 109，跑一遍上面 5 条。
+  （微软官方的 Win7 评估版/ISO 下载页、以及 Edge 开发者虚拟机镜像都已下线，ISO 只能自己有；
+  GitHub Actions 的官方 runner 也没有 Win7，别指望在 CI 里自动跑。）
 - 或者直接让合作方那台 Win7 机器跑——**但请让他先跑本仓库 `scripts/` 之外的这套最小检查**，
   并回传 `%LOCALAPPDATA%\SeewoAutoLogin\Logs\` 里的日志：日志里已经包含运行时版本、TLS 结果、网关状态与自启结果，
   比「打不开」三个字有用得多。

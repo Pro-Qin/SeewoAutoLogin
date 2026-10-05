@@ -282,14 +282,6 @@ namespace SeewoAutoLogin
         {
             base.OnStartup(e);
 
-            // Windows 7 的 Schannel 默认只启用 TLS 1.0/1.1（TLS 1.2 需要 KB3140245 + 注册表开关），
-            // 而 .NET Framework 4.8 默认跟随系统 TLS 版本。不显式开启的话，Win7 上所有 HTTPS
-            // 出网（希沃接口、更新检查）都会握手失败，表现为「添加账号失败 / 更新检查不可用」。
-            System.Net.ServicePointManager.SecurityProtocol |=
-                System.Net.SecurityProtocolType.Tls12 |
-                System.Net.SecurityProtocolType.Tls11 |
-                System.Net.SecurityProtocolType.Tls;
-
             // 回滚 watcher 专用入口：不启动正常逻辑，只监控健康标记并在超时后回滚。
             if (e.Args.Contains("--rollback-watch"))
             {
@@ -302,6 +294,11 @@ namespace SeewoAutoLogin
             // 崩溃可观测性与安全模式：先注册异常处理并记录本次启动尝试。
             Services.CrashReporter.Install(this, WriteDiagnosticLog);
             Services.CrashReporter.MarkStartupAttempt(WriteDiagnosticLog);
+
+            // Win7 上 HTTPS 可能因为 Schannel 未启用 TLS 1.2 而整体失败（症状：添加账号失败）。
+            // 这里只把检测结论写进日志：ServicePointManager 保持 SystemDefault（微软建议不要硬编码协议版本），
+            // 系统层配置由用户按日志指引处理，程序不擅自改。
+            Services.NetworkCompat.ReportTls12Availability(WriteDiagnosticLog);
             var safeMode = Services.CrashReporter.IsSafeModeRequested;
             if (safeMode) WriteDiagnosticLog("[Crash] 本次启动进入安全模式：跳过 WebView2、遮罩与自动更新");
 

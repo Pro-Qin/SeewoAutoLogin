@@ -33,10 +33,10 @@ namespace SeewoAutoLogin.Services
         public const string ManualDownloadUrl = "https://developer.microsoft.com/microsoft-edge/webview2/";
 
         /// <summary>
-        /// Windows 7 / 8 / 8.1 上可用的最后一个 WebView2 运行时版本。
-        /// 110 之后微软已不再支持这些系统，装了也起不来 —— 所以本分支在 Win7 上不能走 Evergreen。
+        /// Windows 7 / 8 / 8.1 上可用的最后一个 WebView2 运行时**主版本**：109 系列（例如 109.0.1518.78）。
+        /// 110 起微软不再支持这些系统，装了也起不来。只比主版本，避免被某个具体补丁号写死。
         /// </summary>
-        public const string LegacyWindowsMaxRuntimeVersion = "109.0.1518.78";
+        public const int LegacyWindowsMaxRuntimeMajorVersion = 109;
 
         /// <summary>是否 Windows 7 / 8 / 8.1（系统版本 6.1 / 6.2 / 6.3）。net48 的 OSVersion 已不受 manifest 影响。</summary>
         public static bool IsLegacyWindows
@@ -104,7 +104,7 @@ namespace SeewoAutoLogin.Services
         public static string DescribeLegacyInstallHint()
         {
             if (!IsLegacyWindows) return null;
-            return $"Windows 7/8.1 最高只支持 WebView2 运行时 {LegacyWindowsMaxRuntimeVersion}：" +
+            return "Windows 7/8.1 最高只支持 WebView2 运行时 109 系列：" +
                    "请在官方下载页选择「固定版本（Fixed Version）」x64 安装，再点「重新检测」。" +
                    "不要安装最新版 —— 110 之后微软已不再支持 Windows 7。";
         }
@@ -112,25 +112,17 @@ namespace SeewoAutoLogin.Services
         /// <summary>Win7/8.1 上装了高于 109 的运行时版本时的说明（这种情况界面必然打不开）。</summary>
         public static string DescribeUnsupportedLegacyRuntime(string installedVersion)
         {
-            return $"检测到 WebView2 运行时 {installedVersion}，而 Windows 7/8.1 最高只支持 {LegacyWindowsMaxRuntimeVersion}：" +
-                   "更高的版本在这些系统上无法启动。请卸载当前运行时，再到官方下载页选择「固定版本（Fixed Version）」x64 安装 109 版本。";
+            return $"检测到 WebView2 运行时 {installedVersion}，而 Windows 7/8.1 最高只支持 109 系列：" +
+                   "110 起这些系统已不再被支持，装了也起不来。请卸载当前运行时，" +
+                   "再到官方下载页选择「固定版本（Fixed Version）」x64 安装 109 版本。";
         }
 
-        /// <summary>比较 "a.b.c.d" 形式的版本号；缺位或无法解析的段落按 0 处理。</summary>
-        private static int CompareVersions(string left, string right)
+        /// <summary>取 "a.b.c.d" 的主版本号；无法解析时返回 0。</summary>
+        private static int GetMajorVersion(string version)
         {
-            var l = (left ?? "").Trim().Split('.');
-            var r = (right ?? "").Trim().Split('.');
-
-            var count = Math.Max(l.Length, r.Length);
-            for (var i = 0; i < count; i++)
-            {
-                int a = 0, b = 0;
-                if (i < l.Length) int.TryParse(l[i], out a);
-                if (i < r.Length) int.TryParse(r[i], out b);
-                if (a != b) return a < b ? -1 : 1;
-            }
-            return 0;
+            var first = (version ?? "").Trim().Split('.')[0];
+            int major;
+            return int.TryParse(first, out major) ? major : 0;
         }
 
         /// <summary>创建并缓存 WebView2 环境（浏览器进程启动较慢，缓存后窗口重建无需重新初始化）。</summary>
@@ -229,7 +221,7 @@ namespace SeewoAutoLogin.Services
 
                 // Win7/8.1 上 110 及以上的运行时无法启动。这里当场拦住并说清原因，
                 // 否则用户看到的现象是「安装成功，但界面还是打不开」。
-                if (IsLegacyWindows && CompareVersions(installedVersion, LegacyWindowsMaxRuntimeVersion) > 0)
+                if (IsLegacyWindows && GetMajorVersion(installedVersion) > LegacyWindowsMaxRuntimeMajorVersion)
                 {
                     progress?.Report(new InstallProgress(DescribeUnsupportedLegacyRuntime(installedVersion), null));
                     return false;

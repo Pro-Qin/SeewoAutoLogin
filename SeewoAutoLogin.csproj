@@ -3,7 +3,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
-    <LangVersion>latest</LangVersion>
+    <!-- net48 默认语言版本是 C# 7.3；这里锁定到代码实际需要的最高版本（init/record 要 9，record struct 要 10），
+         避免 SDK 升级后语言版本静默漂移、引入 net48 补不出 polyfill 的新语法（如 required）。
+         相关 polyfill：Services/IsExternalInit.cs -->
+    <LangVersion>10.0</LangVersion>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>disable</Nullable>
