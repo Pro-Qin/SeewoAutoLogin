@@ -35,6 +35,7 @@ SolidCompression=yes
 UninstallDisplayIcon={app}\SeewoAutoLogin.exe
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.19041
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
