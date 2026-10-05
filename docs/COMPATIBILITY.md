@@ -4,7 +4,7 @@
 
 | 项目 | 要求 |
 |---|---|
-| Windows | Windows 10 19041 及以上 / Windows 11 |
+| Windows | Windows 10 19041 及以上 / Windows 11（Windows 7 请改用 [`win7` 分支](https://github.com/Pro-Qin/SeewoAutoLogin/tree/win7)） |
 | .NET | .NET 8 Desktop Runtime（单文件版依赖；安装包会自动检测并引导） |
 | WebView2 | 主界面需要；轻量版首次运行按需安装，或使用 WithWebView2 安装包 |
 | 管理员权限 | SSO 网关、hosts 写入、计划任务需要 |
