@@ -372,6 +372,18 @@ code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.06);bo
   .card:hover,.pkg:hover{transform:none}
 }
 @media print{.nav,.shot-glow,.cta{display:none}}
+
+/* Windows 7 兼容版提示：默认隐藏，只有脚本检测到 Win7/8.1 才显示（脚本在页面底部） */
+.win7-note{
+  margin-top:26px;padding:22px 24px;border-radius:var(--radius);
+  background:linear-gradient(180deg,rgba(255,184,77,.09),rgba(255,184,77,.025));
+  border:1px solid rgba(255,184,77,.32);
+}
+.win7-note h3{font-size:18px;display:flex;align-items:center;gap:9px}
+.win7-note h3::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 12px var(--warn)}
+.win7-note p{margin-top:8px;font-size:14.5px;color:var(--fg-2)}
+.win7-tags{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 18px}
+.win7-tags li{font-size:13px;color:var(--fg-3);padding:5px 12px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line)}
 </style>
 <script>
 (function(){
@@ -410,11 +422,11 @@ code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.06);bo
   <section class="hero" id="top">
     <div class="wrap hero-grid">
       <div class="hero-copy reveal">
-        <p class="eyebrow"><span class="dot" aria-hidden="true"></span>Windows 10 / 11 · 免费开源 · GPL-3.0</p>
+        <p class="eyebrow"><span class="dot" aria-hidden="true"></span><span id="osBadge">Windows 10 / 11</span> · 免费开源 · GPL-3.0</p>
         <h1>让希沃白板的登录界面<br>直接显示你的<span class="hl">账号头像</span></h1>
         <p class="lede">上课前不用再输一遍账号密码。装好之后，打开希沃白板，点一下自己的头像就登录了。</p>
         <div class="hero-actions">
-          <a class="btn btn-primary btn-lg" href="https://github.com/Pro-Qin/SeewoAutoLogin/releases/latest" target="_blank" rel="noopener noreferrer">下载 Windows 版<span class="meta">9 MB · 推荐</span></a>
+          <a class="btn btn-primary btn-lg" id="heroDownload" href="https://github.com/Pro-Qin/SeewoAutoLogin/releases/latest" target="_blank" rel="noopener noreferrer">下载 Windows 版<span class="meta">9 MB · 推荐</span></a>
           <a class="btn btn-ghost btn-lg" href="https://github.com/Pro-Qin/SeewoAutoLogin" target="_blank" rel="noopener noreferrer"><svg class="ico" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span>查看源码</span></a>
         </div>
         <ul class="hero-facts">
@@ -651,8 +663,20 @@ code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.06);bo
         </article>
       </div>
 
+      <div class="win7-note" id="win7Note" hidden>
+        <h3>你的系统是 Windows 7，需要下载兼容版</h3>
+        <p>上面三个包都是 .NET 8 构建，在 Windows 7 上装不上也打不开。请改用 <b>Windows 7 兼容版</b>：功能与主版本一致，只是目标框架退到 .NET Framework 4.8。</p>
+        <ul class="win7-tags">
+          <li>Windows 7 SP1 · 64 位</li>
+          <li>需先装 .NET Framework 4.8</li>
+          <li>WebView2 运行时最高 109</li>
+          <li>文件名带 _Win7 后缀</li>
+        </ul>
+        <a class="btn btn-primary" href="https://github.com/Pro-Qin/SeewoAutoLogin/releases/tag/v1.14.2-win7" target="_blank" rel="noopener noreferrer">去下载 Windows 7 兼容版</a>
+      </div>
+
       <div class="spec reveal">
-        <span><b>系统</b> Windows 10 / 11（64 位）</span>
+        <span><b>系统</b> Windows 10 / 11（64 位）· Windows 7 用兼容版</span>
         <span><b>许可</b> GPL-3.0，源码公开可查</span>
         <span><b>校验</b> Release 页附 <code>SHA256SUMS.txt</code></span>
         <span><b>价格</b> 免费，无广告，无账号体系</span>
@@ -833,6 +857,30 @@ code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.06);bo
   </div>
 </footer>
 
+<script>
+/* Windows 7 / 8 / 8.1 检测：主包是 .NET 8 构建，在这些系统上装不上，直接把下载入口换成 Win7 兼容版。
+   只看浏览器 UA 里的 NT 6.1 / 6.2 / 6.3，不做任何上报；判断不出来就保持默认，不打扰。 */
+(function(){
+  var m=/Windows NT (\d+)\.(\d+)/.exec(navigator.userAgent||"");
+  if(!m){return;}
+  var major=parseInt(m[1],10),minor=parseInt(m[2],10);
+  if(major!==6||minor<1||minor>3){return;}   /* 10.0 是 Win10 / Win11 */
+
+  var url="https://github.com/Pro-Qin/SeewoAutoLogin/releases/tag/v1.14.2-win7";
+
+  var dl=document.getElementById('heroDownload');
+  if(dl){
+    dl.setAttribute('href',url);
+    dl.innerHTML='下载 Windows 7 兼容版<span class="meta">需 .NET Framework 4.8</span>';
+  }
+
+  var badge=document.getElementById('osBadge');
+  if(badge){badge.textContent='Windows 7 · 需兼容版';}
+
+  var note=document.getElementById('win7Note');
+  if(note){note.removeAttribute('hidden');}
+})();
+</script>
 <script>
 (function(){
   var root=document.documentElement;

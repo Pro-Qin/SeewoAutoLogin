@@ -17,8 +17,8 @@
 |---|---|---|
 | 目标框架 | .NET 8（Windows 19041+） | .NET Framework 4.8 |
 | 发布形态 | 单文件 exe | exe + 依赖 DLL 目录（免安装版为 zip） |
-| 自动更新 | 有 | 关闭（主干安装包是 .NET 8 构建，Win7 上打不开） |
-| 网络栈 | 默认 TLS 1.2+ | 显式开启 TLS 1.2/1.1/1.0（Win7 Schannel 默认不开 TLS 1.2） |
+| 自动更新 | 走主干 Release | 走 Win7 分支自己的 Release（发布 tag 带 `-win7`，不会被升级到主版本） |
+| TLS | 由系统决定（Win10+ 默认 TLS 1.2 及以上） | 保持 `SystemDefault`（不硬编码协议），并在 Win7/8.1 上按需启用系统 Schannel 的 TLS 1.2 客户端 |
 
 ## 希沃客户端
 
