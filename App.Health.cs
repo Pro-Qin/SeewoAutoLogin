@@ -43,32 +43,48 @@ namespace SeewoAutoLogin
         /// <summary>一键修复：重写 hosts 映射并重启 SSO 网关</summary>
         internal async Task<string> RepairSsoAsync()
         {
-            var messages = new List<string>();
-
-            if (Services.HostsFileService.EnsureLoopbackMapping(out var hostsError))
-                messages.Add("hosts 映射已修复");
-            else
-                messages.Add("hosts 修复失败：" + hostsError);
+            // 连点「一键修复」时不能并发进来：Stop/Start 交错会抛
+            // "Collection was modified" / "Cannot access a disposed object"，还会把网关搅成不可用。
+            // 与自动修复共用同一个原子标志，避免两者同时折腾网关。
+            if (Interlocked.CompareExchange(ref _autoRepairRunning, 1, 0) != 0)
+            {
+                WriteDiagnosticLog("[SelfCheck] 一键修复：上一次修复还在进行，本次跳过");
+                return "正在修复中，请稍候…";
+            }
 
             try
             {
-                if (_gateway.IsRunning) _gateway.Stop();
-                await Task.Run(() => _gateway.Start()).ConfigureAwait(true);
-                messages.Add(_gateway.IsPortMismatched
-                    ? $"SSO 网关已启动，但端口为 {_gateway.Port}（希沃固定请求 {SeewoSsoGateway.SeewoExpectedPort}），快捷登录仍不会出现"
-                    : $"SSO 网关已启动（端口 {_gateway.Port}）");
+                var messages = new List<string>();
+
+                if (Services.HostsFileService.EnsureLoopbackMapping(out var hostsError))
+                    messages.Add("hosts 映射已修复");
+                else
+                    messages.Add("hosts 修复失败：" + hostsError);
+
+                try
+                {
+                    if (_gateway.IsRunning) _gateway.Stop();
+                    await Task.Run(() => _gateway.Start()).ConfigureAwait(true);
+                    messages.Add(_gateway.IsPortMismatched
+                        ? $"SSO 网关已启动，但端口为 {_gateway.Port}（希沃固定请求 {SeewoSsoGateway.SeewoExpectedPort}），快捷登录仍不会出现"
+                        : $"SSO 网关已启动（端口 {_gateway.Port}）");
+                }
+                catch (Exception ex)
+                {
+                    messages.Add("网关启动失败：" + ex.Message);
+                }
+
+                if (!IsAdministrator())
+                    messages.Add("当前不是管理员权限，hosts 与网关可能无法生效");
+
+                var summary = string.Join("；", messages);
+                WriteDiagnosticLog("[SelfCheck] 一键修复: " + summary);
+                return summary;
             }
-            catch (Exception ex)
+            finally
             {
-                messages.Add("网关启动失败：" + ex.Message);
+                Interlocked.Exchange(ref _autoRepairRunning, 0);
             }
-
-            if (!IsAdministrator())
-                messages.Add("当前不是管理员权限，hosts 与网关可能无法生效");
-
-            var summary = string.Join("；", messages);
-            WriteDiagnosticLog("[SelfCheck] 一键修复: " + summary);
-            return summary;
         }
 
         /// <summary>

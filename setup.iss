@@ -4,6 +4,10 @@
 ;   iscc /DBundleWebView2=1 setup.iss  → 内置 WebView2 版（内嵌官方离线运行时安装器，
 ;                                        需先把安装器放到 publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe）
 ; 官方离线安装器下载：https://go.microsoft.com/fwlink/?linkid=2124701（约 203MB，断网也能装）
+;
+; 也支持微软更新目录（catalog.update.microsoft.com）下载的完整 .msu —— Windows 7 只能装 109 系列，
+; 更新目录里可以按版本挑。把文件放进 publish\ 并指定文件名即可，安装阶段会自动改用 wusa 静默安装：
+;   iscc /DBundleWebView2=1 /DWebView2Bundle="WebView2Runtime_109.0.1518.78.msu" setup.iss
 
 ; 本地构建用的默认版本号；CI（release.yml / build.yml）会在编译前用 csproj 里的 <Version> 覆盖这一行，
 ; 避免出现“发布 vX.Y.Z，安装包却叫 vA.B.C”的问题。
@@ -11,6 +15,12 @@
 
 #ifndef BundleWebView2
   #define BundleWebView2 0
+#endif
+
+; 内置的 WebView2 安装包文件名（相对 publish\ 目录）。默认是官方离线 exe；
+; 换成 .msu 时，安装阶段会自动改用 wusa 静默安装。
+#ifndef WebView2Bundle
+  #define WebView2Bundle "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
 #endif
 
 #if BundleWebView2
@@ -56,7 +66,7 @@ Source: "bin\Release\net8.0-windows10.0.19041.0\publish\SeewoAutoLogin.exe"; Des
 
 #if BundleWebView2
 ; 内置 WebView2：解开到临时目录，安装时静默运行，装完自动删除（不留在安装目录）
-Source: "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "publish\{#WebView2Bundle}"; DestDir: "{tmp}"; Flags: deleteafterinstall
 #endif
 
 [InstallDelete]
@@ -71,8 +81,10 @@ Name: "{group}\卸载 SeewoAutoLogin"; Filename: "{uninstallexe}"
 
 [Run]
 #if BundleWebView2
-; 已装 WebView2 时跳过（Check 为 False 则不执行），未装则离线静默安装
-Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "正在安装 WebView2 运行时（离线安装，约需 1-2 分钟）..."; Flags: runhidden waituntilterminated; Check: WebView2Missing
+; 已装 WebView2 时跳过（Check 为 False 则不执行），未装则离线静默安装。
+; 两种内置格式：官方 exe 用安装器自己的静默参数；.msu（微软更新目录下载的完整包）交给 wusa。
+Filename: "{tmp}\{#WebView2Bundle}"; Parameters: "/silent /install"; StatusMsg: "正在安装 WebView2 运行时（离线安装，约需 1-2 分钟）..."; Flags: runhidden waituntilterminated; Check: WebView2Missing and not IsMsuBundle
+Filename: "{sys}\wusa.exe"; Parameters: """{tmp}\{#WebView2Bundle}"" /quiet /norestart"; StatusMsg: "正在安装 WebView2 运行时（离线安装，约需 1-2 分钟）..."; Flags: runhidden waituntilterminated; Check: WebView2Missing and IsMsuBundle
 #endif
 ; 刷新 Windows 图标缓存。
 ; 快捷方式本身会被安装程序重建，但桌面/开始菜单上的图标来自系统缓存：
@@ -89,6 +101,15 @@ Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--uninstall"; RunOnceId: "See
 Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden nowait skipifdoesntexist; RunOnceId: "RefreshIconCache"
 
 [Code]
+{ 内置包是不是 .msu（微软更新目录下载的完整包）：按编译期注入的文件名后缀判断。 }
+function IsMsuBundle: Boolean;
+var
+  Name: String;
+begin
+  Name := Lowercase('{#WebView2Bundle}');
+  Result := (Length(Name) > 4) and (Copy(Name, Length(Name) - 3, 4) = '.msu');
+end;
+
 { 是否缺少 WebView2 运行时。判断不出来时返回 True，让官方安装器自行判断（已装则它会直接跳过）。 }
 function WebView2Missing: Boolean;
 var
