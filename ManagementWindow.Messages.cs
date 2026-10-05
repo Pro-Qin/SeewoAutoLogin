@@ -82,6 +82,7 @@ namespace SeewoAutoLogin
                     case "tour-done": HandleTourDone(root); break;
                     case "factory-reset": HandleFactoryReset(); break;
                     case "export-diagnostics": await HandleExportDiagnosticsAsync(); break;
+                    case "export-logs-to-desktop": await HandleExportLogsToDesktopAsync(); break;
                     case "get-terms": await SendTerms(); break;
                     case "open-external": HandleOpenExternal(root); break;
                     case "download-update": HandleDownloadUpdate(); break;
