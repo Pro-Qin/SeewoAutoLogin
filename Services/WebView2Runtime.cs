@@ -55,21 +55,8 @@ namespace SeewoAutoLogin.Services
         private static Task<CoreWebView2Environment> _environmentTask;
 
         /// <summary>
-        /// 是否 Windows 7 / 8 / 8.1（系统版本 6.1 / 6.2 / 6.3）。
-        /// 主干跑在 Windows 10 19041 以上，这里恒为 false，相关分支不会生效。
-        /// </summary>
-        public static bool IsLegacyWindows
-        {
-            get
-            {
-                var version = Environment.OSVersion.Version;
-                return version.Major == 6 && version.Minor <= 3;
-            }
-        }
-
-        /// <summary>
         /// 强制软件渲染（等价 --disable-gpu）。Win7 上老显卡驱动会让 WebView2 的 GPU 进程起不来，
-        /// 界面初始化失败后用这个开关重建环境再试一次。
+        /// 界面初始化失败后用这个开关重建环境再试一次（主干恒为 false，不生效）。
         /// </summary>
         public static bool ForceSoftwareRendering { get; set; }
 
