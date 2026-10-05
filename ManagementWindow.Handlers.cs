@@ -39,6 +39,8 @@ namespace SeewoAutoLogin
             {
                 await SendToJs(new { type = "login-status", text = "正在验证..." });
                 var svc = new SeewoAuthService();
+                // 记一条开始日志：出问题时才能区分「用户没点过」和「点了但失败了」
+                _app?.WriteDiagnosticLog($"[Login] 开始密码登录: user={username}");
                 var result = await svc.LoginAsync(username, password, ct.Token);
                 if (result.Success)
                 {
@@ -52,10 +54,19 @@ namespace SeewoAutoLogin
                     await Task.Delay(600);
                     await RefreshAccountList();
                 }
-                else await SendToJs(new { type = "login-status", text = $"登录失败: {result.ErrorMessage}" });
+                else
+                {
+                    // 失败原因只回给界面的话，日志里什么都查不到（密码登录不像扫码那样有详细 HTTP 日志）
+                    _app?.WriteDiagnosticLog($"[Login] 密码登录失败: kind={result.FailureKind}; message={result.ErrorMessage}");
+                    await SendToJs(new { type = "login-status", text = $"登录失败: {result.ErrorMessage}" });
+                }
             }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { await SendToJs(new { type = "login-status", text = $"登录失败: {ex.Message}" }); }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Login] 密码登录异常: {ex}");
+                await SendToJs(new { type = "login-status", text = $"登录失败: {ex.Message}" });
+            }
             finally { if (ReferenceEquals(_passwordLoginCancellation, ct)) { _passwordLoginCancellation.Dispose(); _passwordLoginCancellation = null; } }
         }
 

@@ -10,12 +10,17 @@
 ; 2) 产物是 x64：WebView2Loader.dll 是原生 DLL，位数必须与进程一致，
 ;    32 位系统会被 ArchitecturesAllowed 直接拒绝（装了也起不来）。
 ; 3) net48 不支持单文件发布，[Files] 改成整目录拷贝。
-; 4) Win7 上 WebView2 运行时最高只能到 109.0.1518.78（之后微软不再支持 Win7/8.1）：
-;    - 内置版请放这个版本的离线安装器，更高版本在 Win7 上装完也起不来；
-;    - 轻量版的自动安装只在 Win10/11 走 Evergreen，Win7 上程序会引导手动安装 109。
+; 4) Win7 上 WebView2 运行时最高只能到 109 系列（110 起微软不再支持 Win7/8.1）。
 ;
-; 官方下载入口：https://developer.microsoft.com/microsoft-edge/webview2/
-; （固定版本 Fixed Version → x64；安装器体积约 100-200MB，断网也能装）
+; 内置运行时包支持两种来源，都通过 /DWebView2Bundle 指定文件名（文件放 publish\ 下）：
+;   a) 微软更新目录（catalog.update.microsoft.com）下载的**完整 .msu** —— 可以按版本挑到 109，
+;      这是 Win7 上最稳的来源（更新目录的下载链接是长期地址，不像 CDN 临时链接会失效）：
+;        iscc /DBundleWebView2=1 /DWebView2Bundle="WebView2Runtime_109.0.1518.78.msu" setup.iss
+;      安装阶段会自动改用 wusa 静默安装。
+;   b) 官方 Evergreen 离线安装器 exe（它总是指向最新版，Win7 上只能用 109 时期那一份）：
+;        iscc /DBundleWebView2=1 /DWebView2Bundle="MicrosoftEdgeWebView2RuntimeInstallerX64_109.exe" setup.iss
+;
+; 轻量包（不内置）在 Win7 上不会去装最新版，而是引导用户手动安装 109；Win10/11 走 Evergreen。
 
 ; 本地构建用的默认版本号；CI（release.yml / build.yml）会在编译前用 csproj 里的 <Version> 覆盖这一行，
 ; 避免出现“发布 vX.Y.Z，安装包却叫 vA.B.C”的问题。
@@ -26,6 +31,12 @@
 
 #ifndef BundleWebView2
   #define BundleWebView2 0
+#endif
+
+; 内置的 WebView2 安装包文件名（相对 publish\ 目录）。默认是官方离线 exe；
+; 换成 .msu 时，安装阶段会自动改用 wusa 静默安装。
+#ifndef WebView2Bundle
+  #define WebView2Bundle "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
 #endif
 
 #if BundleWebView2
@@ -73,8 +84,8 @@ Source: "bin\Release\net48\publish\*"; DestDir: "{app}"; Flags: ignoreversion re
 
 #if BundleWebView2
 ; 内置 WebView2：解开到临时目录，安装时静默运行，装完自动删除（不留在安装目录）
-; 必须是 {#WebView2RuntimeVersion} 或更早的离线安装器，更高版本在 Win7 上不可用
-Source: "publish\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; Win7 上必须是 {#WebView2RuntimeVersion} 或更早的包，更高版本在 Win7 上装完也起不来
+Source: "publish\{#WebView2Bundle}"; DestDir: "{tmp}"; Flags: deleteafterinstall
 #endif
 
 [InstallDelete]
@@ -89,8 +100,10 @@ Name: "{group}\卸载 SeewoAutoLogin"; Filename: "{uninstallexe}"
 
 [Run]
 #if BundleWebView2
-; 已装 WebView2 时跳过（Check 为 False 则不执行），未装则离线静默安装
-Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "正在安装 WebView2 运行时（离线安装，约需 1-2 分钟）..."; Flags: runhidden waituntilterminated; Check: WebView2Missing
+; 已装 WebView2 时跳过（Check 为 False 则不执行），未装则离线静默安装。
+; 两种内置格式：官方 exe 用安装器自己的静默参数；.msu（微软更新目录下载的完整包）交给 wusa。
+Filename: "{tmp}\{#WebView2Bundle}"; Parameters: "/silent /install"; StatusMsg: "正在安装 WebView2 运行时（离线安装，约需 1-2 分钟）..."; Flags: runhidden waituntilterminated; Check: WebView2Missing and not IsMsuBundle
+Filename: "{sys}\wusa.exe"; Parameters: """{tmp}\{#WebView2Bundle}"" /quiet /norestart"; StatusMsg: "正在安装 WebView2 运行时（离线安装，约需 1-2 分钟）..."; Flags: runhidden waituntilterminated; Check: WebView2Missing and IsMsuBundle
 #endif
 ; 刷新 Windows 图标缓存。
 ; 快捷方式本身会被安装程序重建，但桌面/开始菜单上的图标来自系统缓存：
@@ -107,6 +120,15 @@ Filename: "{app}\SeewoAutoLogin.exe"; Parameters: "--uninstall"; RunOnceId: "See
 Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden nowait skipifdoesntexist; RunOnceId: "RefreshIconCache"
 
 [Code]
+{ 内置包是不是 .msu（微软更新目录下载的完整包）：按编译期注入的文件名后缀判断。 }
+function IsMsuBundle: Boolean;
+var
+  Name: String;
+begin
+  Name := Lowercase('{#WebView2Bundle}');
+  Result := (Length(Name) > 4) and (Copy(Name, Length(Name) - 3, 4) = '.msu');
+end;
+
 { 是否缺少 WebView2 运行时。判断不出来时返回 True，让官方安装器自行判断（已装则它会直接跳过）。 }
 function WebView2Missing: Boolean;
 var
