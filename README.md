@@ -152,6 +152,7 @@ GPL-3.0，见 [LICENSE](LICENSE)。上游项目同样为 GPL-3.0。
 - [安全与威胁模型](docs/SECURITY.md)
 - [部署与迁移](docs/DEPLOYMENT.md)
 - [兼容性矩阵](docs/COMPATIBILITY.md)
+- [Windows 7 兼容说明](docs/WIN7.md)（win7 分支的前提、限制与验证方法）
 
 - [隐私政策](docs/PRIVACY.md)
 - [合规与许可](docs/COMPLIANCE.md)
