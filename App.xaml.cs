@@ -282,6 +282,14 @@ namespace SeewoAutoLogin
         {
             base.OnStartup(e);
 
+            // Windows 7 的 Schannel 默认只启用 TLS 1.0/1.1（TLS 1.2 需要 KB3140245 + 注册表开关），
+            // 而 .NET Framework 4.8 默认跟随系统 TLS 版本。不显式开启的话，Win7 上所有 HTTPS
+            // 出网（希沃接口、更新检查）都会握手失败，表现为「添加账号失败 / 更新检查不可用」。
+            System.Net.ServicePointManager.SecurityProtocol |=
+                System.Net.SecurityProtocolType.Tls12 |
+                System.Net.SecurityProtocolType.Tls11 |
+                System.Net.SecurityProtocolType.Tls;
+
             // 回滚 watcher 专用入口：不启动正常逻辑，只监控健康标记并在超时后回滚。
             if (e.Args.Contains("--rollback-watch"))
             {
@@ -319,7 +327,7 @@ namespace SeewoAutoLogin
                 try
                 {
                     foreach (var proc in Process.GetProcessesByName("SeewoAutoLogin")
-                        .Where(p => p.Id != Environment.ProcessId))
+                        .Where(p => p.Id != Process.GetCurrentProcess().Id))
                     {
                         try { proc.Kill(); proc.WaitForExit(3000); } catch { }
                     }
@@ -657,7 +665,7 @@ namespace SeewoAutoLogin
             var started = false;
             try
             {
-                var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+                var exePath = Process.GetCurrentProcess().MainModule?.FileName;
                 if (!string.IsNullOrEmpty(exePath))
                 {
                     var psi = new ProcessStartInfo

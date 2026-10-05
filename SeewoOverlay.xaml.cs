@@ -106,8 +106,8 @@ namespace SeewoAutoLogin
         {
             if (string.IsNullOrEmpty(raw)) return "";
             var digits = Regex.Replace(raw, @"\D", "");
-            if (digits.Length >= 7) return digits[..3] + "****" + digits[^4..];
-            if (digits.Length >= 4) return digits[..1] + "***" + digits[^1..];
+            if (digits.Length >= 7) return digits.Substring(0, 3) + "****" + digits.Substring(digits.Length - 4);
+            if (digits.Length >= 4) return digits.Substring(0, 1) + "***" + digits.Substring(digits.Length - 1);
             return raw;
         }
 

@@ -92,7 +92,7 @@ namespace SeewoAutoLogin
         private static Task<HttpTextResponse> SendLoginRequestAsync(string username, string password, CancellationToken cancellationToken)
         {
             var md5Pwd = ComputeMd5(password);
-            var traceId = Guid.NewGuid().ToString("N")[..32];
+            var traceId = Guid.NewGuid().ToString("N").Substring(0, 32);
 
             var json = JsonSerializer.Serialize(new
             {
@@ -489,11 +489,11 @@ namespace SeewoAutoLogin
 
         private static bool IsSensitiveJsonField(string name)
         {
-            return name.Contains("token", StringComparison.OrdinalIgnoreCase) ||
-                   name.Contains("access", StringComparison.OrdinalIgnoreCase) ||
-                   name.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
-                   name.Contains("password", StringComparison.OrdinalIgnoreCase) ||
-                   name.Contains("phone", StringComparison.OrdinalIgnoreCase);
+            return name.IndexOf("token", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("access", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("cookie", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("password", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("phone", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string GetJsonString(JsonElement el, string name)

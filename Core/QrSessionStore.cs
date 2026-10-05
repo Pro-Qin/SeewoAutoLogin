@@ -44,7 +44,9 @@ namespace SeewoAutoLogin
             try
             {
                 File.WriteAllBytes(temporaryPath, protectedPayload);
-                File.Move(temporaryPath, path, true);
+                // net48 没有 File.Move(src, dest, overwrite)
+                if (File.Exists(path)) File.Delete(path);
+                File.Move(temporaryPath, path);
             }
             finally
             {

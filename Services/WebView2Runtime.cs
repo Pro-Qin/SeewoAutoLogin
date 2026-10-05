@@ -32,6 +32,22 @@ namespace SeewoAutoLogin.Services
         /// <summary>官方 WebView2 下载页（自动安装失败时供用户手动安装）。</summary>
         public const string ManualDownloadUrl = "https://developer.microsoft.com/microsoft-edge/webview2/";
 
+        /// <summary>
+        /// Windows 7 / 8 / 8.1 上可用的最后一个 WebView2 运行时版本。
+        /// 110 之后微软已不再支持这些系统，装了也起不来 —— 所以本分支在 Win7 上不能走 Evergreen。
+        /// </summary>
+        public const string LegacyWindowsMaxRuntimeVersion = "109.0.1518.78";
+
+        /// <summary>是否 Windows 7 / 8 / 8.1（系统版本 6.1 / 6.2 / 6.3）。net48 的 OSVersion 已不受 manifest 影响。</summary>
+        public static bool IsLegacyWindows
+        {
+            get
+            {
+                var version = Environment.OSVersion.Version;
+                return version.Major == 6 && version.Minor <= 3;
+            }
+        }
+
         /// <summary>EdgeUpdate 客户端注册表项中 WebView2 运行时的固定 GUID。</summary>
         private const string ClientId = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
 
@@ -80,6 +96,42 @@ namespace SeewoAutoLogin.Services
         }
 
         public static bool IsInstalled => !string.IsNullOrWhiteSpace(GetInstalledVersion());
+
+        /// <summary>
+        /// 界面上的安装指引：Win7/8.1 与 Win10+ 的获取方式完全不同，文案不能混用。
+        /// 非 Win7 环境返回 null，调用方沿用默认文案。
+        /// </summary>
+        public static string DescribeLegacyInstallHint()
+        {
+            if (!IsLegacyWindows) return null;
+            return $"Windows 7/8.1 最高只支持 WebView2 运行时 {LegacyWindowsMaxRuntimeVersion}：" +
+                   "请在官方下载页选择「固定版本（Fixed Version）」x64 安装，再点「重新检测」。" +
+                   "不要安装最新版 —— 110 之后微软已不再支持 Windows 7。";
+        }
+
+        /// <summary>Win7/8.1 上装了高于 109 的运行时版本时的说明（这种情况界面必然打不开）。</summary>
+        public static string DescribeUnsupportedLegacyRuntime(string installedVersion)
+        {
+            return $"检测到 WebView2 运行时 {installedVersion}，而 Windows 7/8.1 最高只支持 {LegacyWindowsMaxRuntimeVersion}：" +
+                   "更高的版本在这些系统上无法启动。请卸载当前运行时，再到官方下载页选择「固定版本（Fixed Version）」x64 安装 109 版本。";
+        }
+
+        /// <summary>比较 "a.b.c.d" 形式的版本号；缺位或无法解析的段落按 0 处理。</summary>
+        private static int CompareVersions(string left, string right)
+        {
+            var l = (left ?? "").Trim().Split('.');
+            var r = (right ?? "").Trim().Split('.');
+
+            var count = Math.Max(l.Length, r.Length);
+            for (var i = 0; i < count; i++)
+            {
+                int a = 0, b = 0;
+                if (i < l.Length) int.TryParse(l[i], out a);
+                if (i < r.Length) int.TryParse(r[i], out b);
+                if (a != b) return a < b ? -1 : 1;
+            }
+            return 0;
+        }
 
         /// <summary>创建并缓存 WebView2 环境（浏览器进程启动较慢，缓存后窗口重建无需重新初始化）。</summary>
         public static Task<CoreWebView2Environment> GetEnvironmentAsync()
@@ -139,6 +191,10 @@ namespace SeewoAutoLogin.Services
         {
             if (IsInstalled) return true;
 
+            // Windows 7 / 8.1：Evergreen Bootstrapper 按微软的过渡安排会装到 109
+            //（最后一个支持这些系统的版本），所以自动安装照常走；装完再校验版本上限。
+            // 出处：https://blogs.windows.com/msedgedev/2022/12/09/microsoft-edge-and-webview2-ending-support-for-windows-7-and-windows-8-8-1/
+
             var setupPath = Path.Combine(Path.GetTempPath(), "MicrosoftEdgeWebView2Setup.exe");
             try
             {
@@ -167,7 +223,19 @@ namespace SeewoAutoLogin.Services
                 // 安装完成后旧环境缓存已失效
                 ResetEnvironment();
                 progress?.Report(new InstallProgress("安装完成，正在校验运行时…", null));
-                return IsInstalled;
+
+                var installedVersion = GetInstalledVersion();
+                if (string.IsNullOrWhiteSpace(installedVersion)) return false;
+
+                // Win7/8.1 上 110 及以上的运行时无法启动。这里当场拦住并说清原因，
+                // 否则用户看到的现象是「安装成功，但界面还是打不开」。
+                if (IsLegacyWindows && CompareVersions(installedVersion, LegacyWindowsMaxRuntimeVersion) > 0)
+                {
+                    progress?.Report(new InstallProgress(DescribeUnsupportedLegacyRuntime(installedVersion), null));
+                    return false;
+                }
+
+                return true;
             }
             finally
             {
@@ -240,7 +308,7 @@ namespace SeewoAutoLogin.Services
             response.EnsureSuccessStatusCode();
 
             var total = response.Content.Headers.ContentLength ?? -1L;
-            using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var source = await response.Content.ReadAsStreamAsync();
             using var target = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None);
 
             var buffer = new byte[81920];

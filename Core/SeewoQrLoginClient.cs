@@ -220,12 +220,12 @@ namespace SeewoAutoLogin
             if (declaredLength > maximumBytes)
                 throw new InvalidDataException("服务器响应过大。");
 
-            await using var input = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var input = await content.ReadAsStreamAsync().ConfigureAwait(false);
             using var output = new MemoryStream();
             var buffer = new byte[81920];
             while (true)
             {
-                var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+                var read = await input.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
                 if (read == 0) break;
                 if (output.Length + read > maximumBytes)
                     throw new InvalidDataException("服务器响应过大。");
@@ -307,7 +307,7 @@ namespace SeewoAutoLogin
                 var sb = new StringBuilder();
                 AppendRedacted(element, sb);
                 var text = sb.ToString();
-                return text.Length > 4000 ? text[..4000] + "…(截断)" : text;
+                return text.Length > 4000 ? text.Substring(0, 4000) + "…(截断)" : text;
             }
             catch
             {
@@ -348,7 +348,7 @@ namespace SeewoAutoLogin
                 case JsonValueKind.String:
                     var str = element.GetString() ?? "";
                     // 长字符串多半是标识符，截断显示但保留长度信息
-                    sb.Append('"').Append(str.Length > 40 ? str[..12] + "…(len=" + str.Length + ")" : str).Append('"');
+                    sb.Append('"').Append(str.Length > 40 ? str.Substring(0, 12) + "…(len=" + str.Length + ")" : str).Append('"');
                     break;
 
                 default:
@@ -359,11 +359,11 @@ namespace SeewoAutoLogin
 
         private static bool IsSensitiveField(string name)
         {
-            return name.Contains("token", StringComparison.OrdinalIgnoreCase) ||
-                   name.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
-                   name.Contains("phone", StringComparison.OrdinalIgnoreCase) ||
-                   name.Contains("password", StringComparison.OrdinalIgnoreCase) ||
-                   name.Contains("qrkey", StringComparison.OrdinalIgnoreCase);
+            return name.IndexOf("token", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("cookie", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("phone", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("password", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("qrkey", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string SafeMediaType(string mediaType)

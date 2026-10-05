@@ -121,7 +121,7 @@ namespace SeewoAutoLogin
                     using var response = await client
                         .SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken)
                         .ConfigureAwait(false);
-                    var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                     if (attempt.UseProxy)
                     {
@@ -315,7 +315,7 @@ namespace SeewoAutoLogin
                 using var client = new TcpClient();
                 var connectTask = client.ConnectAsync(host, proxyUri.Port);
                 if (!connectTask.Wait(LoopbackProbeTimeoutMs)) return false;
-                return connectTask.IsCompletedSuccessfully && client.Connected;
+                return connectTask.Status == TaskStatus.RanToCompletion && client.Connected;
             }
             catch
             {

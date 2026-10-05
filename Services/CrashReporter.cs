@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -104,7 +105,7 @@ namespace SeewoAutoLogin.Services
                 var sb = new StringBuilder();
                 sb.AppendLine($"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
                 sb.AppendLine($"来源: {source}");
-                sb.AppendLine($"进程: {Environment.ProcessPath}");
+                sb.AppendLine($"进程: {Process.GetCurrentProcess().MainModule?.FileName}");
                 sb.AppendLine($"版本: {typeof(CrashReporter).Assembly.GetName().Version}");
                 sb.AppendLine($"异常: {ex?.GetType().FullName}: {ex?.Message}");
                 sb.AppendLine();

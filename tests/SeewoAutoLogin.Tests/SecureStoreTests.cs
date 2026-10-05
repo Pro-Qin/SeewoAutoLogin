@@ -46,7 +46,7 @@ namespace SeewoAutoLogin.Tests
         {
             var encrypted = SecureStore.Encrypt("secret");
             var chars = encrypted.Substring(3).ToCharArray();
-            chars[^1] = chars[^1] == 'A' ? 'B' : 'A';
+            chars[chars.Length - 1] = chars[chars.Length - 1] == 'A' ? 'B' : 'A';
             Assert.ThrowsAny<Exception>(() => SecureStore.Decrypt("v2:" + new string(chars)));
         }
 

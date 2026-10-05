@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -96,7 +97,7 @@ namespace SeewoAutoLogin.Services
                 _setTrayStatus($"正在静默安装 v{info.Version}");
                 _log($"[Update] 静默更新准备安装 v{info.Version}");
                 // 安装前建立备份与 watcher：新版本 60 秒内未确认健康就自动回滚。
-                UpdateHealthGuard.BeginGuard(Environment.ProcessPath, info.Version, _log);
+                UpdateHealthGuard.BeginGuard(Process.GetCurrentProcess().MainModule?.FileName, info.Version, _log);
                 if (!UpdateInstaller.StartSilentInstall(check, _log))
                 {
                     _log("[Update] 静默更新：安装器启动失败，安装包已保留，下次启动会重试");

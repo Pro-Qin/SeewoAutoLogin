@@ -59,12 +59,11 @@ namespace SeewoAutoLogin.Services
             try
             {
                 var key = GetOrCreateMasterKey();
-                var nonce = RandomNumberGenerator.GetBytes(NonceSize);
+                var nonce = CryptoCompat.RandomBytes(NonceSize);
                 var plainBytes = Encoding.UTF8.GetBytes(plaintext);
                 var cipher = new byte[plainBytes.Length];
                 var tag = new byte[TagSize];
-                using (var aes = new AesGcm(key, TagSize))
-                    aes.Encrypt(nonce, plainBytes, cipher, tag);
+                AesGcmCompat.Encrypt(key, nonce, plainBytes, cipher, tag);
 
                 var payload = new byte[NonceSize + cipher.Length + TagSize];
                 Buffer.BlockCopy(nonce, 0, payload, 0, NonceSize);
@@ -101,8 +100,7 @@ namespace SeewoAutoLogin.Services
             Buffer.BlockCopy(payload, NonceSize + cipher.Length, tag, 0, TagSize);
 
             var plain = new byte[cipher.Length];
-            using (var aes = new AesGcm(GetOrCreateMasterKey(), TagSize))
-                aes.Decrypt(nonce, cipher, tag, plain);
+            AesGcmCompat.Decrypt(GetOrCreateMasterKey(), nonce, cipher, tag, plain);
             return Encoding.UTF8.GetString(plain);
         }
 
@@ -153,7 +151,7 @@ namespace SeewoAutoLogin.Services
                     return key;
                 }
 
-                var newKey = RandomNumberGenerator.GetBytes(KeySize);
+                var newKey = CryptoCompat.RandomBytes(KeySize);
                 var protectedNewKey = ProtectedData.Protect(newKey, null, DataProtectionScope.CurrentUser);
                 var dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);

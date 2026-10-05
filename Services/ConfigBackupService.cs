@@ -39,7 +39,7 @@ namespace SeewoAutoLogin.Services
             {
                 try
                 {
-                    var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+                    var hash = CryptoCompat.ToHexString(CryptoCompat.Sha256(Encoding.UTF8.GetBytes(json)));
                     if (!force)
                     {
                         if (hash == _lastHash) return;

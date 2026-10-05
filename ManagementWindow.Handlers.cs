@@ -19,6 +19,9 @@ namespace SeewoAutoLogin
 {
     public partial class ManagementWindow
     {
+        /// <summary>net48 没有 Random.Shared，进程内复用一个实例（仅用于演示账号名，不涉及安全用途）。</summary>
+        private static readonly Random SharedRandom = new Random();
+
         #region Handlers
 
         private async Task HandleLogin(JsonElement root)
@@ -121,13 +124,13 @@ namespace SeewoAutoLogin
         private async Task HandleAddFakeAccountDialogAsync()
         {
             var dialog = new TextInputDialog("添加假账号", "名称（仅用于演示界面，不会真实登录）：",
-                "测试用户" + Random.Shared.Next(1, 100)) { Owner = this };
+                "测试用户" + SharedRandom.Next(1, 100)) { Owner = this };
             if (dialog.ShowDialog() != true) return;
 
             var name = (dialog.InputText ?? "").Trim();
             if (name.Length == 0) return;
 
-            var fakeId = "FAKE_" + Guid.NewGuid().ToString("N")[..6];
+            var fakeId = "FAKE_" + Guid.NewGuid().ToString("N").Substring(0, 6);
             _app.Config.Accounts.Add(new SeewoAccount
             {
                 Id = fakeId,
@@ -423,8 +426,7 @@ namespace SeewoAutoLogin
             {
                 try
                 {
-                    // GBK(936) 属于代码页编码，.NET Core 需要先注册提供程序
-                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                    // 代码页编码在 net48 上默认可用，不必注册 CodePagesEncodingProvider
                     return Encoding.GetEncoding(936).GetString(bytes);
                 }
                 catch
@@ -840,7 +842,7 @@ namespace SeewoAutoLogin
         private async Task HandleAddFakeAccount(JsonElement root)
         {
             var displayName = root.GetProperty("displayName").GetString() ?? "测试用户";
-            var fakeId = "FAKE_" + Guid.NewGuid().ToString("N")[..6];
+            var fakeId = "FAKE_" + Guid.NewGuid().ToString("N").Substring(0, 6);
             var fakeAccount = new SeewoAccount
             {
                 Id = fakeId,

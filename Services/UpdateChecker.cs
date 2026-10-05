@@ -146,9 +146,22 @@ namespace SeewoAutoLogin.Services
             return false;
         }
 
+        /// <summary>
+        /// Windows 7 兼容分支开关。
+        /// 主干发布的安装包是 .NET 8 + Windows 10 19041 构建，Win7 上装上直接打不开；
+        /// 所以本分支不参与主干的更新通道：版本检查整体跳过，升级请手动下载 Win7 版安装包。
+        /// </summary>
+        public static readonly bool IsWindows7Branch = true;
+
         public static async Task<UpdateInfo> CheckLatestAsync(string overrideSource, Action<string> log,
             CancellationToken cancellationToken)
         {
+            if (IsWindows7Branch)
+            {
+                log?.Invoke("[Update] 当前是 Windows 7 兼容分支：跳过主干更新检查（目标框架不同，装上去会打不开），请手动下载 Win7 版安装包");
+                return null;
+            }
+
             var failures = new List<string>();
 
             foreach (var template in BuildSources(overrideSource))
@@ -495,7 +508,8 @@ namespace SeewoAutoLogin.Services
                 return "";
             }
 
-            return await File.ReadAllTextAsync(local, Encoding.UTF8, cancellationToken);
+            // net48 没有 File.ReadAllTextAsync：清单文件本身很小，放到线程池里读即可
+            return await Task.Run(() => File.ReadAllText(local, Encoding.UTF8), cancellationToken);
         }
 
         /// <summary>取「最终会被下载的那个包」的文件名：优先安装包，退而取单文件版</summary>
@@ -557,7 +571,7 @@ namespace SeewoAutoLogin.Services
                 throw new InvalidOperationException($"响应体过大（{declared.Value} 字节，上限 {maxBytes} 字节）");
             }
 
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var stream = await response.Content.ReadAsStreamAsync();
             using var buffer = new MemoryStream();
             var chunk = new byte[8192];
             while (true)

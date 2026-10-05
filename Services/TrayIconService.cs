@@ -103,7 +103,7 @@ namespace SeewoAutoLogin.Services
         private static readonly string AlertText = Strings.AppTitle + " — 有账号需要处理";
 
         private static string Truncate(string text, int max)
-            => string.IsNullOrEmpty(text) || text.Length <= max ? text : text[..max];
+            => string.IsNullOrEmpty(text) || text.Length <= max ? text : text.Substring(0, max);
 
         private bool _alertState;
         private Icon _alertIcon;

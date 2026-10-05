@@ -157,7 +157,7 @@ namespace SeewoAutoLogin.Services
                 {
                     try
                     {
-                        if (process.Id != Environment.ProcessId)
+                        if (process.Id != Process.GetCurrentProcess().Id)
                         {
                             process.Kill();
                             process.WaitForExit(5000);

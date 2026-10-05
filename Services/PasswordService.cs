@@ -26,9 +26,9 @@ namespace SeewoAutoLogin.Services
         internal static void Create(string password, out string hash, out string salt)
         {
             if (string.IsNullOrEmpty(password)) throw new ArgumentException("口令不能为空", nameof(password));
-            var saltBytes = RandomNumberGenerator.GetBytes(SaltSize);
-            var hashBytes = Rfc2898DeriveBytes.Pbkdf2(
-                Encoding.UTF8.GetBytes(password), saltBytes, Iterations, HashAlgorithmName.SHA256, HashSize);
+            var saltBytes = CryptoCompat.RandomBytes(SaltSize);
+            var hashBytes = CryptoCompat.Pbkdf2(
+                Encoding.UTF8.GetBytes(password), saltBytes, Iterations, HashSize);
             salt = Convert.ToBase64String(saltBytes);
             hash = SecureStore.Encrypt(Convert.ToBase64String(hashBytes));
         }
@@ -57,9 +57,9 @@ namespace SeewoAutoLogin.Services
                 catch { return false; }
                 if (saltBytes.Length == 0) return false;
 
-                var actual = Rfc2898DeriveBytes.Pbkdf2(
-                    Encoding.UTF8.GetBytes(password), saltBytes, Iterations, HashAlgorithmName.SHA256, expected.Length);
-                ok = CryptographicOperations.FixedTimeEquals(actual, expected);
+                var actual = CryptoCompat.Pbkdf2(
+                    Encoding.UTF8.GetBytes(password), saltBytes, Iterations, expected.Length);
+                ok = CryptoCompat.FixedTimeEquals(actual, expected);
             }
             else
             {
@@ -67,7 +67,7 @@ namespace SeewoAutoLogin.Services
                 using var sha = SHA256.Create();
                 var legacy = Convert.ToBase64String(
                     sha.ComputeHash(Encoding.UTF8.GetBytes(password + (storedSalt ?? ""))));
-                ok = CryptographicOperations.FixedTimeEquals(
+                ok = CryptoCompat.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(legacy), Encoding.UTF8.GetBytes(storedHash));
                 if (ok) upgraded = true;
             }

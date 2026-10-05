@@ -24,9 +24,8 @@ namespace SeewoAutoLogin.Services
             {
                 try
                 {
-                    var path = Environment.ProcessPath;
-                    if (string.IsNullOrEmpty(path))
-                        path = Process.GetCurrentProcess().MainModule?.FileName;
+                    // net48 没有 Environment.ProcessPath，主模块路径即当前可执行文件
+                    var path = Process.GetCurrentProcess().MainModule?.FileName;
                     return path ?? "";
                 }
                 catch { return ""; }
@@ -187,6 +186,36 @@ namespace SeewoAutoLogin.Services
             catch { }
         }
 
+        /// <summary>按 Windows 命令行规则转义参数并拼接，等价 .NET Core 的 ProcessStartInfo.ArgumentList。</summary>
+        private static string JoinArguments(string[] args)
+        {
+            var sb = new StringBuilder();
+            for (var i = 0; i < args.Length; i++)
+            {
+                if (i > 0) sb.Append(' ');
+                sb.Append(QuoteArgument(args[i] ?? ""));
+            }
+            return sb.ToString();
+        }
+
+        private static string QuoteArgument(string value)
+        {
+            if (value.Length > 0 && value.IndexOfAny(new[] { ' ', '\t', '"' }) < 0) return value;
+
+            var sb = new StringBuilder("\"");
+            var backslashes = 0;
+            foreach (var c in value)
+            {
+                if (c == '\\') { backslashes++; sb.Append(c); continue; }
+                if (c == '"') { sb.Append('\\', backslashes + 1).Append('"'); backslashes = 0; continue; }
+                backslashes = 0;
+                sb.Append(c);
+            }
+            sb.Append('\\', backslashes);
+            sb.Append('"');
+            return sb.ToString();
+        }
+
         private static (bool ok, string message) RunSchtasks(string[] args, Encoding encoding = null)
         {
             try
@@ -198,9 +227,9 @@ namespace SeewoAutoLogin.Services
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     StandardOutputEncoding = encoding ?? Encoding.UTF8,
-                    StandardErrorEncoding = encoding ?? Encoding.UTF8
+                    StandardErrorEncoding = encoding ?? Encoding.UTF8,
+                    Arguments = JoinArguments(args)
                 };
-                foreach (var a in args) psi.ArgumentList.Add(a);
 
                 using var process = Process.Start(psi);
                 if (process == null) return (false, "无法启动 schtasks.exe");

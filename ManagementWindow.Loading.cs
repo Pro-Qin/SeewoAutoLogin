@@ -61,6 +61,7 @@ namespace SeewoAutoLogin
                 else
                 {
                     ShowStatusPanel("WebView2 安装未成功",
+                        WebView2Runtime.DescribeLegacyInstallHint() ??
                         "安装未完成。请确认网络可用，或「手动下载」官方运行时安装后再点击「重新检测」。",
                         showRetry: true, showInstall: true, showDownload: true);
                 }

@@ -63,14 +63,13 @@ namespace SeewoAutoLogin.Services
             }).ToList();
 
             var plain = JsonSerializer.SerializeToUtf8Bytes(list);
-            var salt = RandomNumberGenerator.GetBytes(SaltBytes);
-            var nonce = RandomNumberGenerator.GetBytes(NonceBytes);
+            var salt = CryptoCompat.RandomBytes(SaltBytes);
+            var nonce = CryptoCompat.RandomBytes(NonceBytes);
             var key = DeriveKey(password, salt);
             var cipher = new byte[plain.Length];
             var tag = new byte[TagBytes];
 
-            using (var gcm = new AesGcm(key, TagBytes))
-                gcm.Encrypt(nonce, plain, cipher, tag);
+            AesGcmCompat.Encrypt(key, nonce, plain, cipher, tag);
 
             var envelope = new Envelope
             {
@@ -104,8 +103,7 @@ namespace SeewoAutoLogin.Services
                 var key = DeriveKey(password, salt);
                 var plain = new byte[cipher.Length];
 
-                using (var gcm = new AesGcm(key, TagBytes))
-                    gcm.Decrypt(nonce, cipher, tag, plain);
+                AesGcmCompat.Decrypt(key, nonce, cipher, tag, plain);
 
                 var exported = JsonSerializer.Deserialize<List<ExportedAccount>>(plain) ?? new List<ExportedAccount>();
                 var accounts = exported.Select(e => new SeewoAccount
@@ -116,7 +114,7 @@ namespace SeewoAutoLogin.Services
                     Password = string.IsNullOrEmpty(e.Password) ? "" : SecureStore.Encrypt(e.Password),
                     Tags = string.IsNullOrWhiteSpace(e.Tags)
                         ? new List<string>()
-                        : e.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()).ToList(),
+                        : e.Tags.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()).ToList(),
                     IsPlaceholder = e.IsPlaceholder,
                 }).ToList();
 
@@ -133,7 +131,6 @@ namespace SeewoAutoLogin.Services
         }
 
         private static byte[] DeriveKey(string password, byte[] salt)
-            => Rfc2898DeriveBytes.Pbkdf2(
-                Encoding.UTF8.GetBytes(password), salt, Iterations, HashAlgorithmName.SHA256, 32);
+            => CryptoCompat.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, Iterations, 32);
     }
 }

@@ -356,7 +356,7 @@ namespace SeewoAutoLogin.Services
                 var dir = Path.GetDirectoryName(stateFilePath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-                var record = new SeewoVersionRecord
+                var recordData = new SeewoVersionRecord
                 {
                     Version = version,
                     Source = source,
@@ -365,7 +365,7 @@ namespace SeewoAutoLogin.Services
                 };
 
                 var temp = stateFilePath + ".tmp";
-                File.WriteAllText(temp, JsonSerializer.Serialize(record, JsonOptions), new System.Text.UTF8Encoding(false));
+                File.WriteAllText(temp, JsonSerializer.Serialize(recordData, JsonOptions), new System.Text.UTF8Encoding(false));
                 if (File.Exists(stateFilePath))
                 {
                     try { File.Replace(temp, stateFilePath, null, ignoreMetadataErrors: true); }

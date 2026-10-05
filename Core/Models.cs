@@ -67,7 +67,7 @@ namespace SeewoAutoLogin
 
     public class SeewoAccount
     {
-        public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+        public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 8);
         public string DisplayName { get; set; } = "";
         public string Username { get; set; } = "";
         public string Password { get; set; } = "";

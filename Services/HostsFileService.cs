@@ -232,7 +232,7 @@ namespace SeewoAutoLogin.Services
             }
             catch
             {
-                return (Encoding.Latin1.GetString(bytes), Encoding.Latin1);
+                return (CryptoCompat.Latin1.GetString(bytes), CryptoCompat.Latin1);
             }
         }
     }

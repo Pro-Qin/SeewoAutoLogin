@@ -97,7 +97,7 @@ namespace SeewoAutoLogin
             }
             catch (HttpRequestException ex)
             {
-                Log($"扫码会话 #{version} 网络错误: {ex.GetType().Name}; status={(ex.StatusCode.HasValue ? ((int)ex.StatusCode.Value).ToString() : "<none>")}");
+                Log($"扫码会话 #{version} 网络错误: {ex.GetType().Name}; {SafeMessage(ex.Message)}");
                 Publish(version, QrLoginState.NetworkError);
                 return null;
             }

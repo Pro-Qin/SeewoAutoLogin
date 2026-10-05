@@ -273,22 +273,22 @@ namespace SeewoAutoLogin.Services
             using var hash = computeHash ? IncrementalHash.CreateHash(HashAlgorithmName.SHA256) : null;
             long received = 0;
 
-            using (var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+            using (var input = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
             using (var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, true))
             {
                 var buffer = new byte[BufferSize];
                 while (true)
                 {
-                    var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), ct).ConfigureAwait(false);
+                    var read = await input.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false);
                     if (read <= 0) break;
 
-                    await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                    await output.WriteAsync(buffer, 0, read, ct).ConfigureAwait(false);
                     hash?.AppendData(buffer, 0, read);
                     received += read;
                     progress?.Report((received, total));
                 }
 
-                await output.FlushAsync(ct).ConfigureAwait(false);
+                await output.FlushAsync().ConfigureAwait(false);
             }
 
             // Content-Length 对得上才算下载完整（加速通道偶尔会提前断流）
@@ -333,9 +333,9 @@ namespace SeewoAutoLogin.Services
                 }
 
                 // 有些代理会返回 200 + 一页错误 HTML，这里必须真的读到数据才算可达
-                using var stream = await response.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false);
+                using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
                 var buffer = new byte[1024];
-                var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cts.Token).ConfigureAwait(false);
+                var read = await stream.ReadAsync(buffer, 0, buffer.Length, cts.Token).ConfigureAwait(false);
                 if (read <= 0)
                 {
                     result.Error = "无数据";

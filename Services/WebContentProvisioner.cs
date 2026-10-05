@@ -73,7 +73,7 @@ namespace SeewoAutoLogin.Services
                     try
                     {
                         var existing = File.ReadAllBytes(destination);
-                        if (existing.Length == bytes.Length && existing.AsSpan().SequenceEqual(bytes)) continue;
+                        if (existing.Length == bytes.Length && existing.SequenceEqual(bytes)) continue;
                     }
                     catch
                     {
