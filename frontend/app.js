@@ -159,6 +159,12 @@ function handleCSharpMessage(raw) {
       showToast(msg.ok ? (msg.message || '诊断包已导出') : (msg.message || '诊断包导出失败'), msg.ok ? 'ok' : 'error');
       break;
     }
+    case 'logs-exported': {
+      const dstLogs = document.getElementById('diagnosticsStatus');
+      if (dstLogs) dstLogs.textContent = msg.ok ? ('已放到桌面：' + (msg.path || '')) : (msg.message || '导出失败');
+      showToast(msg.ok ? '日志已导出到桌面' : (msg.message || '日志导出失败'), msg.ok ? 'ok' : 'error');
+      break;
+    }
     case 'seewo-version-changed':
       showToast('检测到希沃客户端已更新，如遇登录异常请反馈', 'warn');
       break;

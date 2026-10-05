@@ -687,6 +687,40 @@ namespace SeewoAutoLogin
             }
         }
 
+        /// <summary>
+        /// 一键把所有日志导出到桌面：环境摘要 + 运行日志 + 崩溃日志，整合成一个 txt。
+        ///
+        /// 「导出诊断包」产出的是给开发者看的 zip（含配置与自检），这个更直接 ——
+        /// 用户把桌面上的文件拖进聊天窗口发过来就能排查，不用教他去 AppData 里翻目录。
+        /// 收集与拼接放后台线程，日志多时不会卡界面。
+        /// </summary>
+        private async Task HandleExportLogsToDesktopAsync()
+        {
+            try
+            {
+                var dataDir = App.DataDirectory;
+                var path = await Task.Run(() => LogExportService.ExportToDesktop(dataDir, AppVersion, _app.WriteDiagnosticLog));
+                await SendToJs(new
+                {
+                    type = "logs-exported",
+                    ok = true,
+                    path = path,
+                    message = "日志已导出到桌面"
+                });
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[LogExport] 导出失败: {ex.GetType().Name} - {ex.Message}");
+                await SendToJs(new
+                {
+                    type = "logs-exported",
+                    ok = false,
+                    path = "",
+                    message = "导出失败：" + ex.Message
+                });
+            }
+        }
+
         /// <summary>下发切换口令的启用状态</summary>
         private async Task SendSwitchPinStatusAsync()
         {
