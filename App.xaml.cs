@@ -300,6 +300,15 @@ namespace SeewoAutoLogin
             // 安装器静默升级完成后会带 --updated 启动：用于跳过提权询问、自动接管 SSO 端口并清理待更新状态。
             _isPostUpdateBoot = e.Args.Contains("--updated");
 
+            // 排查 Win7 上的渲染残影（界面上偶尔飘过的深色小条）：--software-render 强制 WebView2 走
+            // 软件渲染。正常启动看一次、带这个参数看一次，就能判断残影是不是 GPU 合成造成的。
+            // 属于诊断开关，不写进设置界面。
+            if (e.Args.Contains("--software-render"))
+            {
+                Services.WebView2Runtime.ForceSoftwareRendering = true;
+                WriteDiagnosticLog("[WebView2] 命令行指定强制软件渲染（--software-render）");
+            }
+
             // 卸载清理：setup.iss 的 UninstallRun 会调用 --uninstall。
             // 注意：必须放在单实例判定之后执行，否则运行中的实例会把配置/日志重新写回，导致清理不干净。
             var isUninstall = e.Args.Contains("--uninstall");
