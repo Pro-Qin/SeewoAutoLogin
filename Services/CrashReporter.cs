@@ -58,6 +58,17 @@ namespace SeewoAutoLogin.Services
                         e.Handled = true;
                     };
                 }
+
+                // WinForms 那一侧也要兜住：托盘图标、WebView2 的宿主窗口都在 WinForms 的消息循环里，
+                // 光靠 DispatcherUnhandledException 抓不到。不接管的话 .NET 会弹
+                // 「应用程序的组件中发生了未经处理的异常」那个红叉框 —— 它是个**模态**对话框，
+                // 会把 UI 线程按住不放，用户的感觉就是「卡死了」，其实程序还活着在后台续期。
+                // 订阅 ThreadException 之后框架自己就不再弹框，我们只记录、继续跑。
+                // 必须在创建任何窗口之前调用，所以放在这里（App.OnStartup 最前面）。
+                System.Windows.Forms.Application.SetUnhandledExceptionMode(
+                    System.Windows.Forms.UnhandledExceptionMode.CatchException);
+                System.Windows.Forms.Application.ThreadException += (_, e) =>
+                    Report(e.Exception, "WinForms", log);
             }
             catch { }
         }
