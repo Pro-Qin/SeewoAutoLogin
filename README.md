@@ -10,7 +10,7 @@
 > [!WARNING]
 > **运行环境**：Windows 10 19041（20H1）或更高版本 / Windows 11，64 位。  
 > Windows 7 **不能使用本版本**   
-> Win7 请改用 Windows 7 兼容分支 [`win7`](https://github.com/Pro-Qin/SeewoAutoLogin/tree/win7)：功能一致，只是目标框架退到 .NET Framework 4.8。
+> Win7 请改用 Windows 7 兼容分支 [`win7`](https://github.com/Pro-Qin/SeewoAutoLogin/tree/win7)，功能大致一致，下载时选择**后缀有`win7`**的下载
 
 > 项目主页：<https://pro-qin.github.io/SeewoAutoLogin/> | 下载：<https://github.com/Pro-Qin/SeewoAutoLogin/releases/latest>
 
