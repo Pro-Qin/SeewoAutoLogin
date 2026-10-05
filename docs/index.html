@@ -866,11 +866,13 @@ code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.06);bo
   var major=parseInt(m[1],10),minor=parseInt(m[2],10);
   if(major!==6||minor<1||minor>3){return;}   /* 10.0 是 Win10 / Win11 */
 
-  var url="https://github.com/Pro-Qin/SeewoAutoLogin/releases/tag/v1.14.2-win7";
+  var ver="v1.14.2";
+  var page="https://github.com/Pro-Qin/SeewoAutoLogin/releases/tag/"+ver+"-win7";
+  var direct="https://github.com/Pro-Qin/SeewoAutoLogin/releases/download/"+ver+"-win7/SeewoAutoLogin_Setup_"+ver+"_Win7.exe";
 
   var dl=document.getElementById('heroDownload');
   if(dl){
-    dl.setAttribute('href',url);
+    dl.setAttribute('href',direct);   /* 主按钮直接下安装包，别让 Win7 用户自己在发布页里翻 */
     dl.innerHTML='下载 Windows 7 兼容版<span class="meta">需 .NET Framework 4.8</span>';
   }
 
@@ -878,7 +880,11 @@ code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.06);bo
   if(badge){badge.textContent='Windows 7 · 需兼容版';}
 
   var note=document.getElementById('win7Note');
-  if(note){note.removeAttribute('hidden');}
+  if(note){
+    note.removeAttribute('hidden');
+    var noteBtn=note.querySelector('a.btn');
+    if(noteBtn){noteBtn.setAttribute('href',page);}   /* 提示块里给发布页，方便看完整前提说明 */
+  }
 })();
 </script>
 <script>
