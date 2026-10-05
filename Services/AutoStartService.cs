@@ -226,8 +226,10 @@ namespace SeewoAutoLogin.Services
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
-                    StandardOutputEncoding = encoding ?? Encoding.UTF8,
-                    StandardErrorEncoding = encoding ?? Encoding.UTF8,
+                    // Encoding.Default 在 net48（Win7 分支）上是系统 ANSI 代码页，正好用于中文系统
+                    // schtasks 的 GBK 输出（查 /XML 的那条另行指定 Unicode）；net8 上它仍是 UTF-8。
+                    StandardOutputEncoding = encoding ?? Encoding.Default,
+                    StandardErrorEncoding = encoding ?? Encoding.Default,
                     Arguments = JoinArguments(args)
                 };
 
@@ -242,7 +244,9 @@ namespace SeewoAutoLogin.Services
                 }
                 var ok = process.ExitCode == 0;
                 var message = (ok ? stdout : stderr + " " + stdout).Trim();
-                return (ok, message.Length > 300 ? message.Substring(0, 300) : message);
+                // 失败时把实际命令行也带上：schtasks 的报错常常只有一句「参数错误」，光看它没法定位
+                if (!ok) message = (message + "（命令: schtasks.exe " + psi.Arguments + "）").Trim();
+                return (ok, message.Length > 400 ? message.Substring(0, 400) : message);
             }
             catch (Exception ex)
             {

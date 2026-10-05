@@ -1,0 +1,49 @@
+name: Sync docs to win7
+
+# README、Win7 说明与官网页面以 main 为唯一来源：在这里（网页上直接改也行）改完，
+# 自动同步到 win7 分支，省掉每次文档改动都要手工 merge 的麻烦。
+#
+# 注意：如果给 win7 分支加了 ruleset（例如「Restrict updates」）而没有把 github-actions
+# 放进 bypass list，这个 job 的推送会被拦下来，日志里会看到被拒的 push。
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'README.md'
+      - 'docs/WIN7.md'
+      - 'docs/index.html'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 连续两次文档提交时排队执行，避免两次推送互相覆盖
+concurrency:
+  group: sync-docs-to-win7
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: win7
+          fetch-depth: 0
+
+      - name: 把 main 的文档同步到 win7
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main
+          git checkout origin/main -- README.md docs/WIN7.md docs/index.html
+
+          if git diff --cached --quiet; then
+            echo "文档已经一致，无需提交"
+            exit 0
+          fi
+
+          git commit -m "docs: 从 main 同步 README / Win7 说明 / 官网页面"
+          git push origin HEAD:win7

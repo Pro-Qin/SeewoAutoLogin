@@ -33,6 +33,14 @@ namespace SeewoAutoLogin
 
             ShowStatus("正在加载界面…", "正在启动 WebView2 并准备前端资源…", busy: true);
 
+            // 关键顺序：先让控件可见，再创建控制器。
+            // WPF 里 Visibility=Collapsed 的元素不参与布局、也没有原生 HWND，而 WebView2 控件内部是
+            // HwndHost，必须有有效父句柄才能建 CoreWebView2Controller —— 否则抛 0x80070578（无效的窗口句柄）。
+            // Win7 分支锁定的 SDK 1.0.1462 对这一点比主干用的 1.0.4078 严格，所以只在 Win7 上暴露。
+            // 先把底色压成深色再显示，提前可见也不会闪白；加载遮罩（StatusPanel）在更上层，照常盖住。
+            WebView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 28, 28, 30);
+            WebView.Visibility = Visibility.Visible;
+
             // 用户数据目录固定在 LOCALAPPDATA：安装到 Program Files 时也能正常创建
             var environment = await WebView2Runtime.GetEnvironmentAsync();
             await WebView.EnsureCoreWebView2Async(environment);
@@ -46,10 +54,6 @@ namespace SeewoAutoLogin
             core.DOMContentLoaded += OnDomContentLoaded;
             core.NavigationCompleted += OnNavigationCompleted;
             core.ProcessFailed += OnProcessFailed;
-
-            // 深色底：避免 WebView2 首帧闪白
-            WebView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 28, 28, 30);
-            WebView.Visibility = Visibility.Visible;
 
             try
             {
