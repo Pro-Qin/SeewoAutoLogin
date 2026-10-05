@@ -1,13 +1,24 @@
 # 兼容性矩阵
 
+> 本文件描述的是 **`win7` 分支**（.NET Framework 4.8）。主干分支要求 Windows 10 19041+，见 `main`。
+
 ## 运行环境
 
 | 项目 | 要求 |
 |---|---|
-| Windows | Windows 10 19041 及以上 / Windows 11 |
-| .NET | .NET 8 Desktop Runtime（单文件版依赖；安装包会自动检测并引导） |
-| WebView2 | 主界面需要；轻量版首次运行按需安装，或使用 WithWebView2 安装包 |
+| Windows | Windows 7 **SP1** / 8.1 / 10 / 11，**64 位**（安装包 `MinVersion=6.1sp1`，32 位系统直接拒绝安装） |
+| .NET | **.NET Framework 4.8**（Win7 默认不带；安装包会检测并引导下载） |
+| WebView2 | 主界面需要。Win10/11 由程序自动安装；**Win7/8.1 上只支持 109.0.1518.78**，需手动安装固定版本 |
 | 管理员权限 | SSO 网关、hosts 写入、计划任务需要 |
+
+## 与主干的差异
+
+| 项目 | main | win7 分支 |
+|---|---|---|
+| 目标框架 | .NET 8（Windows 19041+） | .NET Framework 4.8 |
+| 发布形态 | 单文件 exe | exe + 依赖 DLL 目录（免安装版为 zip） |
+| 自动更新 | 有 | 关闭（主干安装包是 .NET 8 构建，Win7 上打不开） |
+| 网络栈 | 默认 TLS 1.2+ | 显式开启 TLS 1.2/1.1/1.0（Win7 Schannel 默认不开 TLS 1.2） |
 
 ## 希沃客户端
 
