@@ -90,7 +90,9 @@ namespace SeewoAutoLogin.Services
                 _config.PendingUpdateVersion = info.Version;
                 _config.PendingUpdatePath = localPath;
                 _config.PendingUpdateSha256 = info.Sha256;
-                _config.PendingUpdateStage = "downloaded";
+                // 直接标记成 installing（安装器紧接着就要拉起来了）。这样万一这次安装没生效，
+                // 下次启动只会提示、不再重复安装 —— 否则就是安装—重启的循环。
+                _config.PendingUpdateStage = "installing";
                 _saveConfig();
 
                 _setTrayStatus($"正在静默安装 v{info.Version}");
@@ -137,8 +139,32 @@ namespace SeewoAutoLogin.Services
         /// <summary>恢复上次已经下载但尚未安装的更新包。</summary>
         private async Task<bool> TryResumePendingUpdateAsync()
         {
-            if (!string.Equals(_config.PendingUpdateStage, "downloaded", StringComparison.OrdinalIgnoreCase))
+            var stage = _config.PendingUpdateStage ?? "";
+            if (string.IsNullOrWhiteSpace(stage)) return false;
+
+            var target = UpdateChecker.NormalizeVersion(_config.PendingUpdateVersion);
+
+            // 先看版本：已经装到位（或更高）就直接收尾。
+            // 少了这一步，只要安装器没能把版本号换掉，每次启动都会再拉一次安装程序 ——
+            // 表现就是「反复重启 + 一直卡 + 很快进入安全模式」。
+            if (!string.IsNullOrWhiteSpace(target) &&
+                UpdateChecker.CompareVersions(CurrentAppVersion, target) >= 0)
+            {
+                _log($"[Update] 当前版本 {CurrentAppVersion} 已不低于待安装的 {target}，清除待更新状态");
+                ClearPendingState();
                 return false;
+            }
+
+            if (!string.Equals(stage, "downloaded", StringComparison.OrdinalIgnoreCase))
+            {
+                // 停留在 "installing"：上一次已经拉起过安装程序，但版本没变，说明这次静默安装没成功
+                // （常见于安装被安全软件拦截、安装目录被占用）。这种情况**不再自动重试**，
+                // 只提示用户手动装，避免陷入安装—重启的死循环。
+                _log($"[Update] v{target} 的静默安装上次未生效（状态 {stage}），已停止自动重试；"
+                     + $"可手动运行安装包完成升级：{_config.PendingUpdatePath}");
+                ClearPendingState();
+                return false;
+            }
 
             var path = _config.PendingUpdatePath;
             var sha = _config.PendingUpdateSha256;
@@ -157,7 +183,10 @@ namespace SeewoAutoLogin.Services
                 return false;
             }
 
-            _log($"[Update] 恢复未完成的静默更新：v{_config.PendingUpdateVersion}");
+            _log($"[Update] 恢复未完成的静默更新：v{target}");
+            _config.PendingUpdateStage = "installing";
+            _saveConfig();
+
             if (!UpdateInstaller.StartSilentInstall(check, _log)) return false;
 
             await Task.Delay(800);
