@@ -141,11 +141,33 @@ namespace SeewoAutoLogin
                 _config, WriteDiagnosticLog, SaveConfig,
                 status => _trayIcon?.SetStatusText(status),
                 BeginSilentUpdateExit,
-                action => Dispatcher.Invoke(action));
+                action => Dispatcher.Invoke(action),
+                // 后台下载时把进度回显到主界面（界面没开就什么也不做）
+                (text, percent) => _mainWindow?.NotifyUpdateProgress(text, percent),
+                // 主界面开着的时候不自动安装：安装要重启程序，界面会「自己消失」，观感很差
+                () => _mainWindow != null && _mainWindow.IsVisible);
 
             if (_isPostUpdateBoot)
             {
                 WriteDiagnosticLog("[Update] 更新后启动");
+
+                // 先核对：安装器报告装完了，但程序版本号没变 —— 说明这次安装其实没生效
+                // （装到了别的目录、被安全软件拦下、或者被回滚了）。这时必须记进 FailedUpdateVersion，
+                // 否则下一轮又会自动重装一遍，用户看到的就是「一直在更新，版本却始终是老的」。
+                var expectedVersion = UpdateChecker.NormalizeVersion(_config.PendingUpdateVersion);
+                var currentVersion = typeof(App).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+                var updateEffective = string.IsNullOrWhiteSpace(expectedVersion)
+                    || UpdateChecker.CompareVersions(currentVersion, expectedVersion) >= 0;
+
+                if (!updateEffective)
+                {
+                    WriteDiagnosticLog($"[Update] 更新未生效：期望 {expectedVersion}，实际仍是 {currentVersion}；"
+                        + $"程序路径={System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName}；"
+                        + "已停止自动重试，请手动运行安装包完成升级。");
+                    _config.FailedUpdateVersion = expectedVersion;
+                    _trayIcon?.SetStatusText($"v{expectedVersion} 更新未生效，请手动安装");
+                }
+
                 // 安装器已经完成文件替换，清掉待安装状态，避免下次启动重复拉起安装器。
                 if (!string.IsNullOrWhiteSpace(_config.PendingUpdateStage))
                 {
@@ -153,7 +175,8 @@ namespace SeewoAutoLogin
                     _config.PendingUpdateSha256 = "";
                     _config.PendingUpdateVersion = "";
                     _config.PendingUpdateStage = "";
-                    _config.FailedUpdateVersion = "";   // 这次装成功了，把「曾经装失败」的记录也一并清掉
+                    // 只有版本确实到位了才清掉「曾经装失败」的记录；没到位就留着，防止再次自动安装
+                    if (updateEffective) _config.FailedUpdateVersion = "";
                     SaveConfig();
                 }
                 _ = ConfirmUpdateHealthAsync();

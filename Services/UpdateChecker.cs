@@ -588,6 +588,12 @@ namespace SeewoAutoLogin.Services
             var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("SeewoAutoLogin");
             client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+
+            // 防代理缓存：gh-proxy.com 这类 GitHub 镜像会缓存 API 响应，之前出现过
+            // 「明明已经发了新版本，客户端却一直认为最新是几天前那个」的情况。
+            client.DefaultRequestHeaders.CacheControl =
+                new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Pragma", "no-cache");
             return client;
         }
 

@@ -27,6 +27,26 @@ namespace SeewoAutoLogin
         /// <summary>当前更新包下载的取消源（供界面「取消下载」使用）</summary>
         private CancellationTokenSource _downloadCts;
 
+        /// <summary>
+        /// 后台静默更新的进度回显。由 UpdateCoordinator 在下载/安装阶段调用：
+        /// 主界面没打开时自然什么也不做，开着的时候就能看到进度，而不是只盯着托盘提示。
+        /// </summary>
+        internal void NotifyUpdateProgress(string text, double? percent)
+        {
+            if (!IsLoaded) return;
+            try
+            {
+                _ = SendToJs(new
+                {
+                    type = "update-progress",
+                    state = "downloading",
+                    text = text,
+                    percent = percent
+                });
+            }
+            catch { }
+        }
+
         private async Task HandleCheckUpdateAsync(bool manual)
         {
             if (manual) await SendToJs(new { type = "update-status", text = "正在检查更新…", state = "" });
