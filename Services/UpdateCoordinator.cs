@@ -127,14 +127,21 @@ namespace SeewoAutoLogin.Services
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(info.SetupUrl) || string.IsNullOrWhiteSpace(info.Sha256))
+            // 分流：安装版走 Inno 静默安装；便携版没有安装器接管文件，只能自己替换自己 ——
+            // 否则新版会被装进 Program Files，用户却还在跑解压目录里的旧 exe，
+            // 表现就是「一直提示更新、版本永远是老的」。
+            var kind = UpdateChannel.Detect();
+            var isPortable = kind == InstallKind.Portable;
+            var downloadUrl = isPortable ? info.PortableUrl : info.SetupUrl;
+
+            if (string.IsNullOrWhiteSpace(downloadUrl) || string.IsNullOrWhiteSpace(info.Sha256))
             {
-                _log("[Update] 静默更新：缺少安装包直链或 SHA256，跳过自动下载");
+                _log($"[Update] 静默更新：缺少{(isPortable ? "便携版更新包" : "安装包")}直链或 SHA256，跳过自动下载");
                 return;
             }
 
             _setTrayStatus($"正在后台下载 v{info.Version}");
-            _log($"[Update] 静默更新开始后台下载：{info.SetupUrl}");
+            _log($"[Update] 静默更新开始后台下载（{UpdateChannel.Describe(kind)}）：{downloadUrl}");
             // 下载进度同时给托盘和主界面（界面开着的时候能看到进度条，而不是只盯着托盘）
             var progress = new Progress<(long received, long total)>(p =>
             {
@@ -146,14 +153,43 @@ namespace SeewoAutoLogin.Services
                     $"正在后台下载更新 v{info.Version}" + (percent.HasValue ? $"（{percent:F0}%）" : ""),
                     percent);
             });
+            // 注意：SHA256 强校验在 DownloadAsync 内部完成
             var localPath = await DownloadAccelerator.DownloadAsync(
-                info.SetupUrl, info.Sha256, progress,
+                downloadUrl, info.Sha256, progress,
                 msg => _log($"[Update] {msg}"), CancellationToken.None);
 
             // 下载可能花掉几分钟，装之前再确认一次希沃有没有开始用。
             if (SsologinRecentlyUsed(out var sinceMinutes2))
             {
                 _log($"[Update] 下载期间希沃开始使用 SSO（{sinceMinutes2:F0} 分钟前），本次不安装，1 小时后再看");
+                return;
+            }
+
+            if (isPortable)
+            {
+                // 便携版：整理 staging → 备份目录 → 脚本替换 → 退出。
+                // 备份由脚本自己做（整个程序目录复制到 backup\<版本>），不依赖 UpdateHealthGuard。
+                var staging = PortableUpdater.PrepareStaging(localPath, _log);
+                if (string.IsNullOrWhiteSpace(staging)) return;
+
+                _config.PendingUpdateVersion = info.Version;
+                _config.PendingUpdatePath = localPath;
+                _config.PendingUpdateSha256 = info.Sha256;
+                _config.PendingUpdateStage = "installing";
+                _saveConfig();
+
+                _setTrayStatus($"正在替换便携版 v{info.Version}");
+                _notifyUi?.Invoke($"正在更新到 v{info.Version}（会保留旧版本备份）", null);
+                _log($"[Update] 便携版自更新：目标目录 {UpdateChannel.CurrentDirectory}，备份到 {PortableUpdater.BackupRoot}\\{info.Version}");
+
+                if (!PortableUpdater.LaunchReplaceScript(staging, info.Version, _log))
+                {
+                    _log("[Update] 便携版自更新：替换脚本未能启动，已取消本次更新");
+                    return;
+                }
+
+                await Task.Delay(1000);
+                _invokeOnUi(_requestExit);
                 return;
             }
 

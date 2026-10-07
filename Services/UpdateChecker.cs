@@ -25,6 +25,11 @@ namespace SeewoAutoLogin.Services
         public string SetupUrl { get; set; } = "";
         /// <summary>单文件版直链</summary>
         public string ExeUrl { get; set; } = "";
+        /// <summary>
+        /// 便携版更新包直链：优先 Portable.zip（目录版必须整包替换），没有就用单文件版。
+        /// 便携版走自替换流程，不经过安装器。
+        /// </summary>
+        public string PortableUrl { get; set; } = "";
         /// <summary>命中的更新源（用于界面展示）</summary>
         public string Source { get; set; } = "";
         /// <summary>
@@ -337,7 +342,16 @@ namespace SeewoAutoLogin.Services
                     {
                         info.ExeUrl = download;
                     }
+                    else if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
+                             name.IndexOf("Portable", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                             string.IsNullOrEmpty(info.PortableUrl))
+                    {
+                        info.PortableUrl = download;
+                    }
                 }
+
+                // 便携版更新包：优先整包 zip（目录版必须整体替换），没有就用单文件版
+                if (string.IsNullOrEmpty(info.PortableUrl)) info.PortableUrl = info.ExeUrl;
 
                 // 多个安装包时优先选「未内置 WebView2」的轻量版（体积小得多），内置版留在发布页给需要的用户
                 var preferred = setupAssets.FirstOrDefault(

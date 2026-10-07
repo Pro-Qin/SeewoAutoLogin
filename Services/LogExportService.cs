@@ -67,6 +67,7 @@ namespace SeewoAutoLogin.Services
             sb.AppendLine($"管理员权限: {(IsAdministrator() ? "是" : "否")}");
             sb.AppendLine($"WebView2 运行时: {Safe(() => WebView2Runtime.GetInstalledVersion()) ?? "<未检测到>"}");
             sb.AppendLine($"Schannel TLS 1.2 客户端: {(IsTls12Enabled() ? "已启用" : "未启用")}");
+            sb.AppendLine($"安装类型: {Safe(() => UpdateChannel.Describe(UpdateChannel.Detect()))}（{UpdateChannel.CurrentDirectory}）");
             sb.AppendLine($"数据目录: {appDataDir}");
             sb.AppendLine($"日志目录: {logsDir}");
             sb.AppendLine($"崩溃目录: {crashDir}");
