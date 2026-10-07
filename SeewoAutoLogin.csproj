@@ -17,9 +17,6 @@
     <AssemblyName>SeewoAutoLogin</AssemblyName>
     <RootNamespace>SeewoAutoLogin</RootNamespace>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-<<<<<<< HEAD
-    <Version>1.14.6</Version>
-=======
     <Version>1.14.7</Version>
     <Company>SeewoAutoLogin</Company>
     <Description>SeewoAutoLogin - 希沃自动登录（Windows 7 兼容分支）</Description>
