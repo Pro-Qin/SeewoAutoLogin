@@ -43,7 +43,7 @@ namespace SeewoAutoLogin
         /// 关闭时只下载安装包并打开安装程序，由用户手动完成安装向导。
         /// 注意：旧版配置里没有这个字段，反序列化时会保留这里的默认值 true。
         /// </summary>
-        public bool AutoInstallAfterDownload { get; set; } = true;
+        public bool AutoInstallAfterDownload { get; set; } = false;
         /// <summary>
         /// 待安装的更新包路径。静默更新下载完成但未安装时持久化，下次启动可直接续装。
         /// 安装成功后由 --updated 启动流程清除。
@@ -55,6 +55,11 @@ namespace SeewoAutoLogin
         public string PendingUpdateVersion { get; set; } = "";
         /// <summary>待更新阶段：空 / downloaded。downloaded 表示安装包已下载并通过校验。</summary>
         public string PendingUpdateStage { get; set; } = "";
+        /// <summary>
+        /// 自动安装过、但没生效的版本号（安装器被安全软件拦下、被取消等）。
+        /// 单独记一份而且**不随待更新状态一起清理**：否则每次启动都会重新下载并安装同一个版本。
+        /// </summary>
+        public string FailedUpdateVersion { get; set; } = "";
         /// <summary>自定义更新源（留空使用内置 GitHub API + jsDelivr 兜底）</summary>
         public string UpdateSource { get; set; } = "";
         /// <summary>本地 SSO 网关端口（24300 被占用时自动切换并记录在此）</summary>

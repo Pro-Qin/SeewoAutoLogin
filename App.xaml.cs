@@ -153,6 +153,7 @@ namespace SeewoAutoLogin
                     _config.PendingUpdateSha256 = "";
                     _config.PendingUpdateVersion = "";
                     _config.PendingUpdateStage = "";
+                    _config.FailedUpdateVersion = "";   // 这次装成功了，把「曾经装失败」的记录也一并清掉
                     SaveConfig();
                 }
                 _ = ConfirmUpdateHealthAsync();
