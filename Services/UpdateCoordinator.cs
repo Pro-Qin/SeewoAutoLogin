@@ -62,6 +62,17 @@ namespace SeewoAutoLogin.Services
                 if (info == null || string.IsNullOrWhiteSpace(info.Version)) return;
                 if (UpdateChecker.CompareVersions(info.Version, CurrentAppVersion) <= 0) return;
 
+                // 同一个版本已经自动装过一次却没生效（安装器被安全软件拦下、安装目录被占用、用户点了取消），
+                // 就别再自动来第二遍 —— 否则每次启动都会重新下载 + 拉起安装器，表现就是「重复更新同一个版本」。
+                // 这种情况只留提示，由用户手动运行安装包。
+                if (string.Equals(_config.PendingUpdateVersion, info.Version, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(_config.PendingUpdateStage, "installing", StringComparison.OrdinalIgnoreCase))
+                {
+                    _log($"[Update] v{info.Version} 上次自动安装未生效（状态仍为 installing），已停止自动重试；"
+                         + $"可手动运行安装包完成升级：{_config.PendingUpdatePath}");
+                    return;
+                }
+
                 _log($"[Update] 静默更新发现新版本 {info.Tag}（当前 {CurrentAppVersion}）");
                 if (!_config.AutoInstallAfterDownload)
                 {
