@@ -37,6 +37,11 @@ namespace SeewoAutoLogin.Services
         /// 拿不到时保持空字符串，不影响原有流程；下载时传给 DownloadAccelerator 做强校验。
         /// </summary>
         public string Sha256 { get; set; } = "";
+        /// <summary>
+        /// 便携版更新包的 SHA256。便携版下载的是另一个文件（整包 zip 或单文件 exe），
+        /// 不能拿安装包的哈希去校验它 —— 否则每次都会失败。
+        /// </summary>
+        public string PortableSha256 { get; set; } = "";
         /// <summary>SHA256SUMS.txt 的资源地址（API 返回时带出来，否则按发布规则推导）</summary>
         internal string Sha256SumsUrl { get; set; } = "";
     }
@@ -365,6 +370,21 @@ namespace SeewoAutoLogin.Services
             if (string.IsNullOrEmpty(info.SetupUrl) && !string.IsNullOrWhiteSpace(info.Version))
                 info.SetupUrl = BuildSetupUrl(info.Tag, info.Version);
 
+            // 便携版包同样推导：主干发布的是单文件版 SeewoAutoLogin.exe
+            // （win7 兼容分支发布的是整包 zip，文件名规则在该分支自己的 UpdateChecker 里）
+            if (string.IsNullOrEmpty(info.PortableUrl) && !string.IsNullOrWhiteSpace(info.Tag))
+            {
+                info.PortableUrl =
+                    $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{info.Tag}/SeewoAutoLogin.exe";
+            }
+
+            // 便携版的最后兜底：实在没有便携包就用安装包，并留日志说明
+            // （装进 Program Files 总好过完全不更新，而且日志里能看出走了哪条路）
+            if (string.IsNullOrEmpty(info.PortableUrl))
+            {
+                info.PortableUrl = info.SetupUrl;
+            }
+
             // 直链最终校验：不通过就置空，并让用户自己去发布页下载（消费端会用 Process.Start 打开该地址）
             if (!string.IsNullOrEmpty(info.SetupUrl) && !IsTrustedDownloadUrl(info.SetupUrl))
             {
@@ -426,9 +446,10 @@ namespace SeewoAutoLogin.Services
             try
             {
                 var targetName = PickHashTargetName(info);
-                if (string.IsNullOrWhiteSpace(targetName))
+                var portableName = FileNameOf(info.PortableUrl);
+                if (string.IsNullOrWhiteSpace(targetName) && string.IsNullOrWhiteSpace(portableName))
                 {
-                    log?.Invoke("[Update] 未确定安装包文件名，跳过 SHA256SUMS.txt");
+                    log?.Invoke("[Update] 未确定更新包文件名，跳过 SHA256SUMS.txt");
                     return;
                 }
 
@@ -448,14 +469,28 @@ namespace SeewoAutoLogin.Services
                 if (string.IsNullOrWhiteSpace(text)) return;
 
                 var hash = ParseSha256Sums(text, targetName);
-                if (string.IsNullOrWhiteSpace(hash))
-                {
-                    log?.Invoke($"[Update] SHA256SUMS.txt 中没有 {targetName} 的记录，本次不做哈希校验");
-                    return;
-                }
-
                 info.Sha256 = hash;
-                log?.Invoke($"[Update] 已获取 {targetName} 的 SHA256：{hash}");
+                if (!string.IsNullOrWhiteSpace(hash))
+                    log?.Invoke($"[Update] 已获取 {targetName} 的 SHA256：{hash}");
+                else if (!string.IsNullOrWhiteSpace(targetName))
+                    log?.Invoke($"[Update] SHA256SUMS.txt 中没有 {targetName} 的记录，本次不做哈希校验");
+
+                // 便携版下载的是另一个文件，必须单独取它的哈希。
+                // 之前只按安装包的文件名找，便携版拿到的哈希永远对不上，自然每次都失败。
+                if (!string.IsNullOrWhiteSpace(portableName) &&
+                    !string.Equals(portableName, targetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    var portableHash = ParseSha256Sums(text, portableName);
+                    if (!string.IsNullOrWhiteSpace(portableHash))
+                    {
+                        info.PortableSha256 = portableHash;
+                        log?.Invoke($"[Update] 已获取 {portableName} 的 SHA256：{portableHash}");
+                    }
+                    else
+                    {
+                        log?.Invoke($"[Update] SHA256SUMS.txt 中没有 {portableName} 的记录，便携版将不做哈希校验");
+                    }
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

@@ -137,10 +137,14 @@ namespace SeewoAutoLogin.Services
                 sb.AppendLine("  if not errorlevel 1 goto done");
                 sb.AppendLine("  ping -n 2 127.0.0.1 >nul");
                 sb.AppendLine(")");
-                sb.AppendLine("echo [%date% %time%] 覆盖失败，保留备份与原程序 >> \"%LOG%\"");
+                sb.AppendLine("echo [%date% %time%] 覆盖失败，保留备份，重新启动原程序 >> \"%LOG%\"");
+                // 替换失败也必须把程序还回去：用户不该因为一次更新失败就失去可用的程序
+                sb.AppendLine("start \"\" \"%EXE%\"");
                 sb.AppendLine("exit /b 1");
                 sb.AppendLine(":done");
-                sb.AppendLine("echo [%date% %time%] 完成，启动新版本 >> \"%LOG%\"");
+                sb.AppendLine("echo [%date% %time%] 完成，清理临时文件并启动新版本 >> \"%LOG%\"");
+                // 成功才清 staging；失败保留，方便排查
+                sb.AppendLine("rmdir /s /q \"%SRC%\" 2>nul");
                 sb.AppendLine("start \"\" \"%EXE%\" --updated");
                 sb.AppendLine("del \"%~f0\"");
                 sb.AppendLine("exit /b 0");
