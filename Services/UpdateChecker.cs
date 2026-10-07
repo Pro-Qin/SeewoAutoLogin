@@ -109,8 +109,8 @@ namespace SeewoAutoLogin.Services
         private static readonly string[] Windows7BranchSources =
         {
             // per_page 限制条数：列表响应比 releases/latest 大得多（每条都带 body 与 assets）
-            "https://gh-proxy.com/https://api.github.com/repos/{0}/{1}/releases?per_page=10",
-            "https://api.github.com/repos/{0}/{1}/releases?per_page=10"
+            "https://gh-proxy.com/https://api.github.com/repos/{0}/{1}/releases?per_page=30",
+            "https://api.github.com/repos/{0}/{1}/releases?per_page=30"
         };
 
         /// <summary>Win7 分支发布的 tag 后缀，与 release.yml / build-release-body.ps1 的约定一致。</summary>
@@ -358,7 +358,7 @@ namespace SeewoAutoLogin.Services
                 else
                 {
                     // 只填了基地址（如 https://api.github.com）时按 GitHub API 规范补全路径
-                    yield return custom.TrimEnd('/') + "/repos/{0}/{1}/releases" + (listMode ? "?per_page=10" : "/latest");
+                    yield return custom.TrimEnd('/') + "/repos/{0}/{1}/releases" + (listMode ? "?per_page=30" : "/latest");
                 }
             }
 
