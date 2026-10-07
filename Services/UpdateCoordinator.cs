@@ -20,6 +20,8 @@ namespace SeewoAutoLogin.Services
         private readonly Action<string> _setTrayStatus;
         private readonly Action _requestExit;
         private readonly Action<Action> _invokeOnUi;
+        private readonly Action<string, double?> _notifyUi;
+        private readonly Func<bool> _isMainWindowOpen;
         private int _running;
 
         public UpdateCoordinator(
@@ -28,7 +30,9 @@ namespace SeewoAutoLogin.Services
             Action saveConfig,
             Action<string> setTrayStatus,
             Action requestExit,
-            Action<Action> invokeOnUi)
+            Action<Action> invokeOnUi,
+            Action<string, double?> notifyUi = null,
+            Func<bool> isMainWindowOpen = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _log = log ?? (_ => { });
@@ -36,6 +40,8 @@ namespace SeewoAutoLogin.Services
             _setTrayStatus = setTrayStatus ?? (_ => { });
             _requestExit = requestExit ?? (() => { });
             _invokeOnUi = invokeOnUi ?? (action => action());
+            _notifyUi = notifyUi;
+            _isMainWindowOpen = isMainWindowOpen ?? (() => false);
         }
 
         /// <summary>后台静默更新是否正在运行。</summary>
@@ -104,6 +110,15 @@ namespace SeewoAutoLogin.Services
                 return;
             }
 
+            // 主界面开着就不装：安装要重启程序，用户会看到界面「自己消失」——那其实只是去升级了，
+            // 但观感上比晚一小时更新糟糕得多。先只提示，等他关掉界面后下一轮自动完成。
+            if (_isMainWindowOpen())
+            {
+                _log("[Update] 主界面正在打开，本次不安装；关闭主界面后由下一轮自动更新");
+                _notifyUi?.Invoke($"新版本 v{info.Version} 已就绪，关闭主界面后会自动更新", null);
+                return;
+            }
+
             // 希沃正在用网关时不装更新：安装要重启程序，会把正在登录的老师中断，而且那种时候 SSO
             // 请求量本来就高。判据是「最近 10 分钟内有 SSOLOGIN」——等下一轮（1 小时后）再说。
             if (SsologinRecentlyUsed(out var sinceMinutes))
@@ -120,7 +135,17 @@ namespace SeewoAutoLogin.Services
 
             _setTrayStatus($"正在后台下载 v{info.Version}");
             _log($"[Update] 静默更新开始后台下载：{info.SetupUrl}");
-            var progress = new Progress<(long received, long total)>(_ => { });
+            // 下载进度同时给托盘和主界面（界面开着的时候能看到进度条，而不是只盯着托盘）
+            var progress = new Progress<(long received, long total)>(p =>
+            {
+                var percent = p.total > 0 ? (double?)Math.Round(p.received * 100.0 / p.total, 1) : null;
+                _setTrayStatus(percent.HasValue
+                    ? $"正在后台下载 v{info.Version} {percent:F0}%"
+                    : $"正在后台下载 v{info.Version}");
+                _notifyUi?.Invoke(
+                    $"正在后台下载更新 v{info.Version}" + (percent.HasValue ? $"（{percent:F0}%）" : ""),
+                    percent);
+            });
             var localPath = await DownloadAccelerator.DownloadAsync(
                 info.SetupUrl, info.Sha256, progress,
                 msg => _log($"[Update] {msg}"), CancellationToken.None);
