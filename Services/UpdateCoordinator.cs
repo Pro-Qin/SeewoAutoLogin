@@ -133,10 +133,23 @@ namespace SeewoAutoLogin.Services
             var kind = UpdateChannel.Detect();
             var isPortable = kind == InstallKind.Portable;
             var downloadUrl = isPortable ? info.PortableUrl : info.SetupUrl;
+            // 便携版必须用便携包自己的哈希：拿安装包的哈希去校验它，只会每次都失败。
+            // 取不到便携包哈希时退回安装包哈希（至少下载流程一致），日志里能看出走了哪条路。
+            var downloadSha = isPortable && !string.IsNullOrWhiteSpace(info.PortableSha256)
+                ? info.PortableSha256
+                : info.Sha256;
+            if (isPortable && string.IsNullOrWhiteSpace(info.PortableSha256))
+                _log("[Update] 便携版更新包没有独立哈希记录，退回安装包哈希校验");
 
-            if (string.IsNullOrWhiteSpace(downloadUrl) || string.IsNullOrWhiteSpace(info.Sha256))
+            if (string.IsNullOrWhiteSpace(downloadUrl))
             {
-                _log($"[Update] 静默更新：缺少{(isPortable ? "便携版更新包" : "安装包")}直链或 SHA256，跳过自动下载");
+                _log($"[Update] 静默更新：缺少{(isPortable ? "便携版更新包" : "安装包")}直链，跳过自动下载");
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(downloadSha))
+            {
+                _log($"[Update] 静默更新：{(isPortable ? "便携版更新包" : "安装包")}没有可用的 SHA256，"
+                     + "为安全起见不做自动更新（可到发布页手动下载）");
                 return;
             }
 
@@ -155,7 +168,7 @@ namespace SeewoAutoLogin.Services
             });
             // 注意：SHA256 强校验在 DownloadAsync 内部完成
             var localPath = await DownloadAccelerator.DownloadAsync(
-                downloadUrl, info.Sha256, progress,
+                downloadUrl, downloadSha, progress,
                 msg => _log($"[Update] {msg}"), CancellationToken.None);
 
             // 下载可能花掉几分钟，装之前再确认一次希沃有没有开始用。

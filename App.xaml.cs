@@ -147,6 +147,18 @@ namespace SeewoAutoLogin
                 // 主界面开着的时候不自动安装：安装要重启程序，界面会「自己消失」，观感很差
                 () => _mainWindow != null && _mainWindow.IsVisible);
 
+            // 兜底清理：当前版本已经不低于「曾经装失败的版本」时，那条记录就没意义了
+            // （多半是用户自己手动装上了）。留着它会让下一轮自动更新被误跳过。
+            if (!string.IsNullOrWhiteSpace(_config.FailedUpdateVersion) &&
+                UpdateChecker.CompareVersions(
+                    typeof(App).Assembly.GetName().Version?.ToString() ?? "0.0.0",
+                    _config.FailedUpdateVersion) >= 0)
+            {
+                WriteDiagnosticLog($"[Update] 当前版本已不低于曾失败的 v{_config.FailedUpdateVersion}，清除该记录");
+                _config.FailedUpdateVersion = "";
+                SaveConfig();
+            }
+
             if (_isPostUpdateBoot)
             {
                 WriteDiagnosticLog("[Update] 更新后启动");
