@@ -38,6 +38,36 @@ namespace SeewoAutoLogin
         /// <summary>最近一次希沃发起 SSO 请求的时间（UTC），用于检测希沃是否还活跃</summary>
         public DateTime? LastSsoRequestAtUtc { get; private set; }
 
+        /// <summary>
+        /// 最近一次 SSOLOGIN 请求时间（UTC）。做成静态属性，是为了让更新协调器在不持有网关实例时
+        /// 也能判断「希沃现在正忙着」—— 希沃正在用网关的时候不该重启程序去装更新。
+        /// </summary>
+        public static DateTime LastSsologinUtc { get; private set; } = DateTime.MinValue;
+
+        // ── 高频日志节流 ──────────────────────────────────────────────
+        // SSOLOGIN 是真正的高频请求：希沃客户端在登录界面开着时会每 2 秒轮询一次，一台机器一天能攒下
+        // 几千次。每次都写两行的话日志文件一天涨到几百 KB，写日志本身也有开销（用户反馈过这个）。
+        // 这里只对「成功路径」的两类常规日志各做每分钟一条的节流；异常、失败、拒绝这些路径不走节流，
+        // 那些必须留痕。
+        private const int SsologinLogIntervalSeconds = 60;
+        private static readonly object SsologinSourceLogGate = new object();
+        private static readonly object SsologinServedLogGate = new object();
+        private static DateTime _lastSsologinSourceLogUtc = DateTime.MinValue;
+        private static DateTime _lastSsologinServedLogUtc = DateTime.MinValue;
+
+        private static bool ShouldLogThrottled(object gate, ref DateTime lastUtc)
+        {
+            lock (gate)
+            {
+                if ((DateTime.UtcNow - lastUtc).TotalSeconds < SsologinLogIntervalSeconds) return false;
+                lastUtc = DateTime.UtcNow;
+                return true;
+            }
+        }
+
+        private static bool ShouldLogSsologinSource() => ShouldLogThrottled(SsologinSourceLogGate, ref _lastSsologinSourceLogUtc);
+        private static bool ShouldLogSsologinServed() => ShouldLogThrottled(SsologinServedLogGate, ref _lastSsologinServedLogUtc);
+
         public int Port { get; set; } = 24300;
         public bool IsRunning => _listener?.IsListening == true;
 
@@ -535,7 +565,9 @@ namespace SeewoAutoLogin
                 if (req.HttpMethod == "GET" && path.Equals("/getData/SSOLOGIN", StringComparison.OrdinalIgnoreCase))
                 {
                     LastSsoRequestAtUtc = DateTime.UtcNow;
-                    Log($"SSOLOGIN 来源: remote={remoteKey}; ua={TruncateForLog(req.UserAgent, 80)}; referer={TruncateForLog(req.Headers["Referer"], 120)}");
+                    LastSsologinUtc = DateTime.UtcNow;
+                    if (ShouldLogSsologinSource())
+                        Log($"SSOLOGIN 来源: remote={remoteKey}; ua={TruncateForLog(req.UserAgent, 80)}; referer={TruncateForLog(req.Headers["Referer"], 120)}（高频请求，日志已节流为每分钟一条）");
                     var config = _getConfig();
                     var sourceAccounts = (_getVisibleAccounts?.Invoke() ?? Array.Empty<SeewoAccount>())
                         .Where(a => !string.IsNullOrEmpty(a.Username))
@@ -573,18 +605,22 @@ namespace SeewoAutoLogin
                     ThrottledSaveConfig();
 
                     await WriteJson(resp, new { message = "success", statusCode = "200", data = accounts });
-                    Log(config.UserListRotationEnabled
-                        ? $"SSOLOGIN: 返回第 {routeIndex + 1} 组 {accounts.Count} 个账号"
-                        : $"SSOLOGIN: 返回 {accounts.Count} 个账号");
+                    if (ShouldLogSsologinServed())
+                        Log(config.UserListRotationEnabled
+                            ? $"SSOLOGIN: 返回第 {routeIndex + 1} 组 {accounts.Count} 个账号"
+                            : $"SSOLOGIN: 返回 {accounts.Count} 个账号（高频请求，日志已节流为每分钟一条）");
                     return;
                 }
 
                 if (req.HttpMethod == "GET" && path.StartsWith("/getData/SSOLOGIN/", StringComparison.OrdinalIgnoreCase))
                 {
                     LastSsoRequestAtUtc = DateTime.UtcNow;
-                    Log($"SSOLOGIN 来源: remote={remoteKey}; ua={TruncateForLog(req.UserAgent, 80)}; referer={TruncateForLog(req.Headers["Referer"], 120)}");
+                    LastSsologinUtc = DateTime.UtcNow;
+                    if (ShouldLogSsologinSource())
+                        Log($"SSOLOGIN 来源: remote={remoteKey}; ua={TruncateForLog(req.UserAgent, 80)}; referer={TruncateForLog(req.Headers["Referer"], 120)}（高频请求，日志已节流为每分钟一条）");
                     var userId = path.Substring("/getData/SSOLOGIN/".Length);
-                    Log($"SSOLOGIN/{{userid}}: 收到请求 userId={userId}");
+                    if (ShouldLogSsologinServed())
+                        Log($"SSOLOGIN/{{userid}}: 收到请求 userId={userId}");
                     var config = _getConfig();
                     var account = config.Accounts.FirstOrDefault(a => a.Id == userId || a.Username == userId);
 
