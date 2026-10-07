@@ -153,6 +153,7 @@ namespace SeewoAutoLogin
                     _config.PendingUpdateSha256 = "";
                     _config.PendingUpdateVersion = "";
                     _config.PendingUpdateStage = "";
+                    _config.FailedUpdateVersion = "";   // 这次装成功了，把「曾经装失败」的记录也一并清掉
                     SaveConfig();
                 }
                 _ = ConfirmUpdateHealthAsync();
@@ -328,7 +329,7 @@ namespace SeewoAutoLogin
                 try
                 {
                     foreach (var proc in Process.GetProcessesByName("SeewoAutoLogin")
-                        .Where(p => p.Id != Environment.ProcessId))
+                        .Where(p => p.Id != Process.GetCurrentProcess().Id))
                     {
                         try { proc.Kill(); proc.WaitForExit(3000); } catch { }
                     }
@@ -428,6 +429,12 @@ namespace SeewoAutoLogin
             }
 
             // 全局异常处理器已由 CrashReporter 注册。
+
+            // Win7/8.1 上 HTTPS 能否跑通，取决于系统 Schannel 有没有启用 TLS 1.2 客户端：
+            // 程序保持 ServicePointManager 的 SystemDefault（微软建议不要硬编码协议版本），
+            // 改为把系统层的 TLS 1.2 打开（与微软 KB3140245 的指引一致）。
+            // 写注册表需要管理员权限，所以放在提权判定之后。
+            Services.NetworkCompat.EnsureTls12ForLegacyWindows(WriteDiagnosticLog);
 
             // 初始化托盘图标
             try
@@ -666,7 +673,7 @@ namespace SeewoAutoLogin
             var started = false;
             try
             {
-                var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+                var exePath = Process.GetCurrentProcess().MainModule?.FileName;
                 if (!string.IsNullOrEmpty(exePath))
                 {
                     var psi = new ProcessStartInfo

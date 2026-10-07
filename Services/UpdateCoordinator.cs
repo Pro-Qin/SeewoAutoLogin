@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -63,12 +64,11 @@ namespace SeewoAutoLogin.Services
 
                 // 同一个版本已经自动装过一次却没生效（安装器被安全软件拦下、安装目录被占用、用户点了取消），
                 // 就别再自动来第二遍 —— 否则每次启动都会重新下载 + 拉起安装器，表现就是「重复更新同一个版本」。
-                // 这种情况只留提示，由用户手动运行安装包。
-                if (string.Equals(_config.PendingUpdateVersion, info.Version, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(_config.PendingUpdateStage, "installing", StringComparison.OrdinalIgnoreCase))
+                // 这里必须比 FailedUpdateVersion：待更新状态一旦被清理，PendingUpdateVersion 会一起清空，
+                // 拿它做判断等于守卫失效。
+                if (string.Equals(_config.FailedUpdateVersion, info.Version, StringComparison.OrdinalIgnoreCase))
                 {
-                    _log($"[Update] v{info.Version} 上次自动安装未生效（状态仍为 installing），已停止自动重试；"
-                         + $"可手动运行安装包完成升级：{_config.PendingUpdatePath}");
+                    _log($"[Update] v{info.Version} 之前自动安装未生效，已跳过自动更新；可手动运行安装包完成升级");
                     return;
                 }
 
@@ -109,7 +109,7 @@ namespace SeewoAutoLogin.Services
                 _setTrayStatus($"正在静默安装 v{info.Version}");
                 _log($"[Update] 静默更新准备安装 v{info.Version}");
                 // 安装前建立备份与 watcher：新版本 60 秒内未确认健康就自动回滚。
-                UpdateHealthGuard.BeginGuard(Environment.ProcessPath, info.Version, _log);
+                UpdateHealthGuard.BeginGuard(Process.GetCurrentProcess().MainModule?.FileName, info.Version, _log);
                 if (!UpdateInstaller.StartSilentInstall(check, _log))
                 {
                     _log("[Update] 静默更新：安装器启动失败，安装包已保留，下次启动会重试");
@@ -173,6 +173,9 @@ namespace SeewoAutoLogin.Services
                 // 只提示用户手动装，避免陷入安装—重启的死循环。
                 _log($"[Update] v{target} 的静默安装上次未生效（状态 {stage}），已停止自动重试；"
                      + $"可手动运行安装包完成升级：{_config.PendingUpdatePath}");
+                // 记在 FailedUpdateVersion 上再清状态：这个字段不随清理一起丢，
+                // 下次检查更新时才能认出「这版装过但没成」，不再重复下载。
+                _config.FailedUpdateVersion = target;
                 ClearPendingState();
                 return false;
             }
