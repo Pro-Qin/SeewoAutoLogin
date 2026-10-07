@@ -703,8 +703,14 @@ private static string Truncate(string text, int max)
     /// </summary>
     internal static class UpdateInstaller
     {
-        /// <summary>Inno Setup 静默安装参数：静默安装 / 关闭占用文件的程序 / 不自动重启系统</summary>
-        public const string SilentArguments = "/SILENT /CLOSEAPPLICATIONS /NORESTART";
+        /// <summary>
+        /// Inno Setup 的静默安装参数。
+        ///
+        /// 必须用 /VERYSILENT，不能用 /SILENT：后者只是"不需要点下一步"，**仍然会弹出安装进度窗口**。
+        /// 老师正在上课时冷不丁冒出一个安装器窗口，比更新本身还扰民。/VERYSILENT 全程不显示界面，
+        /// /SUPPRESSMSGBOXES 让安装器自己吞掉提示框，/SP- 跳过"准备安装"那一屏。
+        /// </summary>
+        public const string SilentArguments = "/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /NORESTART /SP-";
 
         /// <summary>Inno Setup 产物文件名前缀（setup.iss: SeewoAutoLogin_Setup_v{版本}[_WithWebView2].exe）</summary>
         private const string SetupFileNamePrefix = "SeewoAutoLogin_Setup";
