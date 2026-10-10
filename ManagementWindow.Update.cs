@@ -149,30 +149,14 @@ namespace SeewoAutoLogin
         {
             try
             {
-                var cfg = _app?.Config;
-                if (cfg == null || cfg.UpgradeNoticeShown) return;
+                // 判定统一放在 App 侧（TryConsumeUpgradeNotice）：桌面提醒与界面内提醒共用同一份逻辑，
+                // 所以两者不会同时弹 —— 先到的那边走完就把「已提示」标记消费掉了。
+                var notice = _app?.TryConsumeUpgradeNotice(markShown: true);
+                if (notice == null) return;
 
-                var to = UpdateChecker.NormalizeVersion(cfg.UpgradeNoticeToVersion);
-                if (string.IsNullOrWhiteSpace(to)) return;
-
-                var current = AppVersion;
-                if (UpdateChecker.CompareVersions(current, to) < 0)
-                {
-                    _app.WriteDiagnosticLog($"[Update] 跳过升级提醒：当前 {current} 仍低于记录的 {to}");
-                    return;
-                }
-
-                var from = UpdateChecker.NormalizeVersion(cfg.UpgradeNoticeFromVersion);
-                // 记录里的起始版本已经不低于当前版本：这次对比失去意义（例如用户之后又手动装了更新的版本），
-                // 只显示当前版本，不编造起止关系。
-                if (!string.IsNullOrWhiteSpace(from) && UpdateChecker.CompareVersions(from, current) >= 0)
-                    from = "";
-
-                await SendToJs(BuildUpgradeNoticePayload(from, current, cfg.UpgradeNoticeAtUtc, cfg.UpgradeNoticeNotes, false));
-                _app.WriteDiagnosticLog($"[Update] 已提示升级完成：{(string.IsNullOrWhiteSpace(from) ? "（无起始版本记录）" : from)} → {current}");
-
-                cfg.UpgradeNoticeShown = true;
-                _app.SaveConfig();
+                await SendToJs(BuildUpgradeNoticePayload(notice.From, notice.To, notice.AtUtc, notice.Notes, false));
+                _app.WriteDiagnosticLog(
+                    $"[Update] 已提示升级完成：{(string.IsNullOrWhiteSpace(notice.From) ? "（无起始版本记录）" : notice.From)} → {notice.To}");
             }
             catch (Exception ex)
             {
@@ -188,24 +172,24 @@ namespace SeewoAutoLogin
         {
             try
             {
-                var cfg = _app?.Config;
-                var current = AppVersion;
+                var notice = _app?.BuildPreviewUpgradeNotice();
+                if (notice == null) return;
 
-                var from = UpdateChecker.NormalizeVersion(cfg?.UpgradeNoticeFromVersion);
-                if (!string.IsNullOrWhiteSpace(from) && UpdateChecker.CompareVersions(from, current) >= 0)
-                    from = "";
-
-                var notes = cfg?.UpgradeNoticeNotes;
-                if (string.IsNullOrWhiteSpace(notes))
-                    notes = "（调试预览）本次没有记录到更新内容。\n真实的后台自动更新完成之后，这里会显示该版本的改动清单。";
-
-                await SendToJs(BuildUpgradeNoticePayload(from, current, cfg?.UpgradeNoticeAtUtc, notes, true));
-                _app?.WriteDiagnosticLog("[Update] 调试预览升级提醒（不影响一次性提示状态）");
+                await SendToJs(BuildUpgradeNoticePayload(notice.From, notice.To, notice.AtUtc, notice.Notes, true));
+                _app.WriteDiagnosticLog("[Update] 调试预览界面升级提醒（不写入一次性提示状态）");
             }
             catch (Exception ex)
             {
                 _app?.WriteDiagnosticLog($"[Update] 调试预览升级提醒失败: {ex.Message}");
             }
+        }
+
+        /// <summary>设置页的「桌面提醒预览」：把桌面级提醒窗口弹一次，同样不写入任何状态。</summary>
+        private void HandleDebugDesktopNotice()
+        {
+            var notice = _app.BuildPreviewUpgradeNotice();
+            UpgradeToastWindow.ShowNotice(notice);
+            _app.WriteDiagnosticLog("[Update] 调试预览桌面升级提醒（不写入一次性提示状态）");
         }
 
         /// <summary>

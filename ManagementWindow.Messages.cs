@@ -88,6 +88,7 @@ namespace SeewoAutoLogin
                     case "download-update": HandleDownloadUpdate(); break;
                     case "cancel-download": HandleCancelDownload(); break;
                     case "debug-upgrade-notice": await HandleDebugUpgradeNoticeAsync(); break;
+                    case "debug-desktop-notice": HandleDebugDesktopNotice(); break;
                 }
             }
             catch (Exception ex) { Debug.WriteLine($"[WebView] msg error: {ex.Message}"); }

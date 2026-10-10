@@ -38,6 +38,7 @@ namespace SeewoAutoLogin
                 restoreHostsOnExit = _app.Config.RestoreHostsOnExit,
 autoRepairEnabled = _app.Config.AutoRepairEnabled,
                 autoShowOverlay = _app.Config.AutoShowOverlay,
+                performanceMode = _app.Config.PerformanceMode,
                 autoCheckUpdate = _app.Config.AutoCheckUpdate,
                 autoInstallAfterDownload = _app.Config.AutoInstallAfterDownload
             });

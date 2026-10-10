@@ -279,6 +279,8 @@
           <label class="checkbox-row"><input type="checkbox" id="autoShowOverlayCheck"><span>希沃打开但未登录时自动显示切换遮罩</span></label>
           <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">关闭后仅在托盘菜单「显示遮罩」手动触发</div>
           <label class="checkbox-row"><input type="checkbox" id="particleToggle" checked><span>粒子背景</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="perfModeCheck"><span>性能模式</span></label>
+          <div style="font-size:12px;color:#d7d7d7;margin:4px 0 10px 0">开启后关掉耗性能的界面动效：粒子背景、毛玻璃、开场动画、卡片入场与页面切换过渡、提醒的滑入滑出等，界面改为「直接出现」。适合教室一体机或较老的机器；不影响任何功能，只是少一些观感。</div>
           <div style="display:flex;gap:8px;margin-top:10px">
             <button class="btn btn-secondary" onclick="send({type:'toggle-overlay'})">显示切换遮罩</button>
           </div>
@@ -370,6 +372,7 @@
             <button class="btn btn-secondary" onclick="addFakeAccount()">添加假账号</button>
             <button class="btn btn-secondary" onclick="send({type:'refresh-debug'})">刷新希沃状态</button>
             <button class="btn btn-secondary" onclick="debugUpgradeNotice()" title="预览「升级完成」提醒的样子与动效，只显示一次，不影响更新状态">显示升级提醒</button>
+            <button class="btn btn-secondary" onclick="debugDesktopNotice()" title="预览桌面级提醒窗口（独立于主界面，托盘常驻时也会出现）">桌面提醒预览</button>
           </div>
           <div style="font-size:12px;color:#d7d7d7;margin:10px 0 0 0">「显示升级提醒」只是预览：它会用当前记录的版本信息弹一次右下角提醒，不会改动任何更新状态。真实的提醒只在后台自动更新完成后的第一次打开主界面时出现。</div>
           <div id="debugInfo" style="margin-top:10px;font-size:12px;color:var(--text-tertiary);line-height:1.6">

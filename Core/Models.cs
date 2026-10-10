@@ -24,6 +24,12 @@ namespace SeewoAutoLogin
         public bool StartMinimized { get; set; } = true;
         /// <summary>希沃打开但未登录时是否自动显示切换遮罩（全局控制，默认关闭）</summary>
         public bool AutoShowOverlay { get; set; }
+        /// <summary>
+        /// 性能模式（默认关闭）：关掉大量耗性能的界面动效 —— 粒子背景、毛玻璃、开场动画、
+        /// 卡片入场与页面切换过渡、提醒的滑入滑出等，界面改为「直接出现」。
+        /// 主要给老一体机 / Win7 机器用；不影响任何功能，只影响观感。
+        /// </summary>
+        public bool PerformanceMode { get; set; }
         /// <summary>启动时自动检查更新（默认开启）</summary>
         public bool AutoCheckUpdate { get; set; } = true;
         /// <summary>

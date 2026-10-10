@@ -1272,3 +1272,37 @@ nav { position: relative; }
 .cl-p{margin:6px 0;line-height:1.85}
 .cl-empty{color:rgba(255,255,255,.42)}
 
+/* ===== 性能模式 =====
+   目标：让教室一体机这类机器把开销花在功能上，而不是观感上。
+   做法是给 body 挂一个 .perf-lite，一条规则覆盖全部组件，避免每个组件各写一遍。
+   关掉三类东西：
+     1) 持续开销 —— 粒子（JS 侧停掉，这里管不到 canvas）、毛玻璃（backdrop-filter 很吃 GPU 合成）、
+        循环动画（呼吸 / 脉冲 / 浮动 / 扫光）；
+     2) 一次性过渡 —— 卡片入场、页面切换、折叠展开、提醒滑入滑出；
+     3) 会残留 compositing 层的 will-change。 */
+body.perf-lite *,
+body.perf-lite *::before,
+body.perf-lite *::after{
+  animation-duration:1ms !important;
+  animation-delay:0ms !important;
+  animation-iteration-count:1 !important;
+  transition-duration:1ms !important;
+  transition-delay:0ms !important;
+  will-change:auto !important;
+}
+/* 毛玻璃换纯色：老机器的 GPU 合成毛玻璃很贵，而这里只是装饰 */
+body.perf-lite #sidebar{
+  backdrop-filter:none !important;
+  background:var(--bg-secondary) !important;
+}
+body.perf-lite .terms-overlay,
+body.perf-lite .changelog-overlay{
+  backdrop-filter:none !important;
+  background:rgba(0,0,0,.86) !important;
+}
+/* 升级提醒：性能模式下由 JS 直接显示、不做位移重放；这里再兜一层，确保没有位移残留 */
+body.perf-lite .upgrade-notice,
+body.perf-lite .upgrade-notice.show{transform:none !important}
+body.perf-lite .upgrade-card{animation:none !important}
+body.perf-lite .upgrade-card::after{display:none !important}
+
