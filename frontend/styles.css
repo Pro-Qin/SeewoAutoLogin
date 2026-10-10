@@ -1174,15 +1174,14 @@ nav { position: relative; }
 .upgrade-notice{
   position:fixed; right:24px; bottom:24px; z-index:260;
   width:326px; pointer-events:auto;
-  /* 起始位置在屏幕右侧之外，配合 .show 形成滑入；用固定像素而非 calc，兼容 Win7 上的旧内核 */
+  /* 起始位置在窗口右侧之外，配合 .show 形成滑入；用固定像素而非 calc，兼容 Win7 上的旧内核。
+     只做位移与缩放、**不做透明度渐变**：卡片是「整个滑进来 / 整个滑出去」，不是淡入淡出。 */
   transform:translate3d(362px, 14px, 0) scale(.94);
-  opacity:0;
-  transition:transform 620ms cubic-bezier(.22,1,.36,1),
-             opacity 420ms cubic-bezier(.22,1,.36,1);
-  will-change:transform,opacity;
+  transition:transform 620ms cubic-bezier(.22,1,.36,1);
+  will-change:transform;
 }
 .upgrade-notice[hidden]{display:none}
-.upgrade-notice.show{transform:translate3d(0,0,0) scale(1); opacity:1}
+.upgrade-notice.show{transform:translate3d(0,0,0) scale(1)}
 /* 悬停时轻微抬起，暗示可以点；同时暂停浮动，避免两个 transform 打架 */
 .upgrade-notice.show:hover{transform:translate3d(0,-5px,0) scale(1.012)}
 .upgrade-notice.show:hover .upgrade-card{animation-play-state:paused}
