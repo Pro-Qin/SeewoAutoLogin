@@ -369,7 +369,9 @@
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button class="btn btn-secondary" onclick="addFakeAccount()">添加假账号</button>
             <button class="btn btn-secondary" onclick="send({type:'refresh-debug'})">刷新希沃状态</button>
+            <button class="btn btn-secondary" onclick="debugUpgradeNotice()" title="预览「升级完成」提醒的样子与动效，只显示一次，不影响更新状态">显示升级提醒</button>
           </div>
+          <div style="font-size:12px;color:#d7d7d7;margin:10px 0 0 0">「显示升级提醒」只是预览：它会用当前记录的版本信息弹一次右下角提醒，不会改动任何更新状态。真实的提醒只在后台自动更新完成后的第一次打开主界面时出现。</div>
           <div id="debugInfo" style="margin-top:10px;font-size:12px;color:var(--text-tertiary);line-height:1.6">
             <div>希沃状态: <span id="seewoStatus">检测中...</span></div>
           </div>
@@ -444,6 +446,47 @@
     </div>
   </div>
 </div>
+<!-- 升级完成提醒：后台自动更新后第一次打开主界面时从右下角滑入，10 秒后自动滑出 -->
+<div id="upgradeNotice" class="upgrade-notice" hidden aria-live="polite">
+  <div class="upgrade-card">
+    <div class="upgrade-rail"></div>
+    <div class="upgrade-head">
+      <span class="upgrade-badge">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
+      </span>
+      <span class="upgrade-title" id="upgradeTitle">升级完成</span>
+      <button class="upgrade-x" id="upgradeNoticeClose" type="button" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div class="upgrade-versions">
+      <span class="uv-chip uv-from" id="upgradeFrom">v0.0.0</span>
+      <span class="uv-arrow" aria-hidden="true">
+        <svg width="16" height="10" viewBox="0 0 16 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5h13M10.5 1.5 14 5l-3.5 3.5"/></svg>
+      </span>
+      <span class="uv-chip uv-to" id="upgradeTo">v0.0.0</span>
+    </div>
+    <div class="upgrade-meta">
+      <span id="upgradeTime"></span>
+      <span class="upgrade-author">Made by <b>Qin_zzq</b></span>
+    </div>
+    <div class="upgrade-actions">
+      <button class="btn btn-primary upgrade-btn" id="upgradeNoticeOk" type="button">知道了</button>
+      <button class="btn btn-secondary upgrade-btn" id="upgradeNoticeChangelog" type="button">更新内容</button>
+    </div>
+    <div class="upgrade-timer"><i id="upgradeTimerBar"></i></div>
+  </div>
+</div>
+
+<!-- 更新内容：主界面内浮窗（不跳浏览器），正文由 C# 从发布说明下发 -->
+<div id="changelogOverlay" class="terms-overlay changelog-overlay" hidden>
+  <div class="terms-panel changelog-panel">
+    <div class="terms-head">
+      <h2 id="changelogTitle">本次更新内容</h2>
+      <button class="btn btn-secondary" id="changelogCloseBtn" type="button">关闭</button>
+    </div>
+    <div class="terms-body" id="changelogBody"></div>
+  </div>
+</div>
+
 <!-- Toast 容器 -->
 <div id="toastContainer" class="toast-container"></div>
 <script src="app.js" defer></script>

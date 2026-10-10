@@ -61,7 +61,17 @@ namespace SeewoAutoLogin.Services
                 else
                 {
                     var name = Path.GetFileName(downloadedPath);
-                    // 下载文件名是 SeewoAutoLogin_Setup_vX.exe 之类，统一改成程序本身的文件名
+
+                    // 便携版更新包必须是「免安装」形态。Inno 安装包的文件名同样以 SeewoAutoLogin 开头，
+                    // 一旦被当成主程序复制进来，替换脚本就会把安装器摆进解压目录并启动它 ——
+                    // 用户下次双击看到的是安装向导，程序等于被换坏。这种包直接拒绝。
+                    if (name.StartsWith("SeewoAutoLogin_Setup", StringComparison.OrdinalIgnoreCase))
+                    {
+                        log?.Invoke($"[Portable] 拿到的不是便携版更新包（{name}），放弃自更新");
+                        return null;
+                    }
+
+                    // 下载文件名是 SeewoAutoLogin_v1.14.12.exe 之类，统一改成程序本身的文件名
                     if (name.StartsWith("SeewoAutoLogin", StringComparison.OrdinalIgnoreCase) &&
                         name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
                         !name.Equals("SeewoAutoLogin.exe", StringComparison.OrdinalIgnoreCase))
@@ -137,8 +147,21 @@ namespace SeewoAutoLogin.Services
                 sb.AppendLine("  if not errorlevel 1 goto done");
                 sb.AppendLine("  ping -n 2 127.0.0.1 >nul");
                 sb.AppendLine(")");
-                sb.AppendLine("echo [%date% %time%] 覆盖失败，保留备份，重新启动原程序 >> \"%LOG%\"");
-                // 替换失败也必须把程序还回去：用户不该因为一次更新失败就失去可用的程序
+                // 覆盖失败时目录可能已经被改了一半（新 exe 配着旧依赖）。备份在覆盖之前做的，
+                // 所以先用它还原成更新前的那一份再启动 —— 否则「还回去」的其实是个半新半旧的程序，
+                // 比直接失败更难排查。
+                sb.AppendLine("echo [%date% %time%] 覆盖失败，正在用备份还原 >> \"%LOG%\"");
+                sb.AppendLine("for /l %%i in (1,1,15) do (");
+                sb.AppendLine("  xcopy /E /Y /I \"%BAK%\\*\" \"%DST%\\\" >> \"%LOG%\" 2>&1");
+                sb.AppendLine("  if not errorlevel 1 goto restored");
+                sb.AppendLine("  ping -n 2 127.0.0.1 >nul");
+                sb.AppendLine(")");
+                sb.AppendLine("echo [%date% %time%] 还原失败，完整备份保留在 %BAK% >> \"%LOG%\"");
+                sb.AppendLine("goto relaunch");
+                sb.AppendLine(":restored");
+                sb.AppendLine("echo [%date% %time%] 已还原到更新前的版本 >> \"%LOG%\"");
+                sb.AppendLine(":relaunch");
+                // 无论还原成没成功都把程序还回去：用户不该因为一次更新失败就失去可用的程序
                 sb.AppendLine("start \"\" \"%EXE%\"");
                 sb.AppendLine("exit /b 1");
                 sb.AppendLine(":done");

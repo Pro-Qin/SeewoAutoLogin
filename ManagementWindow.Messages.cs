@@ -87,6 +87,7 @@ namespace SeewoAutoLogin
                     case "open-external": HandleOpenExternal(root); break;
                     case "download-update": HandleDownloadUpdate(); break;
                     case "cancel-download": HandleCancelDownload(); break;
+                    case "debug-upgrade-notice": await HandleDebugUpgradeNoticeAsync(); break;
                 }
             }
             catch (Exception ex) { Debug.WriteLine($"[WebView] msg error: {ex.Message}"); }

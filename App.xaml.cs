@@ -65,6 +65,12 @@ namespace SeewoAutoLogin
         private bool _isPostUpdateBoot;
         /// <summary>静默更新退出时跳过 hosts 恢复，避免安装期间希沃请求落空。</summary>
         private bool _skipHostsRestoreOnExit;
+        /// <summary>
+        /// 网关是否因为「非管理员」这一预期原因没能启动。
+        /// 更新后的健康确认必须放行这种情况：否则普通权限运行的用户每次升级都会被回滚保护判定为「新版不健康」，
+        /// 装好又被换回旧版，来回折腾。
+        /// </summary>
+        private bool _gatewayDegradedDueToPermissions;
         /// <summary>后台静默更新是否正在运行（0/1，Interlocked 保护）。</summary>
         /// <summary>希沃客户端版本变化检测结果（启动时检测一次，供主界面首次显示时提示）</summary>
         private Services.SeewoVersionCheckResult _seewoVersionChange;
@@ -538,6 +544,7 @@ namespace SeewoAutoLogin
                 else
                 {
                     WriteDiagnosticLog("[Gateway] 以普通权限运行，本地 SSO 网关未启动（预期内的降级状态，不弹窗）");
+                    _gatewayDegradedDueToPermissions = true;
                     try { _trayIcon?.SetStatusText("需要管理员权限才能启用快捷登录"); } catch { }
                 }
             }
@@ -781,15 +788,25 @@ namespace SeewoAutoLogin
             Shutdown();
         }
 
-        /// <summary>更新后健康确认：60 秒内确认网关与配置可用，通过则取消回滚保护。</summary>
+        /// <summary>
+        /// 更新后健康确认：60 秒内确认网关可用就撤掉回滚保护。
+        ///
+        /// 判据必须排除「本来就不该起来」的情况：非管理员运行时网关启动失败是预期内的降级
+        /// （用户在提权被拒时主动选了以降级模式继续用），不算新版本不健康 —— 否则这类机器每次升级
+        /// 都会被 watcher 在超时后回滚，装上又被换回旧版。
+        /// </summary>
         private async Task ConfirmUpdateHealthAsync()
         {
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(60));
-                var healthy = _gateway?.IsRunning == true && _config != null;
+
+                var expectedDowngrade = _gatewayDegradedDueToPermissions && !IsAdministrator();
+                var healthy = (_gateway?.IsRunning == true || expectedDowngrade) && _config != null;
                 if (healthy)
                 {
+                    if (expectedDowngrade && _gateway?.IsRunning != true)
+                        WriteDiagnosticLog("[Update] 健康确认：非管理员运行，网关未启动属预期内降级，按健康处理");
                     Services.UpdateHealthGuard.ConfirmHealthy(WriteDiagnosticLog);
                 }
                 else

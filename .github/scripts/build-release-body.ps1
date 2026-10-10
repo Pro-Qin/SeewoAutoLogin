@@ -7,6 +7,9 @@ $tag = "v$version"
 Write-Host "发布版本: $tag"
 
 # 从 CHANGELOG.md 取出 “## vX.Y.Z” 到下一个 “## ” 之间的内容
+# 注意：正文里的「## 本次更新（$tag）」标题会被客户端解析（UpdateChecker.ExtractChangelog），
+# 用于软件内「更新内容」浮窗。改这个标题必须同步改那里的正则，否则客户端只会退化到
+# 「取所有 - 开头的行」这个兜底分支。
 $notes = ''
 $capture = $false
 foreach ($line in Get-Content CHANGELOG.md -Encoding UTF8) {
