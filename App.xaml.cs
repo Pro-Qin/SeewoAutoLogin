@@ -619,6 +619,8 @@ namespace SeewoAutoLogin
             if (startMinimized)
             {
                 try { _trayIcon?.SetStatusText(Strings.StartMinimized); } catch { }
+                // 主界面不会自动打开：桌面提醒是用户唯一能直接看到「已经升级」的入口
+                if (!safeMode) _ = ShowDesktopUpgradeNoticeIfNeededAsync();
             }
             else
             {

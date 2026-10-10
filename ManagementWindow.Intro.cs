@@ -27,8 +27,12 @@ namespace SeewoAutoLogin
         /// </summary>
         private async Task PlayIntroIfNeededAsync()
         {
-            if (_app == null || _app.IntroPlayed)
+            // 性能模式下不做开场动画：它要连续改 transform / opacity 并等界面就绪，
+            // 在教室一体机这类机器上纯粹是负担，直接露出界面更实在。
+            if (_app == null || _app.IntroPlayed || _app.Config.PerformanceMode)
             {
+                if (_app != null && !_app.IntroPlayed && _app.Config.PerformanceMode)
+                    _app.WriteDiagnosticLog("[Intro] 性能模式：跳过开场动画");
                 IntroOverlay.Visibility = Visibility.Collapsed;
                 return;
             }

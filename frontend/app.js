@@ -10,6 +10,7 @@ try {
 
 // ===== App State =====
 let state = { currentPage:'accounts', accounts:[], selectedId:null, config:{}, qrActive:false, needsPassword:false, particles:true,
+  performanceMode:false,
   maxVisible:6, status:null, health:{}, backupsLoading:false, filterTag:'' };
 
 // 生效区账号上限：由 init 消息 config.maxVisibleAccounts 下发，缺省 6
@@ -23,6 +24,7 @@ function applyConfig(cfg) {
   const n = parseInt(cfg.maxVisibleAccounts, 10);
   state.maxVisible = (isFinite(n) && n > 0) ? n : maxVisible();
   updateLimitHint();
+  applyPerformanceMode(!!cfg.performanceMode);
 }
 function updateLimitHint() {
   const hint = document.getElementById('activeLimitHint');
@@ -108,6 +110,11 @@ function handleCSharpMessage(raw) {
       if (msg.restoreHostsOnExit!==undefined) document.getElementById('restoreHostsOnExitCheck').checked = msg.restoreHostsOnExit;
       if (msg.autoRepairEnabled!==undefined) document.getElementById('autoRepairCheck').checked = msg.autoRepairEnabled;
       if (msg.autoShowOverlay!==undefined) document.getElementById('autoShowOverlayCheck').checked = msg.autoShowOverlay;
+      if (msg.performanceMode!==undefined) {
+        const perfBox = document.getElementById('perfModeCheck');
+        if (perfBox) perfBox.checked = !!msg.performanceMode;
+        applyPerformanceMode(!!msg.performanceMode);
+      }
       if (msg.autoCheckUpdate!==undefined) document.getElementById('autoCheckUpdateCheck').checked = msg.autoCheckUpdate;
       if (msg.autoInstallAfterDownload!==undefined) setAutoInstallSwitch(msg.autoInstallAfterDownload);
       break;
@@ -603,6 +610,7 @@ document.addEventListener('change', function(e) {
     case 'rotationGroupSize': send({type:'update-setting', key:'userListRotationGroupSize', value:parseInt(e.target.value)}); break;
     case 'tagFilter': setTagFilter(e.target.value); break;
     case 'particleToggle': toggleParticles(e.target.checked); break;
+    case 'perfModeCheck': setPerformanceMode(e.target.checked); break;
   }
 });
 function setPassword() { const p = document.getElementById('newPasswordInput').value; if(p){send({type:'set-password',password:p});document.getElementById('newPasswordInput').value='';} }
@@ -1805,4 +1813,30 @@ bindClick('changelogCloseBtn', closeChangelog);
     hideUpgradeNotice();
   });
 })();
+
+// ===== 性能模式 =====
+// 关掉耗性能的持续动效与一次性过渡。规则本体在 styles.css 的 body.perf-lite 段
+// （一条规则覆盖所有组件）；这里只负责三件事：挂 / 摘那个类、停 / 启粒子、
+// 以及让界面记住当前状态，供其它逻辑判断。
+function applyPerformanceMode(on) {
+  state.performanceMode = !!on;
+  document.body.classList.toggle('perf-lite', !!on);
+
+  if (on) {
+    // 粒子是持续重绘，开销最大，必须真的停掉（CSS 管不到 canvas）
+    stopParticles();
+  } else if (state.particles !== false && particleCanvas) {
+    startParticles();
+  }
+}
+
+// 设置页开关：先作用于当前界面，再落盘（与其它开关同一套路）
+function setPerformanceMode(on) {
+  applyPerformanceMode(on);
+  send({ type: 'update-setting', key: 'performanceMode', value: !!on });
+  showToast(on ? '性能模式已开启：已关闭大量界面动效' : '性能模式已关闭：动效恢复', 'info');
+}
+
+// 桌面级提醒预览：由 C# 弹一个独立窗口，与主界面无关
+function debugDesktopNotice() { send({ type: 'debug-desktop-notice' }); }
 

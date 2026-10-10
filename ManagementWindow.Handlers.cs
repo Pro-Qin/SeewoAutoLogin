@@ -208,6 +208,10 @@ namespace SeewoAutoLogin
                 case "restoreHostsOnExit": _app.Config.RestoreHostsOnExit = val.GetBoolean(); break;
                 case "autoRepairEnabled": _app.Config.AutoRepairEnabled = val.GetBoolean(); break;
                 case "autoShowOverlay": _app.Config.AutoShowOverlay = val.GetBoolean(); break;
+                case "performanceMode":
+                    _app.Config.PerformanceMode = val.GetBoolean();
+                    _app.WriteDiagnosticLog("[Perf] 性能模式：" + (_app.Config.PerformanceMode ? "已开启（关闭大量界面动效）" : "已关闭"));
+                    break;
                 case "autoCheckUpdate": _app.Config.AutoCheckUpdate = val.GetBoolean(); break;
                 case "autoInstallAfterDownload":
                     _app.Config.AutoInstallAfterDownload = val.GetBoolean();
