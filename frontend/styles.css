@@ -1167,3 +1167,109 @@ nav { position: relative; }
 .addwrap.exp .side { padding-left: 32px; padding-right: 32px; }
 .addwrap.exp .side + .side { padding-left: 32px; }
 
+/* ===== 升级完成提醒（右下角滑入卡片）=====
+   动效分工：外层 .upgrade-notice 负责滑入 / 滑出与整体位移（transition），
+   内层 .upgrade-card 负责停留期间的轻微浮动（animation）。
+   若把两者作用在同一个元素的 transform 上会互相覆盖，所以分层处理。 */
+.upgrade-notice{
+  position:fixed; right:24px; bottom:24px; z-index:260;
+  width:326px; pointer-events:auto;
+  /* 起始位置在屏幕右侧之外，配合 .show 形成滑入；用固定像素而非 calc，兼容 Win7 上的旧内核 */
+  transform:translate3d(362px, 14px, 0) scale(.94);
+  opacity:0;
+  transition:transform 620ms cubic-bezier(.22,1,.36,1),
+             opacity 420ms cubic-bezier(.22,1,.36,1);
+  will-change:transform,opacity;
+}
+.upgrade-notice[hidden]{display:none}
+.upgrade-notice.show{transform:translate3d(0,0,0) scale(1); opacity:1}
+/* 悬停时轻微抬起，暗示可以点；同时暂停浮动，避免两个 transform 打架 */
+.upgrade-notice.show:hover{transform:translate3d(0,-5px,0) scale(1.012)}
+.upgrade-notice.show:hover .upgrade-card{animation-play-state:paused}
+
+.upgrade-card{
+  position:relative; overflow:hidden;
+  padding:14px 16px 13px;
+  border-radius:16px;
+  border:1px solid rgba(0,200,128,.30);
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(0,200,128,.20), transparent 58%),
+    linear-gradient(180deg, #2E2E31 0%, #262628 100%);
+  box-shadow:0 18px 48px rgba(0,0,0,.56),
+             0 1px 0 rgba(255,255,255,.07) inset,
+             0 0 0 1px rgba(255,255,255,.04) inset;
+  animation:upgradeFloat 4.4s ease-in-out 900ms infinite;
+  will-change:transform;
+}
+@keyframes upgradeFloat{
+  0%,100%{transform:translate3d(0,0,0)}
+  50%{transform:translate3d(0,-4px,0)}
+}
+/* 左侧竖光条：绿色渐变，把「升级成功」这句说清楚 */
+.upgrade-rail{position:absolute; left:0; top:0; bottom:0; width:3px;
+  background:linear-gradient(180deg,#3FE8A8,#00A86B); opacity:.9}
+/* 顶部扫光：入场时掠过一次 */
+.upgrade-card::after{
+  content:''; position:absolute; top:0; left:-40%; width:40%; height:100%;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.14),transparent);
+  animation:upgradeSheen 1.5s cubic-bezier(.22,1,.36,1) 420ms 1 both;
+}
+@keyframes upgradeSheen{from{left:-40%}to{left:120%}}
+
+.upgrade-head{display:flex;align-items:center;gap:9px}
+.upgrade-badge{
+  width:24px;height:24px;flex:0 0 auto;border-radius:8px;display:grid;place-items:center;
+  color:#04160F;background:linear-gradient(135deg,#3FE8A8,#00C880);
+  box-shadow:0 4px 14px rgba(0,200,128,.42);
+}
+.upgrade-title{flex:1;min-width:0;font-size:13.5px;font-weight:660;color:var(--text-primary);letter-spacing:.01em}
+.upgrade-x{
+  flex:0 0 auto;width:22px;height:22px;border:none;border-radius:7px;cursor:pointer;
+  background:rgba(255,255,255,.06);color:var(--text-tertiary);
+  font:inherit;font-size:14px;line-height:1;
+  transition:background .18s ease,color .18s ease,transform .18s cubic-bezier(.23,1,.32,1);
+}
+.upgrade-x:hover{background:rgba(255,255,255,.13);color:var(--text-primary);transform:scale(1.06)}
+
+.upgrade-versions{display:flex;align-items:center;gap:8px;margin:12px 0 0 0}
+.uv-chip{
+  font-family:var(--font-mono);font-size:11.5px;line-height:1;padding:6px 9px;border-radius:8px;
+  border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);color:var(--text-secondary);
+  white-space:nowrap;
+}
+.uv-chip.uv-to{
+  color:#04160F;font-weight:700;border-color:transparent;
+  background:linear-gradient(135deg,#00E195,#00A86B);
+  box-shadow:0 4px 16px rgba(0,200,128,.36);
+}
+.uv-arrow{color:var(--text-tertiary);display:flex;align-items:center}
+
+.upgrade-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;
+  font-size:11.5px;color:var(--text-tertiary)}
+.upgrade-author b{color:#3FD9A0;font-weight:640;letter-spacing:.01em}
+
+.upgrade-actions{display:flex;gap:8px;margin-top:13px}
+.upgrade-btn{flex:1;height:32px;min-width:0;font-size:12.5px;padding:0 10px}
+
+/* 10 秒自动滑出的倒计时：细线贴在卡片底边上（卡片已 overflow:hidden，由圆角自然裁切） */
+.upgrade-timer{position:absolute;left:0;right:0;bottom:0;height:2px;
+  background:rgba(255,255,255,.07);overflow:hidden}
+.upgrade-timer i{display:block;height:100%;width:100%;transform-origin:left center;
+  background:linear-gradient(90deg,#00C880,#3FE8A8)}
+
+@media (prefers-reduced-motion:reduce){
+  .upgrade-notice{transition-duration:1ms;transform:none}
+  .upgrade-card{animation:none}
+  .upgrade-card::after{animation:none;display:none}
+}
+
+/* ===== 更新内容浮窗：复用用户协议浮窗的骨架，只调列表排版 ===== */
+.changelog-overlay .changelog-panel{max-width:620px;height:auto;max-height:80vh}
+.cl-head{font-size:13px;font-weight:700;color:#fff;margin:16px 0 6px}
+.cl-head:first-child{margin-top:0}
+.cl-item{position:relative;padding-left:16px;margin:6px 0;line-height:1.85}
+.cl-item::before{content:'';position:absolute;left:3px;top:.72em;width:5px;height:5px;border-radius:50%;
+  background:#00C880;box-shadow:0 0 8px rgba(0,200,128,.6)}
+.cl-p{margin:6px 0;line-height:1.85}
+.cl-empty{color:rgba(255,255,255,.42)}
+

@@ -505,18 +505,20 @@ namespace SeewoAutoLogin.Services
                 info.SetupUrl = BuildSetupUrl(info.Tag, info.Version);
 
             // 便携版包同样推导：主干发布的是单文件版 SeewoAutoLogin.exe
-            // （win7 兼容分支发布的是整包 zip，文件名规则在该分支自己的 UpdateChecker 里）
+            // （win7 兼容分支发布的是整包 zip，文件名规则在该分支自己的 UpdateChecker 里覆盖）
             if (string.IsNullOrEmpty(info.PortableUrl) && !string.IsNullOrWhiteSpace(info.Tag))
             {
-                info.PortableUrl =
-                    $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{info.Tag}/SeewoAutoLogin.exe";
+                info.PortableUrl = BuildPortableUrl(info.Tag, info.Version);
             }
 
-            // 便携版的最后兜底：实在没有便携包就用安装包，并留日志说明
-            // （装进 Program Files 总好过完全不更新，而且日志里能看出走了哪条路）
+            // 便携版**不再**回退到安装包。
+            // 便携版的更新方式是「整包替换自己」，而安装包进到 staging 后会被当成主程序
+            // （见 PortableUpdater.PrepareStaging）：替换脚本会把 Inno 安装器摆进解压目录并启动它，
+            // 用户下次双击看到的是安装向导 —— 程序等于被换坏了。
+            // 宁可这一轮不更新（下面置空 → 调用方改为打开发布页让用户手动取便携包）。
             if (string.IsNullOrEmpty(info.PortableUrl))
             {
-                info.PortableUrl = info.SetupUrl;
+                log?.Invoke("[Update] 该版本没有便携版更新包，便携版将改为手动下载");
             }
 
             // 直链最终校验：不通过就置空，并让用户自己去发布页下载（消费端会用 Process.Start 打开该地址）
@@ -531,6 +533,13 @@ namespace SeewoAutoLogin.Services
             {
                 log?.Invoke($"[Update] 单文件版下载地址未通过可信校验，已忽略：{info.ExeUrl}");
                 info.ExeUrl = "";
+            }
+
+            // 便携版直链同样要过一遍：它的消费端也会把文件落到本机并交给替换脚本执行
+            if (!string.IsNullOrEmpty(info.PortableUrl) && !IsTrustedDownloadUrl(info.PortableUrl))
+            {
+                log?.Invoke($"[Update] 便携版下载地址未通过可信校验，已置空并改用发布页：{info.PortableUrl}");
+                info.PortableUrl = "";
             }
 
             return info;
@@ -767,6 +776,17 @@ namespace SeewoAutoLogin.Services
         private static string BuildSetupUrl(string tag, string version)
             => $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{tag}/SeewoAutoLogin_Setup_v{version}{SetupFileNameSuffix}.exe";
 
+        /// <summary>
+        /// 便携版更新包直链（API 没有返回资源时按发布规则推导）。
+        ///
+        /// 本分支（net48）不支持单文件发布，免安装版是**整包 zip**，
+        /// 文件名与 release.yml 里 Compress-Archive 的产物一致（SeewoAutoLogin_v{版本}_Win7_Portable.zip）。
+        /// 注意不能沿用主干的 SeewoAutoLogin.exe —— 本分支根本不发布这个文件，
+        /// 便携版会一直下载失败（表现为「检查得到更新、却永远装不上」）。
+        /// </summary>
+        private static string BuildPortableUrl(string tag, string version)
+            => $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{tag}/SeewoAutoLogin_v{version}_Win7_Portable.zip";
+
         private static HttpClient CreateClient()
         {
             var handler = new HttpClientHandler();
@@ -829,6 +849,8 @@ namespace SeewoAutoLogin.Services
         {
             if (string.IsNullOrWhiteSpace(body)) return "";
 
+            // 标题格式与 .github/scripts/build-release-body.ps1 生成的「## 本次更新（$tag）」严格对应；
+            // 改那个标题时必须同步改这里，否则会静默退化成下面的兜底分支（取所有「- 」开头的行）。
             var section = System.Text.RegularExpressions.Regex.Match(
                 body,
                 @"^##\s*本次更新[^\n]*\n(?<c>[\s\S]*?)(?=\n##\s|\n---\s*\n\s*##|\z)",

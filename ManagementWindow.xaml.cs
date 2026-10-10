@@ -158,6 +158,29 @@ namespace SeewoAutoLogin
 
             // 启动时自动检查更新（仅一次，失败静默）
             if (_app.Config.AutoCheckUpdate) await HandleCheckUpdateAsync(manual: false);
+
+            // 后台自动更新完成后的第一次打开界面：右下角提示一次「升级完成」
+            _ = ShowUpgradeNoticeAfterIntroAsync();
+        }
+
+        /// <summary>
+        /// 等开场遮罩收起后再弹升级提醒：遮罩是不透明的，早弹等于把滑入动画演给遮罩看。
+        /// 只等一个上限时间，遮罩本身出问题时也不会让提醒永远不出现。
+        /// </summary>
+        private async Task ShowUpgradeNoticeAfterIntroAsync()
+        {
+            try
+            {
+                var deadline = DateTime.UtcNow.AddSeconds(6);
+                while (DateTime.UtcNow < deadline && IntroOverlay.Visibility == Visibility.Visible)
+                    await Task.Delay(150);
+                await Task.Delay(350);   // 让主界面先稳定一帧，避免和入场动画抢注意力
+                await SendUpgradeNoticeIfNeededAsync();
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Update] 升级提醒调度失败: {ex.Message}");
+            }
         }
 
         private static string AppVersion

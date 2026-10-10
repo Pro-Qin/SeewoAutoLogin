@@ -49,9 +49,27 @@ namespace SeewoAutoLogin
 
         private async Task HandleCheckUpdateAsync(bool manual)
         {
+            // 界面每次加载都会自动查一次，关掉窗口再打开又会重来一遍，没必要反复打接口：
+            // 自动检查 1 小时内只做一次（与后台轮询同节奏）。手动点「检查更新」不受限制。
+            if (!manual)
+            {
+                var last = _app.Config.LastAutoUpdateCheckUtc;
+                if (last.HasValue && DateTimeOffset.UtcNow - last.Value < TimeSpan.FromHours(1))
+                {
+                    _app.WriteDiagnosticLog($"[Update] 距上次自动检查不足 1 小时，跳过本次（上次 {last.Value.ToLocalTime():yyyy-MM-dd HH:mm}）");
+                    return;
+                }
+            }
+
             if (manual) await SendToJs(new { type = "update-status", text = "正在检查更新…", state = "" });
             if (!manual && _updateChecked) return;
             _updateChecked = true;
+
+            if (!manual)
+            {
+                _app.Config.LastAutoUpdateCheckUtc = DateTimeOffset.UtcNow;
+                _app.SaveConfig();
+            }
 
             var current = AppVersion;
             try
@@ -119,6 +137,90 @@ namespace SeewoAutoLogin
                 });
             }
         }
+
+        /// <summary>
+        /// 后台自动更新完成后，第一次打开主界面时提示一次「升级完成」。
+        ///
+        /// 只提示一次：消息发出后立即把标记落盘，避免每次打开界面都弹。
+        /// 版本没到位（安装被安全软件拦下、被回滚、装到了别的目录）时什么都不做 ——
+        /// 否则会出现「说升到了 X、版本却还是旧的」这种自相矛盾的提示。
+        /// </summary>
+        internal async Task SendUpgradeNoticeIfNeededAsync()
+        {
+            try
+            {
+                var cfg = _app?.Config;
+                if (cfg == null || cfg.UpgradeNoticeShown) return;
+
+                var to = UpdateChecker.NormalizeVersion(cfg.UpgradeNoticeToVersion);
+                if (string.IsNullOrWhiteSpace(to)) return;
+
+                var current = AppVersion;
+                if (UpdateChecker.CompareVersions(current, to) < 0)
+                {
+                    _app.WriteDiagnosticLog($"[Update] 跳过升级提醒：当前 {current} 仍低于记录的 {to}");
+                    return;
+                }
+
+                var from = UpdateChecker.NormalizeVersion(cfg.UpgradeNoticeFromVersion);
+                // 记录里的起始版本已经不低于当前版本：这次对比失去意义（例如用户之后又手动装了更新的版本），
+                // 只显示当前版本，不编造起止关系。
+                if (!string.IsNullOrWhiteSpace(from) && UpdateChecker.CompareVersions(from, current) >= 0)
+                    from = "";
+
+                await SendToJs(BuildUpgradeNoticePayload(from, current, cfg.UpgradeNoticeAtUtc, cfg.UpgradeNoticeNotes, false));
+                _app.WriteDiagnosticLog($"[Update] 已提示升级完成：{(string.IsNullOrWhiteSpace(from) ? "（无起始版本记录）" : from)} → {current}");
+
+                cfg.UpgradeNoticeShown = true;
+                _app.SaveConfig();
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Update] 发送升级提醒失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 设置页的「显示升级提醒」：只为调试动效与文案，展示一次即可，
+        /// 不写入任何状态（否则一次预览就把真正的升级提示消耗掉了）。
+        /// </summary>
+        private async Task HandleDebugUpgradeNoticeAsync()
+        {
+            try
+            {
+                var cfg = _app?.Config;
+                var current = AppVersion;
+
+                var from = UpdateChecker.NormalizeVersion(cfg?.UpgradeNoticeFromVersion);
+                if (!string.IsNullOrWhiteSpace(from) && UpdateChecker.CompareVersions(from, current) >= 0)
+                    from = "";
+
+                var notes = cfg?.UpgradeNoticeNotes;
+                if (string.IsNullOrWhiteSpace(notes))
+                    notes = "（调试预览）本次没有记录到更新内容。\n真实的后台自动更新完成之后，这里会显示该版本的改动清单。";
+
+                await SendToJs(BuildUpgradeNoticePayload(from, current, cfg?.UpgradeNoticeAtUtc, notes, true));
+                _app?.WriteDiagnosticLog("[Update] 调试预览升级提醒（不影响一次性提示状态）");
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Update] 调试预览升级提醒失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 升级提醒的下发内容。时间在 C# 侧就格式化成当地时间，前端不必处理时区与解析差异。
+        /// </summary>
+        private static object BuildUpgradeNoticePayload(string from, string to, DateTimeOffset? atUtc, string notes, bool debug)
+            => new
+            {
+                type = "upgrade-notice",
+                from = from ?? "",
+                to = to ?? "",
+                atText = (atUtc ?? DateTimeOffset.UtcNow).ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+                notes = notes ?? "",
+                debug = debug
+            };
 
         /// <summary>允许在前端点击后打开的外部地址（仅 https，且限定这些主机）</summary>
         private static readonly string[] TrustedExternalHosts =
@@ -195,12 +297,31 @@ namespace SeewoAutoLogin
             }
 
             var info = _latestUpdate;
-            if (info == null || string.IsNullOrWhiteSpace(info.SetupUrl))
+            if (info == null)
             {
-                _app.WriteDiagnosticLog("[Update] 没有可用的下载直链，改为打开发布页");
+                _app.WriteDiagnosticLog("[Update] 没有可用的更新信息，改为打开发布页");
                 OpenExternal(UpdateChecker.ReleasesPageUrl);
                 return;
             }
+
+            // 按部署形态分流：便携版必须下载便携包并自己替换自己。
+            // 若这里统一下安装包，便携版用户会被装进 Program Files，而他仍在跑解压目录里的旧程序 ——
+            // 表现就是「一直提示更新、版本永远是老的」。后台路径已经这么分流了，手动入口不能例外。
+            var kind = UpdateChannel.Detect();
+            var isPortable = kind == InstallKind.Portable;
+            var downloadUrl = isPortable ? info.PortableUrl : info.SetupUrl;
+            // 便携版要拿便携包自己的哈希：用安装包哈希去校验便携包必然失败
+            var downloadSha = isPortable && !string.IsNullOrWhiteSpace(info.PortableSha256)
+                ? info.PortableSha256
+                : info.Sha256;
+
+            if (string.IsNullOrWhiteSpace(downloadUrl))
+            {
+                _app.WriteDiagnosticLog($"[Update] 没有可用的{(isPortable ? "便携版更新包" : "安装包")}直链，改为打开发布页");
+                OpenExternal(UpdateChecker.ReleasesPageUrl);
+                return;
+            }
+            _app.WriteDiagnosticLog($"[Update] 手动更新：{UpdateChannel.Describe(kind)}，下载 {downloadUrl}");
 
             // 每次下载配一个独立的取消源，界面上的「取消下载」会取消它
             _downloadCts?.Dispose();
@@ -223,8 +344,8 @@ namespace SeewoAutoLogin
                 });
 
                 var localPath = await DownloadAccelerator.DownloadAsync(
-                    info.SetupUrl,
-                    info.Sha256,
+                    downloadUrl,
+                    downloadSha,
                     progress,
                     message => _app.WriteDiagnosticLog($"[Update] {message}"),
                     token);
@@ -233,6 +354,13 @@ namespace SeewoAutoLogin
 
                 _app.WriteDiagnosticLog($"[Update] 安装包已下载并校验通过: {localPath}");
                 _app.TrayIcon?.SetStatusText("更新包下载完成");
+
+                // 便携版没有安装向导可以交给用户：目录版必须整体替换，只能走自替换流程
+                if (isPortable)
+                {
+                    await RunPortableSelfUpdateAsync(localPath, info, downloadSha);
+                    return;
+                }
 
                 // 关掉自动安装时保持旧行为：把安装包交给用户，由他自己走安装向导
                 if (!_app.Config.AutoInstallAfterDownload)
@@ -273,6 +401,46 @@ namespace SeewoAutoLogin
                 _downloadCts?.Dispose();
                 _downloadCts = null;
             }
+        }
+
+        /// <summary>
+        /// 便携版手动更新：与后台路径共用同一套自替换流程（整理 staging → 备份 → 脚本替换 → 退出），
+        /// 区别只是由用户点按钮触发，所以进度要留在界面上，而不是只写日志。
+        /// </summary>
+        private async Task RunPortableSelfUpdateAsync(string localPath, UpdateInfo info, string downloadSha)
+        {
+            await SendToJs(new { type = "update-progress", state = "verifying", text = "便携版正在准备替换文件…" });
+
+            var staging = PortableUpdater.PrepareStaging(localPath, _app.WriteDiagnosticLog);
+            if (string.IsNullOrWhiteSpace(staging))
+            {
+                _app.WriteDiagnosticLog("[Update] 便携版更新包整理失败，改为打开发布页由用户手动下载");
+                await SendToJs(new { type = "update-progress", state = "error", text = "便携版更新包不可用，已为你打开发布页" });
+                OpenExternal(UpdateChecker.ReleasesPageUrl);
+                return;
+            }
+
+            // 待更新状态与后台路径保持一致：替换脚本马上要拉起，失败也不再自动重试
+            _app.Config.PendingUpdateVersion = info.Version;
+            _app.Config.PendingUpdatePath = localPath;
+            _app.Config.PendingUpdateSha256 = downloadSha;
+            _app.Config.PendingUpdateStage = UpdateStages.Installing;
+            _app.SaveConfig();
+
+            await SendToJs(new { type = "toast", text = "便携版即将替换文件并重新启动", level = "ok" });
+            await SendToJs(new { type = "update-progress", state = "installing", text = "正在替换便携版文件，程序即将退出…" });
+
+            if (!PortableUpdater.LaunchReplaceScript(staging, info.Version, _app.WriteDiagnosticLog))
+            {
+                _app.WriteDiagnosticLog("[Update] 便携版替换脚本未能启动，本次更新取消");
+                await SendToJs(new { type = "update-progress", state = "error", text = "替换脚本未能启动，程序保持原样" });
+                await SendToJs(new { type = "toast", text = "便携版替换未能启动，程序保持原样", level = "warn" });
+                return;
+            }
+
+            // 留出时间让上面的提示渲染出来：随后程序会自己退出，由脚本接手替换
+            await Task.Delay(900);
+            _app.BeginSilentUpdateExit();
         }
 
         /// <summary>静默安装是否已进入「启动安装器 + 退出」阶段（防止重复拉起安装器）</summary>

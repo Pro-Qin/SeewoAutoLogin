@@ -187,8 +187,11 @@ namespace SeewoAutoLogin.Services
 
                 _config.PendingUpdateVersion = info.Version;
                 _config.PendingUpdatePath = localPath;
-                _config.PendingUpdateSha256 = info.Sha256;
-                _config.PendingUpdateStage = "installing";
+                // 存**实际下载的那个包**的哈希：便携版下的是便携包，把安装包哈希写进来，
+                // 后续任何一次复核都会必然失败（续装分支会因此直接清状态）。
+                _config.PendingUpdateSha256 = downloadSha;
+                _config.PendingUpdateStage = UpdateStages.Installing;
+                RecordUpgradeNotice(info);
                 _saveConfig();
 
                 _setTrayStatus($"正在替换便携版 v{info.Version}");
@@ -218,7 +221,8 @@ namespace SeewoAutoLogin.Services
             _config.PendingUpdateSha256 = info.Sha256;
             // 直接标记成 installing（安装器紧接着就要拉起来了）。这样万一这次安装没生效，
             // 下次启动只会提示、不再重复安装 —— 否则就是安装—重启的循环。
-            _config.PendingUpdateStage = "installing";
+            _config.PendingUpdateStage = UpdateStages.Installing;
+            RecordUpgradeNotice(info);
             _saveConfig();
 
             _setTrayStatus($"正在静默安装 v{info.Version}");
@@ -246,6 +250,44 @@ namespace SeewoAutoLogin.Services
             }
             sinceMinutes = (DateTime.UtcNow - last).TotalMinutes;
             return sinceMinutes < 10;
+        }
+
+        /// <summary>更新内容写进配置时的长度上限：config.json 是整体重写的文本，不适合塞进整篇发布说明。</summary>
+        private const int MaxNoticeNotesChars = 4000;
+
+        /// <summary>
+        /// 记录本次升级的起止版本、时间与更新内容，供新版本第一次打开主界面时提示一次。
+        ///
+        /// 时机选在「即将安装 / 替换」这一刻：此时目标版本与更新内容都已确定，而程序马上要退出重启，
+        /// 新版本启动后就靠这份记录把「从什么版本升到了什么版本」讲清楚。
+        /// </summary>
+        private void RecordUpgradeNotice(UpdateInfo info)
+        {
+            try
+            {
+                if (info == null || string.IsNullOrWhiteSpace(info.Version)) return;
+
+                _config.UpgradeNoticeFromVersion = CurrentAppVersion;
+                _config.UpgradeNoticeToVersion = info.Version;
+                _config.UpgradeNoticeAtUtc = DateTimeOffset.UtcNow;
+                _config.UpgradeNoticeNotes = TrimNoticeNotes(info.Notes);
+                // 这是一次新的升级，允许再提示一次
+                _config.UpgradeNoticeShown = false;
+                _log($"[Update] 已记录升级提醒：{CurrentAppVersion} → {info.Version}");
+            }
+            catch (Exception ex)
+            {
+                _log($"[Update] 记录升级提醒失败: {ex.Message}");
+            }
+        }
+
+        private static string TrimNoticeNotes(string notes)
+        {
+            if (string.IsNullOrWhiteSpace(notes)) return "";
+            var text = notes.Trim();
+            return text.Length <= MaxNoticeNotesChars
+                ? text
+                : text.Substring(0, MaxNoticeNotesChars) + "\n…";
         }
 
         /// <summary>清空待更新状态并落盘。</summary>
@@ -284,9 +326,9 @@ namespace SeewoAutoLogin.Services
                 return false;
             }
 
-            if (!string.Equals(stage, "downloaded", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(stage, UpdateStages.Downloaded, StringComparison.OrdinalIgnoreCase))
             {
-                // 停留在 "installing"：上一次已经拉起过安装程序，但版本没变，说明这次静默安装没成功
+                // 停留在 installing：上一次已经拉起过安装程序，但版本没变，说明这次静默安装没成功
                 // （常见于安装被安全软件拦截、安装目录被占用）。这种情况**不再自动重试**，
                 // 只提示用户手动装，避免陷入安装—重启的死循环。
                 _log($"[Update] v{target} 的静默安装上次未生效（状态 {stage}），已停止自动重试；"

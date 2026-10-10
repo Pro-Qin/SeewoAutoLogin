@@ -60,6 +60,24 @@ namespace SeewoAutoLogin
         /// 单独记一份而且**不随待更新状态一起清理**：否则每次启动都会重新下载并安装同一个版本。
         /// </summary>
         public string FailedUpdateVersion { get; set; } = "";
+        /// <summary>
+        /// 升级提醒：本次后台升级的起始版本（升级前记录）。新版本第一次打开主界面时用它显示「从哪个版本升上来」；
+        /// 缺失或为 0 时界面只显示当前版本，不编造对比。
+        /// </summary>
+        public string UpgradeNoticeFromVersion { get; set; } = "";
+        /// <summary>升级提醒：本次后台升级的目标版本（用于确认这次升级是否真的到位）。</summary>
+        public string UpgradeNoticeToVersion { get; set; } = "";
+        /// <summary>升级提醒：升级落盘时间（UTC），界面上按当地时间展示。</summary>
+        public DateTimeOffset? UpgradeNoticeAtUtc { get; set; }
+        /// <summary>升级提醒：本次更新内容（发布说明里的「本次更新」段，已截断），供主界面内浮窗查看。</summary>
+        public string UpgradeNoticeNotes { get; set; } = "";
+        /// <summary>升级提醒：是否已经提示过。提示一次后置位，避免每次打开主界面都弹。</summary>
+        public bool UpgradeNoticeShown { get; set; }
+        /// <summary>
+        /// 最近一次「自动」检查更新的时间（UTC）。主界面每次加载都会自动查一次，关掉再打开会重来一遍；
+        /// 用它做节流，手动点「检查更新」不受影响。
+        /// </summary>
+        public DateTimeOffset? LastAutoUpdateCheckUtc { get; set; }
         /// <summary>自定义更新源（留空使用内置 GitHub API + jsDelivr 兜底）</summary>
         public string UpdateSource { get; set; } = "";
         /// <summary>本地 SSO 网关端口（24300 被占用时自动切换并记录在此）</summary>
