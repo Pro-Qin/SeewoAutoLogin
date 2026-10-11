@@ -155,6 +155,27 @@ namespace SeewoAutoLogin
             ChangelogHost.Visibility = _changelogOpen ? Visibility.Visible : Visibility.Collapsed;
             ChangelogButton.Content = _changelogOpen ? "收起" : "更新内容";
             // 展开后窗口高度变了，SizeChanged 会把卡片重新贴回右下角
+
+            // 用户正在读更新内容，就不该被 10 秒倒计时收走；收起后再恢复自动滑出
+            if (_changelogOpen) StopAutoClose();
+            else RestartAutoClose();
+        }
+
+        /// <summary>停掉自动滑出：展开更新内容后窗口要一直留着，等用户自己关。</summary>
+        private void StopAutoClose()
+        {
+            try { _autoCloseTimer.Stop(); } catch { }
+            TimerScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            TimerScale.ScaleX = 1;
+            TimerBarHost.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>收起更新内容后恢复自动滑出（重新从 10 秒算起）。</summary>
+        private void RestartAutoClose()
+        {
+            TimerBarHost.Visibility = Visibility.Visible;
+            StartCountdown();
+            _autoCloseTimer.Start();
         }
 
         /// <summary>滑出后关闭。只做位移，不做透明度渐变。</summary>

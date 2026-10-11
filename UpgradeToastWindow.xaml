@@ -12,22 +12,26 @@
         Topmost="True"
         ResizeMode="NoResize"
         WindowStartupLocation="Manual"
-        FontFamily="Microsoft YaHei UI"
-        UseLayoutRounding="True"
-        TextOptions.TextFormattingMode="Display">
+        FontFamily="Microsoft YaHei"
+        UseLayoutRounding="True">
+
+    <!-- 规格刻意与主界面内的提醒卡片（frontend/styles.css 的 .upgrade-card）对齐：
+         同样的字号档位、内边距、圆角与配色，两处看起来才是同一个东西。
+         WPF 与浏览器对中文字形的度量不同 —— 同样的磅值在 WPF 里看着更大更重，
+         所以这里的数值比 CSS 略小一档。 -->
 
     <Window.Resources>
         <!-- 关闭按钮：小、低调，悬停才亮起来 -->
         <Style x:Key="CloseButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="22"/>
-            <Setter Property="Height" Value="22"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Width" Value="20"/>
+            <Setter Property="Height" Value="20"/>
+            <Setter Property="FontSize" Value="11"/>
             <Setter Property="Foreground" Value="#66FFFFFF"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="bg" Background="#0FFFFFFF" CornerRadius="7">
+                        <Border x:Name="bg" Background="#0FFFFFFF" CornerRadius="6">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -43,8 +47,8 @@
 
         <!-- 主按钮：绿色实心 -->
         <Style x:Key="PrimaryButtonStyle" TargetType="Button">
-            <Setter Property="Height" Value="32"/>
-            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="#04160F"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -75,8 +79,8 @@
 
         <!-- 次要按钮：描边式 -->
         <Style x:Key="SecondaryButtonStyle" TargetType="Button">
-            <Setter Property="Height" Value="32"/>
-            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="Foreground" Value="#CCFFFFFF"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -101,14 +105,14 @@
 
         <Style x:Key="ChipStyle" TargetType="Border">
             <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Padding" Value="7,4"/>
             <Setter Property="Background" Value="#0BFFFFFF"/>
             <Setter Property="BorderBrush" Value="#17FFFFFF"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
     </Window.Resources>
 
-    <Grid Margin="16,14,16,14">
+    <Grid Margin="16,12,16,12">
         <!-- 滑入 / 滑出：只做位移，不做透明度渐变 -->
         <Grid.RenderTransform>
             <TranslateTransform x:Name="SlideX" X="392"/>
@@ -128,7 +132,7 @@
                     </LinearGradientBrush>
                 </Border.Background>
                 <Border.Effect>
-                    <DropShadowEffect Color="#000000" BlurRadius="30" ShadowDepth="8" Direction="270" Opacity="0.55"/>
+                    <DropShadowEffect Color="#000000" BlurRadius="26" ShadowDepth="7" Direction="270" Opacity="0.55"/>
                 </Border.Effect>
 
                 <Grid>
@@ -143,8 +147,8 @@
                     </Border>
 
                     <Grid>
-                        <StackPanel Margin="17,14,16,0">
-                            <!-- 头部 -->
+                        <StackPanel Margin="16,12,15,0">
+                            <!-- 头部：标题旁标注产品名 —— 桌面窗口独立于主界面，得让人知道是谁在说话 -->
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
@@ -152,7 +156,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Border Grid.Column="0" Width="24" Height="24" CornerRadius="8">
+                                <Border Grid.Column="0" Width="22" Height="22" CornerRadius="7">
                                     <Border.Background>
                                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                             <GradientStop Color="#3FE8A8" Offset="0"/>
@@ -163,13 +167,15 @@
                                           Stroke="#04160F" StrokeThickness="2.1"
                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                           StrokeLineJoin="Round"
-                                          Width="14" Height="14" Stretch="Uniform"
+                                          Width="13" Height="13" Stretch="Uniform"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
 
-                                <TextBlock Grid.Column="1" x:Name="TitleText" Text="升级完成"
-                                           Margin="9,0,0,0" VerticalAlignment="Center"
-                                           FontSize="13.5" FontWeight="SemiBold" Foreground="#FFFFFF"/>
+                                <TextBlock Grid.Column="1" x:Name="TitleText" Margin="9,0,0,0"
+                                           VerticalAlignment="Center" Foreground="#FFFFFF">
+                                    <Run Text="升级完成" FontSize="12.5" FontWeight="SemiBold"/>
+                                    <Run Text="   SeewoAutoLogin" FontSize="10.5" Foreground="#59FFFFFF"/>
+                                </TextBlock>
 
                                 <Button Grid.Column="2" x:Name="CloseButton" Content="✕"
                                         Style="{StaticResource CloseButtonStyle}"
@@ -177,38 +183,39 @@
                             </Grid>
 
                             <!-- 版本对比 -->
-                            <StackPanel x:Name="VersionRow" Orientation="Horizontal" Margin="0,12,0,0">
+                            <StackPanel x:Name="VersionRow" Orientation="Horizontal" Margin="0,10,0,0">
                                 <Border x:Name="FromChip" Style="{StaticResource ChipStyle}">
-                                    <TextBlock x:Name="FromText" FontFamily="Consolas" FontSize="11.5"
+                                    <TextBlock x:Name="FromText" FontFamily="Consolas" FontSize="11"
                                                Foreground="#B3FFFFFF"/>
                                 </Border>
-                                <TextBlock x:Name="ArrowText" Text="→" Margin="8,0,8,0"
-                                           VerticalAlignment="Center" FontSize="12"
+                                <TextBlock x:Name="ArrowText" Text="→" Margin="7,0,7,0"
+                                           VerticalAlignment="Center" FontSize="11"
                                            Foreground="#66FFFFFF"/>
-                                <Border x:Name="ToChip" CornerRadius="8" Padding="8,5">
+                                <Border x:Name="ToChip" CornerRadius="8" Padding="7,4">
                                     <Border.Background>
                                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                             <GradientStop Color="#00E195" Offset="0"/>
                                             <GradientStop Color="#00A86B" Offset="1"/>
                                         </LinearGradientBrush>
                                     </Border.Background>
-                                    <TextBlock x:Name="ToText" FontFamily="Consolas" FontSize="11.5"
+                                    <TextBlock x:Name="ToText" FontFamily="Consolas" FontSize="11"
                                                FontWeight="Bold" Foreground="#04160F"/>
                                 </Border>
                             </StackPanel>
 
                             <!-- 时间与署名 -->
-                            <Grid Margin="0,10,0,0">
+                            <Grid Margin="0,9,0,0">
                                 <TextBlock x:Name="TimeText" HorizontalAlignment="Left"
-                                           FontSize="11.5" Foreground="#66FFFFFF"/>
-                                <TextBlock HorizontalAlignment="Right" FontSize="11.5" Foreground="#66FFFFFF">
+                                           FontSize="11" Foreground="#66FFFFFF"/>
+                                <TextBlock HorizontalAlignment="Right" FontSize="11" Foreground="#66FFFFFF">
                                     Made by <Run Foreground="#3FD9A0" FontWeight="SemiBold">Qin_zzq</Run>
                                 </TextBlock>
                             </Grid>
 
-                            <!-- 更新内容：点「更新内容」后在这里展开，不开浏览器 -->
-                            <Border x:Name="ChangelogHost" Visibility="Collapsed" Margin="0,12,0,0"
-                                    CornerRadius="10" Background="#0AFFFFFF" Padding="12,10">
+                            <!-- 更新内容：点「更新内容」后在这里展开，不开浏览器。
+                                 展开后不再自动滑出，由用户自己关掉。 -->
+                            <Border x:Name="ChangelogHost" Visibility="Collapsed" Margin="0,10,0,0"
+                                    CornerRadius="10" Background="#0AFFFFFF" Padding="11,9">
                                 <ScrollViewer x:Name="ChangelogScroll" MaxHeight="200"
                                               VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Disabled">
@@ -217,7 +224,7 @@
                             </Border>
 
                             <!-- 按钮 -->
-                            <Grid Margin="0,13,0,12">
+                            <Grid Margin="0,11,0,10">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="8"/>
@@ -230,9 +237,9 @@
                             </Grid>
                         </StackPanel>
 
-                        <!-- 10 秒自动滑出的倒计时：贴卡片底边，由圆角裁切 -->
-                        <Border VerticalAlignment="Bottom" Height="2" Background="#12FFFFFF"
-                                CornerRadius="0,0,16,16">
+                        <!-- 10 秒自动滑出的倒计时：贴卡片底边。展开更新内容时整条收起（那时不再自动关闭）。 -->
+                        <Border x:Name="TimerBarHost" VerticalAlignment="Bottom" Height="2"
+                                Background="#12FFFFFF" CornerRadius="0,0,16,16">
                             <Rectangle Fill="#00C880" RenderTransformOrigin="0,0.5">
                                 <Rectangle.RenderTransform>
                                     <ScaleTransform x:Name="TimerScale" ScaleX="1"/>
