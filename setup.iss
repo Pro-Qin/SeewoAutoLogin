@@ -63,9 +63,18 @@ UninstallDisplayIcon={app}\SeewoAutoLogin.exe
 PrivilegesRequired=admin
 ; Win7 SP1 起（6.1.7601）。主干分支这里是 MinVersion=10.0.19041。
 MinVersion=6.1sp1
-; 产物是 x64，32 位系统直接拒绝，避免「装完打不开」
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+; 产物是 x64，32 位系统直接拒绝，避免「装完打不开」。
+;
+; ⚠ 这里必须写 x64，不要从主干抄 x64compatible：
+;   x64compatible 是 Inno Setup 6.3 新增的架构标识符，语义是「系统能运行 x64 二进制」，
+;   把 Arm64 Windows 11 上通过模拟运行 x64 的情况也算进来，判定时要在运行时查询系统支持的机器类型。
+;   本分支只服务 Win7 SP1 x64，用不到 Arm64 那一层，却会因此踩到判定失败：Inno 6.3 起架构校验不通过
+;   会弹 WindowsVersionNotSupported，中文文案就是「此程序不支持当前计算机运行的 Windows 版本。」——
+;   也就是反馈里的"安装包不适用于此系统"。
+;   x64 的语义是「仅 x64 版本的 Windows」，精确匹配目标平台，6.2 与 6.7 都接受。
+;   6.3+ 会提示 x64 已弃用（等价 x64os）并给出编译警告，属正常现象，不影响产物。
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
