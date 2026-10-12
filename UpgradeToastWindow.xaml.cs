@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -11,14 +12,27 @@ namespace SeewoAutoLogin
     /// 桌面级「升级完成」提醒：托盘常驻、主界面没有打开的机器上，用它把结果说出来。
     ///
     /// 与主界面内的提醒同源（同一份数据）、同一套视觉与动效约定：
-    /// 滑入 / 滑出**只做位移**（不做透明度渐变），停留期间轻微浮动，10 秒后自动滑出。
+    /// 滑入 / 滑出**只做位移**（不做透明度渐变），停留期间轻微浮动。
     /// 窗口不抢焦点、不进任务栏，避免打断用户正在做的事。
+    ///
+    /// 停留时长不是固定的：弹出后先一直留着，检测到用户有键鼠输入之后才开始 15 秒倒计时。
+    /// 升级多半发生在人不在电脑前的时候，定时收走等于白提醒。
     /// </summary>
     public partial class UpgradeToastWindow : Window
     {
         private const int SlideInMs = 620;
         private const int SlideOutMs = 420;
-        private const int AutoCloseMs = 10000;
+
+        /// <summary>检测到用户输入之后，再留这么久让他读完，然后自动滑出。</summary>
+        private const int AutoCloseAfterInputMs = 15000;
+
+        /// <summary>输入检测的轮询间隔。用系统级「最后输入时间」而不是窗口的键鼠事件：
+        /// 这个窗口不抢焦点，收不到全局键盘，鼠标也可能根本不在它上面。</summary>
+        private const int InputPollMs = 400;
+
+        /// <summary>弹窗那一刻系统空闲不到这么久，就认为「人本来就在电脑前」，直接进倒计时。</summary>
+        private const uint PresentUserIdleMs = 1500;
+
         private const double SlideDistance = 392;
         private const double EdgeMargin = 24;
 
@@ -27,8 +41,23 @@ namespace SeewoAutoLogin
 
         private readonly App.UpgradeNoticeData _data;
         private readonly DispatcherTimer _autoCloseTimer;
+        private readonly DispatcherTimer _inputWatchTimer;
         private bool _leaving;
         private bool _changelogOpen;
+
+        /// <summary>弹出瞬间的系统空闲时长，用来判断之后用户是否又动过键鼠。</summary>
+        private uint _baselineIdleMs;
+        private LastInputInfo _lastInput;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LastInputInfo
+        {
+            public uint cbSize;
+            public uint dwTime;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetLastInputInfo(ref LastInputInfo plii);
 
         internal UpgradeToastWindow(App.UpgradeNoticeData data)
         {
@@ -56,8 +85,13 @@ namespace SeewoAutoLogin
 
             BuildChangelog();
 
-            _autoCloseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(AutoCloseMs) };
+            _autoCloseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(AutoCloseAfterInputMs) };
             _autoCloseTimer.Tick += (s, e) => Leave();
+
+            _inputWatchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(InputPollMs) };
+            _inputWatchTimer.Tick += OnInputWatchTick;
+
+            _lastInput = new LastInputInfo { cbSize = (uint)Marshal.SizeOf(typeof(LastInputInfo)) };
 
             // 展开更新内容会改变窗口高度：保持底边贴住工作区底部，别让卡片“往上跳”
             SizeChanged += (s, e) => { if (IsLoaded) RepositionBottom(); };
@@ -90,8 +124,7 @@ namespace SeewoAutoLogin
             Loaded -= OnLoaded;
             RepositionBottom();
             AnimateIn();
-            StartCountdown();
-            _autoCloseTimer.Start();
+            WaitForUserInput();
         }
 
         private void AnimateIn()
@@ -125,6 +158,94 @@ namespace SeewoAutoLogin
             });
         }
 
+        /// <summary>
+        /// 弹出后先一直留着，直到用户有键鼠输入再开始 15 秒倒计时。
+        ///
+        /// 两种情形分开处理：弹窗那一刻人本来就在电脑前（刚有输入）→ 直接倒计时；
+        /// 人不在（系统已空闲一会儿）→ 等他回来动一下键鼠再倒计时。
+        /// </summary>
+        private void WaitForUserInput()
+        {
+            if (_leaving) return;
+
+            // 倒计时没开始，进度条先不显示，免得让人以为马上就要走了
+            try { _autoCloseTimer.Stop(); } catch { }
+            TimerScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            TimerScale.ScaleX = 1;
+            TimerBarHost.Visibility = Visibility.Collapsed;
+
+            _baselineIdleMs = GetIdleMilliseconds();
+
+            if (_baselineIdleMs < PresentUserIdleMs)
+            {
+                Log("[Update] 桌面提醒：弹窗时用户就在电脑前，立即开始 15 秒倒计时");
+                BeginAutoClose();
+                return;
+            }
+
+            Log($"[Update] 桌面提醒已显示（系统已空闲 {_baselineIdleMs / 1000.0:F1} 秒），等待用户输入后再开始倒计时");
+            _inputWatchTimer.Start();
+        }
+
+        private void OnInputWatchTick(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_leaving || _changelogOpen)
+                {
+                    _inputWatchTimer.Stop();
+                    return;
+                }
+
+                var idle = GetIdleMilliseconds();
+
+                // 空闲时长比弹窗那一刻更短 = 用户又动过键鼠（键盘、鼠标、触摸都算）
+                if (idle >= _baselineIdleMs) return;
+
+                _inputWatchTimer.Stop();
+                Log($"[Update] 检测到用户输入（系统空闲回到 {idle} 毫秒），开始 15 秒倒计时关闭桌面提醒");
+                BeginAutoClose();
+            }
+            catch
+            {
+                // 检测失败就退回「不自动关闭」，宁可多留一会儿
+                try { _inputWatchTimer.Stop(); } catch { }
+            }
+        }
+
+        /// <summary>距系统最后一次键鼠输入的毫秒数。</summary>
+        private uint GetIdleMilliseconds()
+        {
+            try
+            {
+                if (!GetLastInputInfo(ref _lastInput)) return uint.MaxValue;
+                // GetLastInputInfo 的 dwTime 与 Environment.TickCount 同源（GetTickCount），
+                // 相减用无符号语义，回绕也能得到正确差值。
+                return unchecked((uint)(Environment.TickCount - (int)_lastInput.dwTime));
+            }
+            catch
+            {
+                return uint.MaxValue;
+            }
+        }
+
+        /// <summary>开始 15 秒倒计时：进度条走满 + 到点滑出。</summary>
+        private void BeginAutoClose()
+        {
+            try { _inputWatchTimer.Stop(); } catch { }
+
+            TimerBarHost.Visibility = Visibility.Visible;
+            TimerScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation
+            {
+                From = 1,
+                To = 0,
+                Duration = TimeSpan.FromMilliseconds(AutoCloseAfterInputMs)
+            });
+
+            _autoCloseTimer.Stop();
+            _autoCloseTimer.Start();
+        }
+
         /// <summary>性能模式：不播任何动效，窗口直接出现、直接消失。</summary>
         private static bool LiteMode
         {
@@ -133,16 +254,6 @@ namespace SeewoAutoLogin
                 try { return (Application.Current as App)?.Config?.PerformanceMode == true; }
                 catch { return false; }
             }
-        }
-
-        private void StartCountdown()
-        {
-            TimerScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation
-            {
-                From = 1,
-                To = 0,
-                Duration = TimeSpan.FromMilliseconds(AutoCloseMs)
-            });
         }
 
         private void OnOkClick(object sender, RoutedEventArgs e) => Leave();
@@ -156,26 +267,26 @@ namespace SeewoAutoLogin
             ChangelogButton.Content = _changelogOpen ? "收起" : "更新内容";
             // 展开后窗口高度变了，SizeChanged 会把卡片重新贴回右下角
 
-            // 用户正在读更新内容，就不该被 10 秒倒计时收走；收起后再恢复自动滑出
-            if (_changelogOpen) StopAutoClose();
-            else RestartAutoClose();
+            if (_changelogOpen)
+            {
+                // 用户正在读更新内容：既不自动关闭，也不再检测输入
+                StopAutoClose();
+            }
+            else
+            {
+                // 收起本身就是一次输入，直接进倒计时
+                BeginAutoClose();
+            }
         }
 
-        /// <summary>停掉自动滑出：展开更新内容后窗口要一直留着，等用户自己关。</summary>
+        /// <summary>停掉一切自动关闭（倒计时与输入检测），窗口留给用户自己关。</summary>
         private void StopAutoClose()
         {
             try { _autoCloseTimer.Stop(); } catch { }
+            try { _inputWatchTimer.Stop(); } catch { }
             TimerScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
             TimerScale.ScaleX = 1;
             TimerBarHost.Visibility = Visibility.Collapsed;
-        }
-
-        /// <summary>收起更新内容后恢复自动滑出（重新从 10 秒算起）。</summary>
-        private void RestartAutoClose()
-        {
-            TimerBarHost.Visibility = Visibility.Visible;
-            StartCountdown();
-            _autoCloseTimer.Start();
         }
 
         /// <summary>滑出后关闭。只做位移，不做透明度渐变。</summary>
@@ -185,6 +296,7 @@ namespace SeewoAutoLogin
             _leaving = true;
 
             try { _autoCloseTimer.Stop(); } catch { }
+            try { _inputWatchTimer.Stop(); } catch { }
             // 停掉循环浮动，避免和滑出动画同时改 transform
             FloatY.BeginAnimation(TranslateTransform.YProperty, null);
 
@@ -211,6 +323,7 @@ namespace SeewoAutoLogin
         private void CloseNow()
         {
             try { _autoCloseTimer?.Stop(); } catch { }
+            try { _inputWatchTimer?.Stop(); } catch { }
             try { Close(); } catch { }
         }
 
@@ -299,6 +412,11 @@ namespace SeewoAutoLogin
         {
             try { return Services.UpdateChecker.NormalizeVersion(version); }
             catch { return version ?? ""; }
+        }
+
+        private static void Log(string message)
+        {
+            try { (Application.Current as App)?.WriteDiagnosticLog(message); } catch { }
         }
     }
 }
