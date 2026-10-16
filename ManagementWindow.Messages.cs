@@ -31,6 +31,14 @@ namespace SeewoAutoLogin
                 var root = doc.RootElement;
                 var type = root.GetProperty("type").GetString();
 
+                // 来源校验：消息是唯一的特权入口（删账号、导配置、退出、恢复出厂都走它），
+                // 不能只看「有没有 postMessage」，还得看是谁发的。
+                if (!IsTrustedPageUri(e.Source))
+                {
+                    _app?.WriteDiagnosticLog($"[WebView] 丢弃来源不可信的消息: {e.Source}");
+                    return;
+                }
+
                 // 解锁前只放行 unlock，其余消息（含托盘可触达的配置变更）全部忽略
                 if (type != "unlock" && IsLocked) return;
 
@@ -91,7 +99,11 @@ namespace SeewoAutoLogin
                     case "debug-desktop-notice": HandleDebugDesktopNotice(); break;
                 }
             }
-            catch (Exception ex) { Debug.WriteLine($"[WebView] msg error: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                // Debug.WriteLine 在发布版没有任何输出：用户报「点了没反应」时日志里查不到线索
+                _app?.WriteDiagnosticLog($"[WebView] 消息处理异常: {ex.GetType().Name} - {ex.Message}");
+            }
         }
 
         #endregion

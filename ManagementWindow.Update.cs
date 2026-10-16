@@ -521,10 +521,11 @@ namespace SeewoAutoLogin
                 _silentInstallStarted = true;
 
                 // 手动静默升级同样写入待更新状态：安装器带 --updated 启动后会自动提示版本并清理状态。
+                // 先记 downloaded（包已下好、还没交给安装器）：安装器没起来时，下次启动还能接着装。
                 _app.Config.PendingUpdateVersion = info.Version;
                 _app.Config.PendingUpdatePath = localPath;
                 _app.Config.PendingUpdateSha256 = info.Sha256;
-                _app.Config.PendingUpdateStage = "downloaded";
+                _app.Config.PendingUpdateStage = UpdateStages.Downloaded;
                 _app.SaveConfig();
 
                 await SendToJs(new { type = "update-progress", state = "installing", text = "正在静默安装，本程序即将退出…" });
@@ -537,6 +538,11 @@ namespace SeewoAutoLogin
                     await SendToJs(new { type = "toast", text = "自动安装未能启动（可能取消了管理员授权），安装包已保留，可手动运行", level = "warn" });
                     return;
                 }
+
+                // 安装器已经拉起：状态改成 installing。停在 downloaded 的话，下次启动会再校验一遍
+                // 并重新拉起安装器 —— 一旦安装没真正生效，就变成每次开机弹一次 UAC 的循环。
+                _app.Config.PendingUpdateStage = UpdateStages.Installing;
+                _app.SaveConfig();
 
                 // 安装器已拉起：稍等一下让前端把提示渲染完，然后退出让安装器替换程序文件
                 await Task.Delay(800);

@@ -32,7 +32,9 @@ namespace SeewoAutoLogin
 
         private object GetAccountList()
         {
-            return _app.Config.Accounts.Select(a => new
+            // 先取快照再渲染：后台保活在线程池线程上触发刷新时，界面线程可能正在增删账号
+            var accounts = _app.Config.Accounts.ToList();
+            return accounts.Select(a => new
             {
                 id = a.Id,
                 displayName = a.DisplayName ?? a.Username ?? "",

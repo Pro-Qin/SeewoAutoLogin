@@ -105,7 +105,11 @@ namespace SeewoAutoLogin.Services
                             // 已有有效映射：补上标记，便于卸载时精确清理
                             if (lines[i].IndexOf(Marker, StringComparison.Ordinal) < 0)
                             {
-                                lines[i] = LoopbackIp + " " + HostName + " " + Marker;
+                                // 改用户的 hosts 之前先备份（这条路径原先不备份）
+                                BackupOnce();
+                                // 只补标记，不重写整行：这一行上可能还挂着用户自己的其它主机名，
+                                // 按 "127.0.0.1 本程序主机名 标记" 重写会把它们一起抹掉。
+                                lines[i] = lines[i].TrimEnd() + " " + Marker;
                                 changed = true;
                             }
                             if (changed) WriteAtomic(lines, encoding);
@@ -146,19 +150,43 @@ namespace SeewoAutoLogin.Services
                     if (!File.Exists(HostsPath)) return true;
                     var (text, encoding) = Decode(File.ReadAllBytes(HostsPath));
                     var lines = SplitLines(text).ToList();
-                    var removed = lines.RemoveAll(raw =>
+                    var kept = new List<string>();
+                    var removed = 0;
+
+                    foreach (var raw in lines)
                     {
                         var line = raw.Trim();
-                        if (line.Length == 0) return false;
-                        if (line.IndexOf(Marker, StringComparison.Ordinal) >= 0 &&
-                            line.IndexOf(HostName, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-                        if (line.StartsWith("#")) return false;
+                        if (line.Length == 0 || line.StartsWith("#") ||
+                            line.IndexOf(HostName, StringComparison.OrdinalIgnoreCase) < 0)
+                        {
+                            kept.Add(raw);
+                            continue;
+                        }
+
+                        // 两种要清理的写法：带本程序标记的行，以及「恰好是 127.0.0.1 + 本程序主机名」的早期遗留行
+                        var hasMarker = line.IndexOf(Marker, StringComparison.Ordinal) >= 0;
                         var tokens = StripComment(line).Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                        return tokens.Length == 2 && tokens[0] == LoopbackIp &&
-                               string.Equals(tokens[1], HostName, StringComparison.OrdinalIgnoreCase);
-                    });
+                        var isLegacy = tokens.Length == 2 && tokens[0] == LoopbackIp &&
+                                       string.Equals(tokens[1], HostName, StringComparison.OrdinalIgnoreCase);
+                        if (!hasMarker && !isLegacy)
+                        {
+                            kept.Add(raw);
+                            continue;
+                        }
+
+                        removed++;
+                        // 这一行可能还挂着用户自己的其它主机名，只摘掉本程序的那一份，别整行删掉
+                        if (tokens.Length > 1)
+                        {
+                            var others = tokens.Skip(1)
+                                .Where(t => !string.Equals(t, HostName, StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+                            if (others.Count > 0) kept.Add(tokens[0] + " " + string.Join(" ", others));
+                        }
+                    }
+
                     if (removed == 0) return true;
-                    WriteAtomic(lines, encoding);
+                    WriteAtomic(kept, encoding);
                     return true;
                 }
                 catch (Exception ex)

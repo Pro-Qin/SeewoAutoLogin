@@ -79,6 +79,16 @@ namespace SeewoAutoLogin
                 await RefreshAccountList();
                 await SendToJs(new { type = "qr-state", state = "succeeded", text = "登录成功！" });
             }
+            catch (OperationCanceledException)
+            {
+                // 连点两次「开始扫码」会取消前一次：不把这个异常收掉，界面会永远停在「正在获取二维码…」
+                await SendToJs(new { type = "qr-state", state = "cancelled", text = "已取消扫码" });
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Qr] 扫码登录异常: {ex.GetType().Name} - {ex.Message}");
+                await SendToJs(new { type = "qr-state", state = "failed", text = "扫码登录出错，可重试：" + ex.Message });
+            }
             finally { if (ReferenceEquals(_qrLoginCancellation, ct)) { _qrLoginCancellation.Dispose(); _qrLoginCancellation = null; } }
         }
 

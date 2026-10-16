@@ -17,7 +17,12 @@ namespace SeewoAutoLogin
     {
         #region Account Management
 
-        public IReadOnlyList<SeewoAccount> GetVisibleAccounts() => _config.Accounts;
+        /// <summary>
+        /// 生效区账号快照。返回副本而不是 List 本身：这个方法由 SSO 网关的 HTTP 线程调用，
+        /// 而账号增删发生在界面线程上。直接交出引用的话，遍历中撞上增删会抛「集合已修改」，
+        /// 那次 SSOLOGIN 直接变成 500，希沃侧的快捷登录入口就凭空消失了。
+        /// </summary>
+        public IReadOnlyList<SeewoAccount> GetVisibleAccounts() => _config.Accounts.ToList();
 
         public void AddQrAccount(SeewoAccount account, QrLoginOutcome outcome)
         {

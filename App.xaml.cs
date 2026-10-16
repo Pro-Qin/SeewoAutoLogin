@@ -175,40 +175,10 @@ namespace SeewoAutoLogin
                 SaveConfig();
             }
 
-            if (_isPostUpdateBoot)
-            {
-                WriteDiagnosticLog("[Update] 更新后启动");
-
-                // 先核对：安装器报告装完了，但程序版本号没变 —— 说明这次安装其实没生效
-                // （装到了别的目录、被安全软件拦下、或者被回滚了）。这时必须记进 FailedUpdateVersion，
-                // 否则下一轮又会自动重装一遍，用户看到的就是「一直在更新，版本却始终是老的」。
-                var expectedVersion = UpdateChecker.NormalizeVersion(_config.PendingUpdateVersion);
-                var currentVersion = typeof(App).Assembly.GetName().Version?.ToString() ?? "0.0.0";
-                var updateEffective = string.IsNullOrWhiteSpace(expectedVersion)
-                    || UpdateChecker.CompareVersions(currentVersion, expectedVersion) >= 0;
-
-                if (!updateEffective)
-                {
-                    WriteDiagnosticLog($"[Update] 更新未生效：期望 {expectedVersion}，实际仍是 {currentVersion}；"
-                        + $"程序路径={System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName}；"
-                        + "已停止自动重试，请手动运行安装包完成升级。");
-                    _config.FailedUpdateVersion = expectedVersion;
-                    _trayIcon?.SetStatusText($"v{expectedVersion} 更新未生效，请手动安装");
-                }
-
-                // 安装器已经完成文件替换，清掉待安装状态，避免下次启动重复拉起安装器。
-                if (!string.IsNullOrWhiteSpace(_config.PendingUpdateStage))
-                {
-                    _config.PendingUpdatePath = "";
-                    _config.PendingUpdateSha256 = "";
-                    _config.PendingUpdateVersion = "";
-                    _config.PendingUpdateStage = "";
-                    // 只有版本确实到位了才清掉「曾经装失败」的记录；没到位就留着，防止再次自动安装
-                    if (updateEffective) _config.FailedUpdateVersion = "";
-                    SaveConfig();
-                }
-                _ = ConfirmUpdateHealthAsync();
-            }
+            // 注：更新后第一次启动的收尾（版本核对、待更新状态清理、健康确认）不在这里做。
+            // _isPostUpdateBoot 要到 OnStartup 才从命令行读出来，放在构造函数里等于永远不执行 ——
+            // 那样 UpdateHealthGuard 的回滚标记就永远没人清，watcher 超时会把刚装好的版本换回旧的。
+            // 见 HandlePostUpdateBoot()。
 
             _gateway = new SeewoSsoGateway(_authService, () => _config, TryRestoreQrSession,
                 GetVisibleAccounts,
@@ -345,7 +315,7 @@ namespace SeewoAutoLogin
 
             // 崩溃可观测性与安全模式：先注册异常处理并记录本次启动尝试。
             Services.CrashReporter.Install(this, WriteDiagnosticLog);
-            Services.CrashReporter.MarkStartupAttempt(WriteDiagnosticLog);
+            // 启动失败的计数放到后面（真正开始跑之前），见下面 MarkStartupAttempt 的注释。
             var safeMode = Services.CrashReporter.IsSafeModeRequested;
             if (safeMode) WriteDiagnosticLog("[Crash] 本次启动进入安全模式：跳过 WebView2、遮罩与自动更新");
 
@@ -424,6 +394,16 @@ namespace SeewoAutoLogin
                 instanceMutex?.Dispose();
             }
 
+            // 到这里才算「本次启动真的接管了这台机器」。唤醒已有实例、卸载清理这些路径在上面就返回了，
+            // 不该记进启动失败次数 —— 原先写在最前面，双击几次图标攒够 3 次，下一次正常启动就会被
+            // 误判成连续失败而进入安全模式（跳过界面与自动更新）。
+            Services.CrashReporter.MarkStartupAttempt(WriteDiagnosticLog);
+            if (!safeMode && Services.CrashReporter.IsSafeModeRequested)
+            {
+                safeMode = true;
+                WriteDiagnosticLog("[Crash] 本次启动进入安全模式：跳过 WebView2、遮罩与自动更新");
+            }
+
             // 检测管理员权限，非管理员自动提权重启。
             // 提权是 SSO 快捷登录能被希沃识别的前提：hosts 映射（local.id.seewo.com → 127.0.0.1）
             // 与 HttpListener 的非 localhost 前缀 URL ACL 都需要管理员权限。
@@ -492,13 +472,14 @@ namespace SeewoAutoLogin
             {
                 _trayIcon.Initialize();
                 if (safeMode) _trayIcon.SetStatusText("安全模式：已跳过界面与自动更新");
-                if (_isPostUpdateBoot)
-                    _trayIcon.SetStatusText($"已更新到 v{CurrentAppVersion}");
             }
             catch (Exception ex)
             {
                 WriteDiagnosticLog($"托盘初始化失败: {ex.Message}");
             }
+
+            // 更新后收尾放在托盘初始化之后：它要写托盘提示，也要在版本没到位时把话说清楚
+            if (_isPostUpdateBoot) HandlePostUpdateBoot();
 
             // WebView2 预热：提前在后台创建运行时环境与浏览器进程，缩短主界面首次加载的等待
             // （托盘常驻场景同样预热，用户点开主界面时无需再等浏览器进程启动）
@@ -655,18 +636,79 @@ namespace SeewoAutoLogin
             _ = RunAutoRepairLoopAsync();
         }
 
+        /// <summary>
+        /// 更新后第一次启动的收尾：核对版本是否真的到位、清理待更新状态、启动健康确认。
+        ///
+        /// 必须在 OnStartup 里、_isPostUpdateBoot 被赋值之后调用。原先这段写在构造函数里，
+        /// 而 WPF 的启动顺序是「构造函数 → Run() → OnStartup」，条件恒为 false：
+        /// 于是 UpdateHealthGuard.ConfirmHealthy 永远没人调，安装前写的回滚标记也就永远删不掉，
+        /// watcher 150 秒后把刚装好的新版本杀掉并用备份覆盖回去。
+        /// </summary>
+        private void HandlePostUpdateBoot()
+        {
+            try
+            {
+                WriteDiagnosticLog("[Update] 更新后启动");
+
+                // 先核对：安装器报告装完了，但程序版本号没变 —— 说明这次安装其实没生效
+                // （装到了别的目录、被安全软件拦下、或者被回滚了）。这时必须记进 FailedUpdateVersion，
+                // 否则下一轮又会自动重装一遍，用户看到的就是「一直在更新，版本却始终是老的」。
+                var expectedVersion = UpdateChecker.NormalizeVersion(_config.PendingUpdateVersion);
+                var currentVersion = typeof(App).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+                var updateEffective = string.IsNullOrWhiteSpace(expectedVersion)
+                    || UpdateChecker.CompareVersions(currentVersion, expectedVersion) >= 0;
+
+                if (updateEffective)
+                {
+                    _trayIcon?.SetStatusText($"已更新到 v{CurrentAppVersion}");
+                }
+                else
+                {
+                    WriteDiagnosticLog($"[Update] 更新未生效：期望 {expectedVersion}，实际仍是 {currentVersion}；"
+                        + $"程序路径={System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName}；"
+                        + "已停止自动重试，请手动运行安装包完成升级。");
+                    _config.FailedUpdateVersion = expectedVersion;
+                    _trayIcon?.SetStatusText($"v{expectedVersion} 更新未生效，请手动安装");
+                }
+
+                // 安装器已经完成文件替换，清掉待安装状态，避免下次启动重复拉起安装器。
+                if (!string.IsNullOrWhiteSpace(_config.PendingUpdateStage))
+                {
+                    _config.PendingUpdatePath = "";
+                    _config.PendingUpdateSha256 = "";
+                    _config.PendingUpdateVersion = "";
+                    _config.PendingUpdateStage = "";
+                    // 只有版本确实到位了才清掉「曾经装失败」的记录；没到位就留着，防止再次自动安装
+                    if (updateEffective) _config.FailedUpdateVersion = "";
+                    SaveConfig();
+                }
+
+                // 60 秒后确认网关健康并撤掉回滚保护。这是 ConfirmHealthy 唯一的调用点。
+                _ = ConfirmUpdateHealthAsync();
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Update] 更新后收尾异常: {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
         private void ShowMainWindow()
         {
             if (_mainWindow == null)
             {
                 var window = new ManagementWindow();
-                window.Closed += (s, ev) =>
+                // 「关闭时最小化到托盘」：拦下关闭动作改成隐藏。窗口对象留着复用 ——
+                // 重建一个窗口要重新拉起 WebView2，代价远高于 Hide。
+                window.Closing += (s, ev) =>
                 {
-                    if (!_isExiting && _config.MinimizeToTray)
-                    {
-                        _mainWindow = null;
-                    }
+                    if (_isExiting || !_config.MinimizeToTray) return;
+                    ev.Cancel = true;
+                    window.Hide();
                 };
+                // 窗口真被关掉之后就不能再 Show（WPF 语义），引用必须清掉。
+                // 原先只在 MinimizeToTray 为真时清：关掉该设置的人从托盘再点「打开管理窗口」
+                // 只会得到一个「无法显示主窗口」的报错框。
+                window.Closed += (s, ev) => { if (!_isExiting) _mainWindow = null; };
                 _mainWindow = window;
             }
 
@@ -729,6 +771,12 @@ namespace SeewoAutoLogin
                 var exePath = Process.GetCurrentProcess().MainModule?.FileName;
                 if (!string.IsNullOrEmpty(exePath))
                 {
+                    // 先放开单实例互斥锁：新进程起来要几百毫秒，而本进程还要走完 Shutdown 才退出。
+                    // 锁不放的话，新实例会判定「已有实例在运行」，把自己关掉、再去唤醒一个正在退出的旧实例 ——
+                    // 用户看到的是「点了重启程序，它反而消失了」。
+                    _instanceMutex?.Dispose();
+                    _instanceMutex = null;
+
                     var psi = new ProcessStartInfo
                     {
                         FileName = exePath,
@@ -748,7 +796,9 @@ namespace SeewoAutoLogin
 
             if (!started)
             {
-                // 启动不成功时保持当前实例继续运行，避免托盘常驻程序“凭空消失”
+                // 启动不成功时保持当前实例继续运行，避免托盘常驻程序“凭空消失”。
+                // 互斥锁刚才已经放开，这里必须拿回来，否则双击图标会开出第二个实例。
+                try { _instanceMutex = new Mutex(true, InstanceMutexName, out _); } catch { }
                 NotifyError("重启失败", "无法自动重启，请从托盘菜单退出后重新打开程序。");
                 return;
             }

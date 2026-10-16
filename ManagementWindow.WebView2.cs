@@ -54,6 +54,10 @@ namespace SeewoAutoLogin
             core.DOMContentLoaded += OnDomContentLoaded;
             core.NavigationCompleted += OnNavigationCompleted;
             core.ProcessFailed += OnProcessFailed;
+            // 界面只该待在自己那份本地资源上。少了这两道闸，任何被导航进来的外部页面
+            // 都拿得到 WebMessage 的全部能力（删账号、导入配置、退出、恢复出厂），而宿主无从分辨来源。
+            core.NavigationStarting += OnNavigationStarting;
+            core.NewWindowRequested += OnNewWindowRequested;
 
             try
             {
@@ -139,6 +143,47 @@ namespace SeewoAutoLogin
                 ShowStatusPanel("界面初始化失败",
                     $"WebView2 初始化失败：{ex.Message}",
                     showRetry: true, showInstall: !WebView2Runtime.IsInstalled, showDownload: true);
+            }
+        }
+
+        /// <summary>
+        /// 页面来源白名单：空来源保持旧行为（部分 WebView2 路径不给 Source），
+        /// 但只要能拿到来源，就必须是本地那一份资源。
+        /// </summary>
+        internal static bool IsTrustedPageUri(string uri)
+        {
+            if (string.IsNullOrEmpty(uri)) return true;
+            if (string.Equals(uri, "about:blank", StringComparison.OrdinalIgnoreCase)) return true;
+            return uri.StartsWith(WebContentProvisioner.EntryOrigin, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>界面内的跳转一律拦下：外部地址交给系统浏览器，不在这个 WebView 里打开。</summary>
+        private void OnNavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            if (IsTrustedPageUri(e.Uri)) return;
+            e.Cancel = true;
+            _app?.WriteDiagnosticLog($"[WebView2] 已拦截界面内的外部跳转: {e.Uri}");
+            OpenExternalInBrowser(e.Uri);
+        }
+
+        /// <summary>target=_blank / window.open：同样不允许在本 WebView 里开新窗口。</summary>
+        private void OnNewWindowRequested(object sender, CoreWebView2NewWindowRequestedEventArgs e)
+        {
+            e.Handled = true;
+            OpenExternalInBrowser(e.Uri);
+        }
+
+        private void OpenExternalInBrowser(string url)
+        {
+            try
+            {
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;
+                if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return;
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[WebView2] 外部链接打开失败: {ex.Message}");
             }
         }
 

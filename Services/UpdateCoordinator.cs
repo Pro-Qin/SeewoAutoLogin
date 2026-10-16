@@ -141,11 +141,11 @@ namespace SeewoAutoLogin.Services
             var downloadUrl = isPortable ? info.PortableUrl : info.SetupUrl;
             // 便携版必须用便携包自己的哈希：拿安装包的哈希去校验它，只会每次都失败。
             // 取不到便携包哈希时退回安装包哈希（至少下载流程一致），日志里能看出走了哪条路。
-            var downloadSha = isPortable && !string.IsNullOrWhiteSpace(info.PortableSha256)
-                ? info.PortableSha256
-                : info.Sha256;
+            // 便携版必须用便携包自己的哈希。拿安装包的哈希去校验便携包只会每次都失败，
+            // 而且会一路重试到「所有下载源均不可用」；没有便携包哈希时按「没有可用哈希」处理，直接跳过本轮。
+            var downloadSha = isPortable ? info.PortableSha256 : info.Sha256;
             if (isPortable && string.IsNullOrWhiteSpace(info.PortableSha256))
-                _log("[Update] 便携版更新包没有独立哈希记录，退回安装包哈希校验");
+                _log("[Update] 便携版更新包在发布里没有独立哈希，本轮不做自动更新（可到发布页手动下载）");
 
             if (string.IsNullOrWhiteSpace(downloadUrl))
             {
@@ -217,6 +217,20 @@ namespace SeewoAutoLogin.Services
                 return;
             }
 
+            // 同样是因为下载耗时：用户完全可能在这期间把主界面打开了。
+            // 不复查的话，界面会在老师眼前「自己消失」（安装要重启程序）—— 正是上面那段注释想避免的。
+            if (_isMainWindowOpen())
+            {
+                _log("[Update] 下载期间主界面被打开，本次不安装；关闭主界面后由下一轮完成");
+                _notifyUi?.Invoke(new SilentUpdateSnapshot
+                {
+                    Stage = "ready",
+                    Version = info.Version,
+                    Text = $"新版本 v{info.Version} 已就绪，关闭主界面后会自动更新"
+                });
+                return;
+            }
+
             if (isPortable)
             {
                 // 便携版：整理 staging → 备份目录 → 脚本替换 → 退出。
@@ -244,7 +258,14 @@ namespace SeewoAutoLogin.Services
 
                 if (!PortableUpdater.LaunchReplaceScript(staging, info.Version, _log))
                 {
-                    _log("[Update] 便携版自更新：替换脚本未能启动，已取消本次更新");
+                    // 状态留在 installing 会被下次启动当成「装过但没成」，这个版本从此不再自动更新。
+                    // 脚本压根没跑起来，等于什么都没发生，把状态退回去。
+                    _config.PendingUpdateStage = "";
+                    _config.PendingUpdateVersion = "";
+                    _config.PendingUpdatePath = "";
+                    _config.PendingUpdateSha256 = "";
+                    _saveConfig();
+                    _log("[Update] 便携版自更新：替换脚本未能启动，已取消本次更新并回退状态");
                     return;
                 }
 
@@ -275,7 +296,10 @@ namespace SeewoAutoLogin.Services
             UpdateHealthGuard.BeginGuard(Process.GetCurrentProcess().MainModule?.FileName, info.Version, _log);
             if (!UpdateInstaller.StartSilentInstall(check, _log))
             {
-                _log("[Update] 静默更新：安装器启动失败，安装包已保留，下次启动会重试");
+                // 安装器压根没起来，更新等于没开始。此时必须立刻撤掉回滚保护，
+                // 否则 watcher 150 秒后超时，会把这台正在正常干活的机器杀掉并用备份覆盖回去。
+                UpdateHealthGuard.ConfirmHealthy(_log);
+                _log("[Update] 静默更新：安装器启动失败，已撤销回滚保护，安装包保留待下次重试");
                 return;
             }
 

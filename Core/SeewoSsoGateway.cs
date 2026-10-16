@@ -666,7 +666,19 @@ namespace SeewoAutoLogin
                             }
                             else
                             {
-                                loginResult = _authService.GetCurrentLoginResult();
+                                // 走到这里说明内存里的会话不属于这个账号（多半是别的账号刚登录过，
+                                // 而本账号的扫码凭据文件丢了）。GetCurrentLoginResult() 会把**别人的**
+                                // token 原样交出去，希沃就以那个人的身份登录 —— 教室一体机上多人共用时会串号。
+                                // 宁可要求重新扫码，也不能替别人登录。
+                                resp.StatusCode = 401;
+                                await WriteJson(resp, new
+                                {
+                                    message = "qr_credential_missing",
+                                    statusCode = "401",
+                                    detail = "该账号没有可用的扫码凭据，需要重新扫码添加"
+                                });
+                                Log($"SSOLOGIN/{userId}: 无可用扫码凭据且当前会话不属该账号，要求重新扫码");
+                                return;
                             }
                         }
                         else

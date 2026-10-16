@@ -340,9 +340,11 @@ namespace SeewoAutoLogin
                 if (pwdCount > 0) hint.Add($"{pwdCount} 个密码账号：请确认密码是否已修改");
                 if (qrCount > 0) hint.Add($"{qrCount} 个扫码账号：需要重新扫码添加");
 
-                NotifyInfo("有账号自动续期失败",
-                    $"以下账号需要处理：\n\n{nameList}\n\n{string.Join("\n", hint)}" +
-                    "\n\n后续不再重复弹窗，可查看托盘图标或账号列表了解状态。");
+                // 不弹窗、不出声：续期是后台行为，它自己弹一个带提示音的模态框，
+                // 比账号失效本身更糟 —— 正好落在上课时间。托盘角标已经把这些账号标出来了
+                // （见 UpdateTrayAlertForHealth），打开界面就能看到具体是哪几个、要做什么。
+                WriteDiagnosticLog($"[KeepAlive] 有 {bad.Count} 个账号需要人工处理（托盘角标已点亮，不弹窗）；"
+                    + $"{string.Join("；", hint)}；账号：{nameList.Replace("\n", " ").Replace("  · ", "")}");
             }
             catch { }
         }

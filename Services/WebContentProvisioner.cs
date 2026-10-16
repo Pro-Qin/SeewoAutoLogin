@@ -41,6 +41,9 @@ namespace SeewoAutoLogin.Services
         /// <summary>入口页面 URL（配合 SetVirtualHostNameToFolderMapping 使用）。</summary>
         public static string EntryUrl => $"https://{VirtualHostName}/index.html";
 
+        /// <summary>本地资源的 origin（含末尾斜杠）：用于判断导航与 Web 消息是不是来自这份页面。</summary>
+        public static string EntryOrigin => $"https://{VirtualHostName}/";
+
         /// <summary>
         /// 释放前端资源，返回 Web 根目录。内容未变化时不写盘（每次启动只做几次小文件读取）。
         /// </summary>

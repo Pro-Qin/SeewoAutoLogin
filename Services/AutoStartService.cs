@@ -206,13 +206,19 @@ namespace SeewoAutoLogin.Services
 
                 using var process = Process.Start(psi);
                 if (process == null) return (false, "无法启动 schtasks.exe");
-                var stdout = process.StandardOutput.ReadToEnd();
-                var stderr = process.StandardError.ReadToEnd();
+
+                // 先把读取挂成异步：同步的 ReadToEnd 会一直阻塞到子进程关掉 stdout，
+                // 放在前面的话，只要 schtasks 挂住（被安全软件拦、任务计划服务无响应），
+                // 下面的 15 秒超时与 Kill 就永远轮不到执行 —— 用户看到的是「双击图标什么都没发生」。
+                var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                var stderrTask = process.StandardError.ReadToEndAsync();
                 if (!process.WaitForExit(15000))
                 {
                     try { process.Kill(); } catch { }
                     return (false, "schtasks 超时");
                 }
+                var stdout = stdoutTask.GetAwaiter().GetResult();
+                var stderr = stderrTask.GetAwaiter().GetResult();
                 var ok = process.ExitCode == 0;
                 var message = (ok ? stdout : stderr + " " + stdout).Trim();
                 return (ok, message.Length > 300 ? message.Substring(0, 300) : message);

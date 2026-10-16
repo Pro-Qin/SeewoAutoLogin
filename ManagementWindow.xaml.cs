@@ -50,7 +50,14 @@ namespace SeewoAutoLogin
             _qrCountdownTimer.Tick += QrCountdownTimer_Tick;
 
             Loaded += OnLoaded;
-            Closed += (s, e) => StopSeewoMonitor();
+            Closed += (s, e) =>
+            {
+                StopSeewoMonitor();
+                // 必须退订：QrLoginCoordinator 挂在 App 上，不退订就把每个关掉的窗口连同它的
+                // WebView2 一起钉在内存里，之后每次扫码状态变化还会往已关闭窗口发消息。
+                if (_qrLoginCoordinator != null)
+                    _qrLoginCoordinator.StateChanged -= QrLoginCoordinator_StateChanged;
+            };
         }
 
         /// <summary>密码保护启用且尚未解锁时，除 unlock 外的 WebView 消息一律忽略</summary>
