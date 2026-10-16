@@ -530,16 +530,14 @@ namespace SeewoAutoLogin
             }
             catch (Exception ex)
             {
-                var hint = IsAdministrator()
-                    ? "常见原因：端口 24300 被其它程序占用、hosts 文件无法写入。\n可在主界面顶部状态栏点击「一键修复」重试。"
-                    : "当前以普通权限运行，本地 SSO 网关需要管理员权限。\n请以管理员身份重新运行本程序。";
-                // 以普通权限运行导致网关起不来，是可预期的降级状态（用户主动选了"以降级模式运行"），
-                // 不该用弹窗打断 —— 主界面自检栏会标红，托盘也会给出提示，足够让用户知道该提权。
+                // 这段代码在 startMinimized 判断之前，开机自启时正好落在上课时间：
+                // 无论是不是管理员，都不该用模态框把老师拦在启动路径上。
+                // 主界面自检栏会标红，托盘提示也会写出同一件事，打开界面就能点「一键修复」。
                 if (IsAdministrator())
                 {
-                    NotifyError("SSO 网关错误",
-                        $"{ex.Message}\n\n" +
-                        $"希沃自动登录功能可能无法正常工作。\n{hint}");
+                    WriteDiagnosticLog("[Gateway] SSO 网关启动失败（管理员权限）: " + ex.Message
+                        + "；常见原因：端口 24300 被其它程序占用、hosts 文件无法写入");
+                    try { _trayIcon?.SetStatusText("SSO 网关未启动，可在主界面点「一键修复」"); } catch { }
                 }
                 else
                 {

@@ -149,19 +149,21 @@ namespace SeewoAutoLogin
         /// <summary>自动修复循环：启动后延迟首检，之后每 3 分钟巡检一次，不依赖主界面。</summary>
         private async Task RunAutoRepairLoopAsync()
         {
-            try
+            try { await Task.Delay(TimeSpan.FromSeconds(15)); }
+            catch (OperationCanceledException) { return; }
+
+            while (!_isExiting)
             {
-                await Task.Delay(TimeSpan.FromSeconds(15));
-                while (!_isExiting)
+                // 单轮异常不能带走整个循环：否则一次网关或 hosts 的意外失败，
+                // 会让自动修复在此后永久失效，而表面上什么异常都没有。
+                try { await RunAutoRepairAsync(); }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex)
                 {
-                    await RunAutoRepairAsync();
-                    await Task.Delay(TimeSpan.FromMinutes(3));
+                    WriteDiagnosticLog("[AutoRepair] 本轮异常: " + ex.GetType().Name + " - " + ex.Message);
                 }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                WriteDiagnosticLog("[AutoRepair] 循环异常: " + ex.GetType().Name + " - " + ex.Message);
+
+                await Task.Delay(TimeSpan.FromMinutes(3));
             }
         }
 
