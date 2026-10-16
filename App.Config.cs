@@ -216,7 +216,7 @@ namespace SeewoAutoLogin
         /// 窗口若不显式设置 Icon，只会沿用 exe 图标并受 Windows 图标缓存影响，
         /// 换图标后任务栏仍显示旧图标，所以这里直接给出图像。
         /// </summary>
-        internal static System.Windows.Media.Imaging.BitmapSource? LoadWindowIcon()
+        internal static System.Windows.Media.Imaging.BitmapSource LoadWindowIcon()
         {
             try
             {

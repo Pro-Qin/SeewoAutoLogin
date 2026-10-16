@@ -155,13 +155,21 @@ namespace SeewoAutoLogin.Services
 
             _setTrayStatus($"正在后台下载 v{info.Version}");
             _log($"[Update] 静默更新开始后台下载（{UpdateChannel.Describe(kind)}）：{downloadUrl}");
-            // 下载进度同时给托盘和主界面（界面开着的时候能看到进度条，而不是只盯着托盘）
+            // 下载进度同时给托盘和主界面（界面开着的时候能看到进度条，而不是只盯着托盘）。
+            // 托盘按 5% 的台阶更新：进度回调是毫秒级的，每回调一次就改一次悬停提示，
+            // 等于让 Shell 反复刷新通知区，任务栏图标会跟着闪。
+            var lastTrayStep = -1;
             var progress = new Progress<(long received, long total)>(p =>
             {
                 var percent = p.total > 0 ? (double?)Math.Round(p.received * 100.0 / p.total, 1) : null;
-                _setTrayStatus(percent.HasValue
-                    ? $"正在后台下载 v{info.Version} {percent:F0}%"
-                    : $"正在后台下载 v{info.Version}");
+                var step = percent.HasValue ? (int)(percent.Value / 5) : -1;
+                if (step != lastTrayStep)
+                {
+                    lastTrayStep = step;
+                    _setTrayStatus(percent.HasValue
+                        ? $"正在后台下载 v{info.Version} {percent:F0}%"
+                        : $"正在后台下载 v{info.Version}");
+                }
                 _notifyUi?.Invoke(
                     $"正在后台下载更新 v{info.Version}" + (percent.HasValue ? $"（{percent:F0}%）" : ""),
                     percent);

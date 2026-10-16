@@ -320,7 +320,8 @@ namespace SeewoAutoLogin
                 if (token.IsCancellationRequested) return; // 取消后不要接着启动安装程序
 
                 _app.WriteDiagnosticLog($"[Update] 安装包已下载并校验通过: {localPath}");
-                _app.TrayIcon?.SetStatusText("更新包下载完成");
+                // 这一步可能由用户手动点「下载新版本」触发，弹一条通知；后台静默下载走 UpdateCoordinator，不经过这里
+                _app.TrayIcon?.Notify("更新包下载完成");
 
                 // 便携版没有安装向导可以交给用户：目录版必须整体替换，只能走自替换流程
                 if (isPortable)

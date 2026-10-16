@@ -135,6 +135,8 @@ namespace SeewoAutoLogin
 
                 var summary = string.Join("；", actions);
                 WriteDiagnosticLog("[AutoRepair] " + summary);
+                // 只更新托盘悬停提示，不弹系统通知：自动修复是无人值守行为，
+                // 而它每 3 分钟巡检一次，上课时弹通知等于反复打断老师。
                 try { _trayIcon?.SetStatusText("自动修复：" + summary); } catch { }
                 return summary;
             }

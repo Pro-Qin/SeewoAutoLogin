@@ -77,10 +77,10 @@ namespace SeewoAutoLogin.Services
 
             if (_notifyIcon == null) return;
 
-            // 不只看缓存的 _alertState：图标或文本可能被其它路径改过，
-            // 这里把期望状态和控件实际状态对齐，避免托盘与账号列表不一致。
-            var targetText = alert ? Truncate(AlertText, 63) : Truncate(Strings.AppTitle, 63);
-            if (_alertState == alert && _notifyIcon.Text == targetText) return;
+            // 图标只有这一条路径会改（状态文本只碰 Text），所以 _alertState 就代表图标的实际状态。
+            // 这里一旦退化成「每次调用都重写一遍 Icon」，Shell 每轮巡检都要重画托盘图标，
+            // 图标折叠在溢出区时会表现为任务栏闪一下。
+            if (_alertState == alert) return;
             _alertState = alert;
 
             try
@@ -89,13 +89,12 @@ namespace SeewoAutoLogin.Services
                 {
                     _alertIcon ??= BuildAlertIcon();
                     _notifyIcon.Icon = _alertIcon ?? _cachedIcon;
-                    _notifyIcon.Text = Truncate(AlertText, 63);
                 }
                 else
                 {
                     _notifyIcon.Icon = _cachedIcon;
-                    _notifyIcon.Text = Truncate(Strings.AppTitle, 63);
                 }
+                ApplyTooltipText(alert ? AlertText : Strings.AppTitle);
             }
             catch { }
         }
@@ -206,20 +205,42 @@ namespace SeewoAutoLogin.Services
             exit.Click += (s, e) => _onSwitchAccount?.Invoke("__EXIT__");
         }
 
-        public void UpdateTrayText(string text)
-        {
-            if (_notifyIcon != null)
-                _notifyIcon.Text = text;
-        }
-
+        /// <summary>
+        /// 写托盘悬停提示，**不弹系统通知**。
+        ///
+        /// 无人值守的后台行为（自动修复、重建开机自启、更新下载进度、启动自检）一律走这里：
+        /// Windows 11 每次展示通知都会把该图标从溢出区临时提到常驻区，高频调用既让任务栏反复闪动，
+        /// 也会在课堂上直接打断老师。文本没变化时一个字节都不写 —— 重复赋值同样会触发一次通知区刷新。
+        /// </summary>
         public void SetStatusText(string statusMessage)
         {
-            if (_notifyIcon != null)
+            if (string.IsNullOrWhiteSpace(statusMessage)) return;
+            ApplyTooltipText(statusMessage);
+        }
+
+        /// <summary>
+        /// 弹一条系统通知。只给「用户此刻正在操作」的结果用：手动检查更新、导入/导出配置、
+        /// 手动开关开机自启失败。后台自发的行为改用 SetStatusText。
+        /// </summary>
+        public void Notify(string message, int timeoutMs = 3000)
+        {
+            if (_notifyIcon == null || string.IsNullOrWhiteSpace(message)) return;
+            try
             {
                 _notifyIcon.BalloonTipTitle = Strings.AppTitle;
-                _notifyIcon.BalloonTipText = statusMessage;
-                _notifyIcon.ShowBalloonTip(3000);
+                _notifyIcon.BalloonTipText = message;
+                _notifyIcon.ShowBalloonTip(timeoutMs);
             }
+            catch { }
+        }
+
+        /// <summary>写入悬停提示；内容相同就跳过，避免无意义的 Shell 通知区刷新。</summary>
+        private void ApplyTooltipText(string text)
+        {
+            if (_notifyIcon == null) return;
+            var value = Truncate(text ?? "", 63);
+            if (_notifyIcon.Text == value) return;
+            try { _notifyIcon.Text = value; } catch { }
         }
 
         /// <summary>
@@ -307,6 +328,7 @@ namespace SeewoAutoLogin.Services
                 _notifyIcon.Dispose();
             }
             _cachedIcon?.Dispose();
+            _alertIcon?.Dispose();
             _menu?.Dispose();
         }
     }

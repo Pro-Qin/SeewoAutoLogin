@@ -226,7 +226,7 @@ namespace SeewoAutoLogin
                         {
                             var ok = AutoStartService.Enable(out var error, out var mode);
                             _app.WriteDiagnosticLog($"[AutoStart] 启用自启: ok={ok}; mode={mode}; {error}");
-                            if (!ok || !string.IsNullOrEmpty(error)) _app.TrayIcon?.SetStatusText(error);
+                            if (!ok || !string.IsNullOrEmpty(error)) _app.TrayIcon?.Notify(error);
                             if (!ok)
                             {
                                 // 计划任务需要管理员权限：自动询问是否提权重启（用户确认后才重启）
@@ -883,7 +883,7 @@ namespace SeewoAutoLogin
         private void HandleExportConfig()
         {
             var d = new Microsoft.Win32.SaveFileDialog { Title = "导出配置", Filter = "配置文件 (*.json)|*.json", FileName = $"SeewoAutoLogin_config_{DateTime.Now:yyyyMMdd}.json" };
-            if (d.ShowDialog() == true) { _app.ExportConfig(d.FileName); _app.TrayIcon?.SetStatusText("配置已导出"); }
+            if (d.ShowDialog() == true) { _app.ExportConfig(d.FileName); _app.TrayIcon?.Notify("配置已导出"); }
         }
 
         private async Task HandleAddFakeAccount(JsonElement root)
@@ -941,7 +941,7 @@ namespace SeewoAutoLogin
         {
             if (MessageBox.Show("导入配置将覆盖当前所有设置，确定？", "导入", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             var d = new Microsoft.Win32.OpenFileDialog { Title = "导入配置", Filter = "配置文件 (*.json)|*.json" };
-            if (d.ShowDialog() == true && _app.ImportConfig(d.FileName)) { _app.TrayIcon?.SetStatusText("配置已导入"); _app.RestartApp(); }
+            if (d.ShowDialog() == true && _app.ImportConfig(d.FileName)) { _app.TrayIcon?.Notify("配置已导入"); _app.RestartApp(); }
         }
 
         #endregion

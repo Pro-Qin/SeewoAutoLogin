@@ -618,6 +618,7 @@ namespace SeewoAutoLogin
             bool startMinimized = safeMode || (!welcomeShown && (e.Args.Contains("--minimized") || _config.StartMinimized));
             if (startMinimized)
             {
+                // 同样只写悬停提示：开机自启恰好落在上课时间，启动弹通知是最容易被投诉的一种打扰
                 try { _trayIcon?.SetStatusText(Strings.StartMinimized); } catch { }
                 // 主界面不会自动打开：桌面提醒是用户唯一能直接看到「已经升级」的入口
                 if (!safeMode) _ = ShowDesktopUpgradeNoticeIfNeededAsync();
