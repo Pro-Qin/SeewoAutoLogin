@@ -558,6 +558,21 @@ nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
   transition: opacity var(--transition-fast);
 }
 .update-badge:hover { opacity: 0.75; }
+.update-progress {
+  max-width: 420px;
+  height: 6px;
+  margin: 10px auto 0 auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.update-progress > div {
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--blue-dark), var(--blue-light));
+  transition: width 0.2s linear;
+}
 .update-status {
   font-size: 12px; color: var(--text-tertiary);
   margin-top: 10px; min-height: 18px; line-height: 1.6;

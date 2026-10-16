@@ -53,7 +53,17 @@ namespace SeewoAutoLogin
         }
 
         /// <summary>后台静默更新是否正在运行（供主界面手动更新入口判断，避免重复下载）。</summary>
-        internal bool IsSilentUpdateRunning => _updateCoordinator?.IsRunning == true;
+        /// <summary>后台静默更新的当前状态（没有后台任务时返回一份 idle 快照）。</summary>
+        internal Services.SilentUpdateSnapshot SilentUpdateSnapshot()
+            => _updateCoordinator?.Snapshot() ?? new Services.SilentUpdateSnapshot();
+
+        /// <summary>掐断后台正在进行的下载，让前台任务接手。返回是否真的掐断过。</summary>
+        internal Task<bool> AbortSilentUpdateAsync(string reason)
+            => _updateCoordinator?.AbortDownloadAsync(reason) ?? Task.FromResult(false);
+
+        /// <summary>已在后台下载好、等待安装的版本号（没有则为空串）。</summary>
+        internal string PendingUpdateVersion
+            => string.IsNullOrWhiteSpace(_config?.PendingUpdateStage) ? "" : (_config.PendingUpdateVersion ?? "");
         private PluginConfig _config = new PluginConfig();
         private Timer _dailyTokenRefreshTimer;
         private ManagementWindow _mainWindow;
@@ -149,7 +159,7 @@ namespace SeewoAutoLogin
                 BeginSilentUpdateExit,
                 action => Dispatcher.Invoke(action),
                 // 后台下载时把进度回显到主界面（界面没开就什么也不做）
-                (text, percent) => _mainWindow?.NotifyUpdateProgress(text, percent),
+                progress => _mainWindow?.OnSilentUpdateProgress(progress),
                 // 主界面开着的时候不自动安装：安装要重启程序，界面会「自己消失」，观感很差
                 () => _mainWindow != null && _mainWindow.IsVisible);
 

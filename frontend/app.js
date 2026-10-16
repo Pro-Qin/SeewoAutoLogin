@@ -222,11 +222,22 @@ function renderUpdateProgress(msg) {
   msg = msg || {};
   const state = msg.state || '';
   let text = msg.text || '';
+  const received = msg.received || 0;
+  const total = msg.total || -1;
+  // 前台下载与后台静默下载走同一条渲染：只看 received/total，不关心是谁在拉
   if (state === 'downloading') {
-    const total = msg.total || -1;
+    const prefix = msg.background ? '后台下载中 ' : '正在下载 ';
     text = total > 0
-      ? '正在下载 ' + Math.round((msg.received || 0) * 100 / total) + '%（' + fmtMB(msg.received) + ' / ' + fmtMB(total) + '）'
-      : '正在下载 ' + fmtMB(msg.received);
+      ? prefix + Math.round(received * 100 / total) + '%（' + fmtMB(received) + ' / ' + fmtMB(total) + '）'
+      : prefix + fmtMB(received);
+  }
+  const wrap = document.getElementById('updateProgressWrap');
+  const bar = document.getElementById('updateProgressBar');
+  if (wrap && bar) {
+    // 进度条只在有总长度时才有意义，否则只会一直停在 0% 让人以为卡住
+    const showBar = (state === 'downloading' && total > 0);
+    wrap.style.display = showBar ? '' : 'none';
+    bar.style.width = showBar ? Math.min(100, received * 100 / total).toFixed(1) + '%' : '0%';
   }
   const installing = (state === 'verifying' || state === 'installing');
   ['updateStatus','settingsUpdateStatus'].forEach(function (id) {
@@ -237,9 +248,12 @@ function renderUpdateProgress(msg) {
     }
   });
   const busy = (state === 'preparing' || state === 'downloading');
+  // 后台在下载时不禁用按钮：用户点下去才有机会按速率决定「接手显示」还是「掐断重下」，
+  // 直接禁用等于把这条路堵死（那正是「点了没反应」的来源）。
+  const foregroundDownload = busy && !msg.background;
   const btn = document.getElementById('downloadUpdateBtn');
   if (btn) {
-    btn.disabled = busy || installing;
+    btn.disabled = foregroundDownload || installing;
     // 校验 / 静默安装阶段已经没什么可下载的了，别再让用户以为还能再点一次
     if (installing) btn.style.display = 'none';
   }

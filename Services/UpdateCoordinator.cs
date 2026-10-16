@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -20,7 +21,7 @@ namespace SeewoAutoLogin.Services
         private readonly Action<string> _setTrayStatus;
         private readonly Action _requestExit;
         private readonly Action<Action> _invokeOnUi;
-        private readonly Action<string, double?> _notifyUi;
+        private readonly Action<SilentUpdateSnapshot> _notifyUi;
         private readonly Func<bool> _isMainWindowOpen;
         private int _running;
 
@@ -31,7 +32,7 @@ namespace SeewoAutoLogin.Services
             Action<string> setTrayStatus,
             Action requestExit,
             Action<Action> invokeOnUi,
-            Action<string, double?> notifyUi = null,
+            Action<SilentUpdateSnapshot> notifyUi = null,
             Func<bool> isMainWindowOpen = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
@@ -115,7 +116,12 @@ namespace SeewoAutoLogin.Services
             if (_isMainWindowOpen())
             {
                 _log("[Update] 主界面正在打开，本次不安装；关闭主界面后由下一轮自动更新");
-                _notifyUi?.Invoke($"新版本 v{info.Version} 已就绪，关闭主界面后会自动更新", null);
+                _notifyUi?.Invoke(new SilentUpdateSnapshot
+                {
+                    Stage = "ready",
+                    Version = info.Version,
+                    Text = $"新版本 v{info.Version} 已就绪，关闭主界面后会自动更新"
+                });
                 return;
             }
 
@@ -159,9 +165,16 @@ namespace SeewoAutoLogin.Services
             // 托盘按 5% 的台阶更新：进度回调是毫秒级的，每回调一次就改一次悬停提示，
             // 等于让 Shell 反复刷新通知区，任务栏图标会跟着闪。
             var lastTrayStep = -1;
+            ResetRateSampling();
+            _downloadCts?.Dispose();
+            _downloadCts = new CancellationTokenSource();
+            var downloadToken = _downloadCts.Token;
+
             var progress = new Progress<(long received, long total)>(p =>
             {
                 var percent = p.total > 0 ? (double?)Math.Round(p.received * 100.0 / p.total, 1) : null;
+                var snapshot = PublishDownloading(info.Version, p.received, p.total, percent, SampleRate(p.received));
+
                 var step = percent.HasValue ? (int)(percent.Value / 5) : -1;
                 if (step != lastTrayStep)
                 {
@@ -170,14 +183,32 @@ namespace SeewoAutoLogin.Services
                         ? $"正在后台下载 v{info.Version} {percent:F0}%"
                         : $"正在后台下载 v{info.Version}");
                 }
-                _notifyUi?.Invoke(
-                    $"正在后台下载更新 v{info.Version}" + (percent.HasValue ? $"（{percent:F0}%）" : ""),
-                    percent);
+                _notifyUi?.Invoke(snapshot);
             });
-            // 注意：SHA256 强校验在 DownloadAsync 内部完成
-            var localPath = await DownloadAccelerator.DownloadAsync(
-                downloadUrl, downloadSha, progress,
-                msg => _log($"[Update] {msg}"), CancellationToken.None);
+
+            string localPath;
+            _downloadFinished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            try
+            {
+                // 注意：SHA256 强校验在 DownloadAsync 内部完成
+                localPath = await DownloadAccelerator.DownloadAsync(
+                    downloadUrl, downloadSha, progress,
+                    msg => _log($"[Update] {msg}"), downloadToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // 多半是用户在前台点了「下载新版本」而这一条太慢：前台会自己重下，这里安静收场。
+                _log($"[Update] 后台下载 v{info.Version} 已取消");
+                return;
+            }
+            finally
+            {
+                _downloadFinished?.TrySetResult(true);
+                _downloadFinished = null;
+                _downloadCts?.Dispose();
+                _downloadCts = null;
+                PublishIdle();
+            }
 
             // 下载可能花掉几分钟，装之前再确认一次希沃有没有开始用。
             if (SsologinRecentlyUsed(out var sinceMinutes2))
@@ -203,7 +234,12 @@ namespace SeewoAutoLogin.Services
                 _saveConfig();
 
                 _setTrayStatus($"正在替换便携版 v{info.Version}");
-                _notifyUi?.Invoke($"正在更新到 v{info.Version}（会保留旧版本备份）", null);
+                _notifyUi?.Invoke(new SilentUpdateSnapshot
+                {
+                    Stage = "installing",
+                    Version = info.Version,
+                    Text = $"正在更新到 v{info.Version}（会保留旧版本备份）"
+                });
                 _log($"[Update] 便携版自更新：目标目录 {UpdateChannel.CurrentDirectory}，备份到 {PortableUpdater.BackupRoot}\\{info.Version}");
 
                 if (!PortableUpdater.LaunchReplaceScript(staging, info.Version, _log))
@@ -297,6 +333,108 @@ namespace SeewoAutoLogin.Services
                 ? text
                 : text.Substring(0, MaxNoticeNotesChars) + "\n…";
         }
+
+        #region 对外状态
+
+        private readonly object _stateGate = new object();
+        private SilentUpdateSnapshot _snapshot = new SilentUpdateSnapshot();
+        private CancellationTokenSource _downloadCts;
+        private TaskCompletionSource<bool> _downloadFinished;
+        private readonly Queue<(DateTime AtUtc, long Received)> _rateWindow = new Queue<(DateTime, long)>();
+        private double _lastRate;
+
+        /// <summary>当前后台更新状态的一份值拷贝。</summary>
+        public SilentUpdateSnapshot Snapshot()
+        {
+            lock (_stateGate) return _snapshot.Clone();
+        }
+
+        /// <summary>是否正在下载更新包。</summary>
+        public bool IsDownloading => Snapshot().IsDownloading;
+
+        /// <summary>
+        /// 掐断后台正在进行的下载。等到下载循环真正退出才返回 ——
+        /// 否则前台会立刻用同一个文件名重新下载，两个任务写同一个文件。
+        /// </summary>
+        public async Task<bool> AbortDownloadAsync(string reason, int waitMs = 8000)
+        {
+            CancellationTokenSource cts;
+            TaskCompletionSource<bool> finished;
+            lock (_stateGate)
+            {
+                cts = _downloadCts;
+                finished = _downloadFinished;
+            }
+
+            if (cts == null || cts.IsCancellationRequested) return false;
+
+            _log($"[Update] {reason} —— 掐断后台下载");
+            try { cts.Cancel(); } catch { }
+
+            if (finished != null)
+            {
+                try { await Task.WhenAny(finished.Task, Task.Delay(waitMs)); } catch { }
+            }
+
+            PublishIdle();
+            return true;
+        }
+
+        private SilentUpdateSnapshot PublishDownloading(string version, long received, long total, double? percent, double rate)
+        {
+            var snapshot = new SilentUpdateSnapshot
+            {
+                Stage = "downloading",
+                Version = version ?? "",
+                Received = received,
+                Total = total,
+                Percent = percent,
+                BytesPerSecond = rate,
+                Text = $"正在后台下载 v{version}"
+            };
+            lock (_stateGate) _snapshot = snapshot;
+            return snapshot;
+        }
+
+        private void PublishIdle()
+        {
+            lock (_stateGate) _snapshot = new SilentUpdateSnapshot();
+            ResetRateSampling();
+        }
+
+        /// <summary>
+        /// 速率采样：看最近 3 秒的窗口。窗口跨度不足 1 秒时沿用上一次的结果，
+        /// 否则开头几次回调会算出离谱的速率，前台据此判断「要不要接手」就会翻车。
+        /// </summary>
+        private double SampleRate(long received)
+        {
+            var now = DateTime.UtcNow;
+            lock (_stateGate)
+            {
+                _rateWindow.Enqueue((now, received));
+                while (_rateWindow.Count > 2 && (now - _rateWindow.Peek().AtUtc).TotalSeconds > 3)
+                    _rateWindow.Dequeue();
+
+                if (_rateWindow.Count >= 2)
+                {
+                    var first = _rateWindow.Peek();
+                    var seconds = (now - first.AtUtc).TotalSeconds;
+                    if (seconds >= 1) _lastRate = (received - first.Received) / seconds;
+                }
+                return _lastRate;
+            }
+        }
+
+        private void ResetRateSampling()
+        {
+            lock (_stateGate)
+            {
+                _rateWindow.Clear();
+                _lastRate = 0;
+            }
+        }
+
+        #endregion
 
         /// <summary>清空待更新状态并落盘。</summary>
         public void ClearPendingState()

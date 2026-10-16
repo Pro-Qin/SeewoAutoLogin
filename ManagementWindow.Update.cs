@@ -29,20 +29,35 @@ namespace SeewoAutoLogin
 
         /// <summary>
         /// 后台静默更新的进度回显。由 UpdateCoordinator 在下载/安装阶段调用：
-        /// 主界面没打开时自然什么也不做，开着的时候就能看到进度，而不是只盯着托盘提示。
+        /// 主界面没打开时自然什么也不做，开着的时候就能看到同一条进度与进度条。
         /// </summary>
-        internal void NotifyUpdateProgress(string text, double? percent)
+        internal void OnSilentUpdateProgress(SilentUpdateSnapshot progress)
         {
-            if (!IsLoaded) return;
+            if (progress == null || !IsLoaded) return;
             try
             {
-                _ = SendToJs(new
+                if (progress.IsDownloading)
                 {
-                    type = "update-progress",
-                    state = "downloading",
-                    text = text,
-                    percent = percent
-                });
+                    // 后台下载复用前台的进度渲染：received/total 齐全，界面据此画进度条
+                    _ = SendToJs(new
+                    {
+                        type = "update-progress",
+                        state = "downloading",
+                        received = progress.Received,
+                        total = progress.Total,
+                        background = true
+                    });
+                }
+                else if (!string.IsNullOrWhiteSpace(progress.Text))
+                {
+                    _ = SendToJs(new
+                    {
+                        type = "update-progress",
+                        state = progress.Stage,
+                        text = progress.Text,
+                        background = true
+                    });
+                }
             }
             catch { }
         }
@@ -256,11 +271,44 @@ namespace SeewoAutoLogin
         /// </summary>
         private async void HandleDownloadUpdate()
         {
-            if (_app.IsSilentUpdateRunning)
+            // 后台可能正拿着同一个包在下载。先看它跑到哪了：
+            // 够快就接过它的进度显示（前台不重复下载），慢就掐断它、由前台重下一遍 ——
+            // 前台这条路有进度条，也有「取消下载」。
+            var silent = _app.SilentUpdateSnapshot();
+            if (silent.IsDownloading)
             {
-                _app.WriteDiagnosticLog("[Update] 后台静默更新正在运行，忽略手动下载请求");
-                await SendToJs(new { type = "toast", text = "后台正在自动更新，无需重复下载", level = "info" });
+                if (SilentUpdatePolicy.ShouldAdopt((long)silent.BytesPerSecond, silent.Percent))
+                {
+                    _app.WriteDiagnosticLog($"[Update] 后台下载进行中（{SilentUpdatePolicy.Describe(silent.BytesPerSecond, silent.Percent)}），改为在前台显示它的进度");
+                    await SendToJs(new { type = "toast", text = "正在显示后台的下载进度", level = "info" });
+                    OnSilentUpdateProgress(silent);
+                    return;
+                }
+
+                _app.WriteDiagnosticLog($"[Update] 后台下载偏慢（{SilentUpdatePolicy.Describe(silent.BytesPerSecond, silent.Percent)}），掐断后台，改由前台重新下载");
+                await _app.AbortSilentUpdateAsync("用户手动点「下载新版本」，后台这条太慢");
+            }
+            else if (silent.Stage == "installing")
+            {
+                // 已经在替换/安装，重复点一次只会再拉一遍同一个包
+                await SendToJs(new { type = "toast", text = "更新包已在后台安装，完成后会提示你", level = "info" });
                 return;
+            }
+            else
+            {
+                var pending = _app.PendingUpdateVersion;
+                if (!string.IsNullOrWhiteSpace(pending))
+                {
+                    // 之前已经下好、在等安装时机（例如主界面开着）。重复下载只是把同一个包拉第二遍。
+                    _app.WriteDiagnosticLog($"[Update] v{pending} 的更新包已在后台就绪，不重复下载");
+                    await SendToJs(new
+                    {
+                        type = "update-progress",
+                        state = "downloaded",
+                        text = $"v{pending} 的更新包已下载完成，关闭主界面后会自动安装"
+                    });
+                    return;
+                }
             }
 
             var info = _latestUpdate;
@@ -500,18 +548,27 @@ namespace SeewoAutoLogin
             }
         }
 
-        /// <summary>取消正在进行的更新包下载</summary>
+        /// <summary>取消正在进行的更新包下载（前台自己的，或者界面上正显示的后台那条）</summary>
         private void HandleCancelDownload()
         {
             try
             {
-                if (_downloadCts == null || _downloadCts.IsCancellationRequested)
+                if (_downloadCts != null && !_downloadCts.IsCancellationRequested)
                 {
-                    _app.WriteDiagnosticLog("[Update] 当前没有正在进行的下载");
+                    _downloadCts.Cancel();
+                    _app.WriteDiagnosticLog("[Update] 收到取消下载请求");
                     return;
                 }
-                _downloadCts.Cancel();
-                _app.WriteDiagnosticLog("[Update] 收到取消下载请求");
+
+                // 前台没有下载任务时，界面上的「取消下载」只可能来自后台那条进度
+                if (_app.SilentUpdateSnapshot().IsDownloading)
+                {
+                    _app.WriteDiagnosticLog("[Update] 收到取消下载请求（后台静默下载）");
+                    _ = _app.AbortSilentUpdateAsync("用户在界面取消下载");
+                    return;
+                }
+
+                _app.WriteDiagnosticLog("[Update] 当前没有正在进行的下载");
             }
             catch (Exception ex)
             {

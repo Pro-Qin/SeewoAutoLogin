@@ -400,6 +400,8 @@
             <button class="btn btn-secondary" id="cancelDownloadBtn" style="display:none">取消下载</button>
           </div>
           <div id="updateStatus" class="update-status"></div>
+          <!-- 下载进度条：前台下载与后台静默下载共用同一条 -->
+          <div id="updateProgressWrap" class="update-progress" style="display:none"><div id="updateProgressBar"></div></div>
           <!-- 下载完成后的静默升级开关：与「设置 → 更新」里的同名开关共用同一份配置 -->
           <label class="checkbox-row" style="justify-content:center;margin:12px 0 0 0">
             <input type="checkbox" id="autoInstallUpdateCheck" checked>
