@@ -669,7 +669,7 @@ namespace SeewoAutoLogin
         {
             try
             {
-                var last = Services.SeewoSsoGateway.LastSsologinUtc;
+                var last = SeewoSsoGateway.LastSsologinUtc;
                 return last == DateTime.MinValue || DateTime.UtcNow - last >= TimeSpan.FromMinutes(15);
             }
             catch
