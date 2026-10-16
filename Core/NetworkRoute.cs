@@ -340,12 +340,13 @@ namespace SeewoAutoLogin
 
         private static bool IsTransportFailure(Exception ex)
         {
+            // 超时（TaskCanceledException / HttpClient 的 Timeout）故意不在这个列表里：
+            // 它通常只是服务端慢，把它当成「代理坏了」会让随后 10 分钟都优先走直连，
+            // 每次都要再等满一个超时才回到代理 —— 单次登录能拖到一分钟以上。
             return ex is HttpRequestException
                 || ex is SocketException
                 || ex is System.IO.IOException
-                || ex is System.Security.Authentication.AuthenticationException
-                || ex is TaskCanceledException
-                || ex is OperationCanceledException;
+                || ex is System.Security.Authentication.AuthenticationException;
         }
 
         private static string Describe(Exception ex)

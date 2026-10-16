@@ -116,12 +116,8 @@ namespace SeewoAutoLogin.Services
             if (_isMainWindowOpen())
             {
                 _log("[Update] 主界面正在打开，本次不安装；关闭主界面后由下一轮自动更新");
-                _notifyUi?.Invoke(new SilentUpdateSnapshot
-                {
-                    Stage = "ready",
-                    Version = info.Version,
-                    Text = $"新版本 v{info.Version} 已就绪，关闭主界面后会自动更新"
-                });
+                _notifyUi?.Invoke(Publish("ready", info.Version,
+                    $"新版本 v{info.Version} 已就绪，关闭主界面后会自动更新"));
                 return;
             }
 
@@ -208,6 +204,8 @@ namespace SeewoAutoLogin.Services
                 _downloadCts?.Dispose();
                 _downloadCts = null;
                 PublishIdle();
+                // 悬停提示会一直停在「正在后台下载 vX 45%」：下载结束恢复成默认标题
+                try { _setTrayStatus(SeewoAutoLogin.Strings.AppTitle); } catch { }
             }
 
             // 下载可能花掉几分钟，装之前再确认一次希沃有没有开始用。
@@ -222,12 +220,8 @@ namespace SeewoAutoLogin.Services
             if (_isMainWindowOpen())
             {
                 _log("[Update] 下载期间主界面被打开，本次不安装；关闭主界面后由下一轮完成");
-                _notifyUi?.Invoke(new SilentUpdateSnapshot
-                {
-                    Stage = "ready",
-                    Version = info.Version,
-                    Text = $"新版本 v{info.Version} 已就绪，关闭主界面后会自动更新"
-                });
+                _notifyUi?.Invoke(Publish("ready", info.Version,
+                    $"新版本 v{info.Version} 已就绪，关闭主界面后会自动更新"));
                 return;
             }
 
@@ -248,12 +242,8 @@ namespace SeewoAutoLogin.Services
                 _saveConfig();
 
                 _setTrayStatus($"正在替换便携版 v{info.Version}");
-                _notifyUi?.Invoke(new SilentUpdateSnapshot
-                {
-                    Stage = "installing",
-                    Version = info.Version,
-                    Text = $"正在更新到 v{info.Version}（会保留旧版本备份）"
-                });
+                _notifyUi?.Invoke(Publish("installing", info.Version,
+                    $"正在更新到 v{info.Version}（会保留旧版本备份）"));
                 _log($"[Update] 便携版自更新：目标目录 {UpdateChannel.CurrentDirectory}，备份到 {PortableUpdater.BackupRoot}\\{info.Version}");
 
                 if (!PortableUpdater.LaunchReplaceScript(staging, info.Version, _log))
@@ -398,6 +388,13 @@ namespace SeewoAutoLogin.Services
             if (finished != null)
             {
                 try { await Task.WhenAny(finished.Task, Task.Delay(waitMs)); } catch { }
+                if (!finished.Task.IsCompleted)
+                {
+                    // 后台还没真正退出：这时前台立刻重下会撞上同一个目标文件
+                    //（两条链路用同一个文件名，FileShare.None 下直接 IOException）。
+                    _log("[Update] 后台下载未能在超时内退出，本次不改由前台接手");
+                    return false;
+                }
             }
 
             PublishIdle();
@@ -415,6 +412,22 @@ namespace SeewoAutoLogin.Services
                 Percent = percent,
                 BytesPerSecond = rate,
                 Text = $"正在后台下载 v{version}"
+            };
+            lock (_stateGate) _snapshot = snapshot;
+            return snapshot;
+        }
+
+        /// <summary>
+        /// 发布一个非下载阶段的状态。原先这类状态只经过 _notifyUi 直发、不写 _snapshot，
+        /// 于是界面查到的快照永远只有 idle/downloading，「正在安装」那条分支形同虚设。
+        /// </summary>
+        private SilentUpdateSnapshot Publish(string stage, string version, string text)
+        {
+            var snapshot = new SilentUpdateSnapshot
+            {
+                Stage = stage ?? "idle",
+                Version = version ?? "",
+                Text = text ?? ""
             };
             lock (_stateGate) _snapshot = snapshot;
             return snapshot;

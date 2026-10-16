@@ -82,9 +82,11 @@ namespace SeewoAutoLogin
         /// </summary>
         internal async Task<(int refreshed, int failed)> RunKeepAliveAsync(bool force = false)
         {
-            if (_keepAliveRunning) return (0, 0);
+            // 返回 -1 表示「这一轮根本没跑」：调用方要能区分它和「跑了但没问题」，
+            // 否则界面会显示「已自动修复 0 个」，让用户以为账号都没事。
+            if (_keepAliveRunning) return (-1, -1);
             // Timer 回调与界面的健康巡检可能并发进来，用原子交换保证同一时间只有一轮。
-            if (Interlocked.CompareExchange(ref _keepAliveRunningFlag, 1, 0) != 0) return (0, 0);
+            if (Interlocked.CompareExchange(ref _keepAliveRunningFlag, 1, 0) != 0) return (-1, -1);
             _keepAliveRunning = true;
 
             var refreshed = 0;
@@ -211,6 +213,8 @@ namespace SeewoAutoLogin
                     if (!result.Success)
                         return (false, result.ErrorMessage ?? "密码登录失败", result.FailureKind);
                     if (result.UserInfo != null) account.UserInfo = result.UserInfo;
+                    LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
+                        "keepalive", true, "自动续期（密码重新登录）");
                     return (true, "已自动重新登录", SeewoFailureKind.None);
                 }
 
@@ -248,6 +252,8 @@ namespace SeewoAutoLogin
                                 (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours, success: false);
                         WriteDiagnosticLog($"[KeepAlive] 扫码凭据续期失败; account-id={account.Id}; 凭据年龄={age}; " +
                                            $"说明=凭据已超出有效期，无法自动恢复，需要重新扫码");
+                        LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
+                            "keepalive", false, "扫码凭据已过期，需要重新扫码");
                         return (false, "扫码令牌已失效，需要重新扫码添加", SeewoFailureKind.Credential);
                     }
 
@@ -258,6 +264,8 @@ namespace SeewoAutoLogin
                             (DateTimeOffset.UtcNow - session.AcquiredAtUtc).TotalHours, success: true);
                     if (!string.IsNullOrWhiteSpace(service.Token)) OnQrTokenValidated(account, service.Token);
                     if (service.UserInfo != null) account.UserInfo = service.UserInfo;
+                    LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
+                        "keepalive", true, "自动续期（扫码凭据换发）");
                     return (true, "已自动续期", SeewoFailureKind.None);
                 }
 

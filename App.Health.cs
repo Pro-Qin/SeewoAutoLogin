@@ -18,8 +18,16 @@ namespace SeewoAutoLogin
         #region Self Check / Health / Batch Import
 
         /// <summary>自检状态（供主界面状态栏展示）</summary>
-        internal object BuildSelfCheckStatus() => new
+        internal object BuildSelfCheckStatus()
         {
+            // Process 实现 IDisposable：每次自检都会枚举一遍全系统进程，句柄不释放就一路堆到 GC
+            var seewoProcs = Process.GetProcessesByName("EasiNote");
+            bool seewoRunning;
+            try { seewoRunning = seewoProcs.Length > 0; }
+            finally { foreach (var p in seewoProcs) p.Dispose(); }
+
+            return new
+            {
             gatewayRunning = _gateway?.IsRunning == true,
             gatewayPort = _gateway?.Port ?? 0,
             expectedPort = SeewoSsoGateway.SeewoExpectedPort,
@@ -30,13 +38,14 @@ namespace SeewoAutoLogin
             hostsOk = Services.HostsFileService.HasLoopbackMapping(),
             hostsState = Services.HostsFileService.DescribeState(),
             isAdmin = IsAdministrator(),
-            seewoRunning = Process.GetProcessesByName("EasiNote").Length > 0,
+            seewoRunning = seewoRunning,
             autoStartEnabled = Services.AutoStartService.IsEnabled,
             autoStartMode = Services.AutoStartService.CurrentMode(),
             autoStartText = Services.AutoStartService.DescribeState(),
             lastBackup = Services.ConfigBackupService.DescribeLatest(),
             maxVisibleAccounts = PluginConfig.MaxVisibleAccounts
-        };
+            };
+        }
 
         private int _autoRepairRunning;
 
@@ -107,7 +116,14 @@ namespace SeewoAutoLogin
                         actions.Add("hosts 修复失败：" + hostsError);
                 }
 
-                if (_gateway != null && (!_gateway.IsRunning || _gateway.IsPortMismatched))
+                // 端口不符多半是希沃的 EasiAgent 占着 24300，而要不要结束它由上面的空闲判断决定。
+                // 每 3 分钟把网关停掉重启一次，既抢不回端口，又会打断正在进行的 SSOLOGIN —— 只告警。
+                if (_gateway != null && _gateway.IsRunning && _gateway.IsPortMismatched)
+                {
+                    WriteDiagnosticLog($"[AutoRepair] 网关端口 {_gateway.Port} 与希沃请求的 {SeewoSsoGateway.SeewoExpectedPort} 不一致，"
+                        + "希沃可能正占用该端口；本轮只记录，不重置网关");
+                }
+                else if (_gateway != null && !_gateway.IsRunning)
                 {
                     try
                     {
@@ -178,6 +194,11 @@ namespace SeewoAutoLogin
         {
             WriteDiagnosticLog("[Health] 开始账号健康巡检（发现问题会自动重新导入）");
             var (refreshed, failed) = await RunKeepAliveAsync(force: true).ConfigureAwait(true);
+            if (refreshed < 0)
+            {
+                WriteDiagnosticLog("[Health] 后台保活正在进行，本次巡检未执行（这不是「没有问题」）");
+                return;
+            }
             var transient = _config.Accounts.Count(a =>
                 !IsPlaceholderAccount(a) && a.HealthState == "warn");
             WriteDiagnosticLog($"[Health] 巡检完成：已自动修复 {refreshed} 个，仍需人工处理 {failed} 个，网络暂缓 {transient} 个");

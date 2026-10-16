@@ -111,7 +111,8 @@ namespace SeewoAutoLogin.Services
             try
             {
                 Directory.CreateDirectory(CrashDir);
-                var file = Path.Combine(CrashDir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+                // 带毫秒：同一秒内连续抛出的异常原先会互相覆盖，只剩最后一条
+                var file = Path.Combine(CrashDir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss-fff}.log");
                 var sb = new StringBuilder();
                 sb.AppendLine($"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
                 sb.AppendLine($"来源: {source}");

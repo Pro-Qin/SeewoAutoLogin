@@ -30,6 +30,9 @@ namespace SeewoAutoLogin
         /// 主要给老一体机 / Win7 机器用；不影响任何功能，只影响观感。
         /// </summary>
         public bool PerformanceMode { get; set; }
+
+        /// <summary>粒子背景开关（界面装饰，关掉后不再绘制）。默认开启。</summary>
+        public bool ParticleBackground { get; set; } = true;
         /// <summary>启动时自动检查更新（默认开启）</summary>
         public bool AutoCheckUpdate { get; set; } = true;
         /// <summary>

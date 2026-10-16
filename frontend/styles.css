@@ -573,6 +573,24 @@ nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
   background: linear-gradient(90deg, var(--blue-dark), var(--blue-light));
   transition: width 0.2s linear;
 }
+.login-history {
+  margin-top: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.lh-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 12px;
+}
+.lh-row.bad .lh-detail { color: var(--danger); }
+.lh-time { color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lh-name { color: var(--text-primary); min-width: 88px; }
+.lh-src { color: var(--text-blue); min-width: 66px; }
+.lh-detail { color: var(--text-tertiary); }
 .update-status {
   font-size: 12px; color: var(--text-tertiary);
   margin-top: 10px; min-height: 18px; line-height: 1.6;
@@ -773,7 +791,8 @@ nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
 @keyframes tourHintPulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 
 /* 教程期间隐藏页面滚动条抖动 */
-.tour-open body { overflow: hidden; }
+/* 类挂在 body 上，选择器必须写成 body.tour-open —— 原先的 .tour-open body 要求它是 body 的祖先，永远不匹配 */
+body.tour-open { overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   .tour-mask, .tour-ring, .tour-card, .tour-media img { transition-duration: 1ms !important; }

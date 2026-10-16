@@ -26,7 +26,8 @@ namespace SeewoAutoLogin
         private readonly Action<SeewoAccount, string> _onQrTokenValidated;
         private readonly SeewoUserListRotationService _userListRotation;
         private readonly Action _saveConfig;
-        private DateTime _lastConfigSaveUtc;
+        /// <summary>上次把请求统计落盘的时刻（ticks）。用原子读写：并发请求不能同时通过节流检查。</summary>
+        private long _lastConfigSaveTicks;
         private readonly ConcurrentDictionary<string, RequestWindow> _requestWindows = new();
         private const int MaxRequestsPerMinute = 120;
 
@@ -96,8 +97,11 @@ namespace SeewoAutoLogin
         {
             if (_saveConfig == null) return;
             var now = DateTime.UtcNow;
-            if ((now - _lastConfigSaveUtc).TotalSeconds < 5) return;
-            _lastConfigSaveUtc = now;
+            // 读-改-写之间有窗口：希沃会并发发多个 SSOLOGIN，原先的写法会让几个请求同时通过检查
+            // 一起去序列化整份配置（与界面线程的增删账号打架）。
+            var last = Interlocked.Read(ref _lastConfigSaveTicks);
+            if (now.Ticks - last < TimeSpan.TicksPerSecond * 5) return;
+            if (Interlocked.CompareExchange(ref _lastConfigSaveTicks, now.Ticks, last) != last) return;
             try { _saveConfig(); }
             catch (Exception ex) { Log($"SSO 请求统计落盘失败: {ex.GetType().Name}"); }
         }
@@ -550,6 +554,29 @@ namespace SeewoAutoLogin
                     return;
                 }
             }
+            if (string.IsNullOrEmpty(origin))
+            {
+                // 一类请求不带 Origin —— <img src="http://127.0.0.1:24300/getData/SSOLOGOUT">、
+                // 表单导航都算，浏览器照样会发。它们同样能把希沃的登录态清掉，所以这里补一道：
+                // 只认浏览器明确标注为同源/无来源的请求，以及不携带任何浏览器指纹的调用方（希沃客户端自己）。
+                var fetchSite = req.Headers["Sec-Fetch-Site"];
+                var referer = req.Headers["Referer"];
+                var refererOrigin = "";
+                if (!string.IsNullOrEmpty(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var refererUri))
+                    refererOrigin = refererUri.Scheme + "://" + refererUri.Authority;
+
+                var crossSite = string.Equals(fetchSite, "cross-site", StringComparison.OrdinalIgnoreCase)
+                                || (!string.IsNullOrEmpty(refererOrigin) && !IsLocalOrigin(refererOrigin));
+
+                if (crossSite)
+                {
+                    Log($"拒绝疑似跨站的 SSO 请求: {req.HttpMethod} {path} fetchSite={fetchSite} referer={referer}");
+                    resp.StatusCode = 403;
+                    try { await WriteJson(resp, new { message = "forbidden_origin", statusCode = "403" }); } catch { }
+                    return;
+                }
+            }
+
             resp.Headers.Add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
             resp.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
@@ -600,8 +627,11 @@ namespace SeewoAutoLogin
                         a.LastRequestAtUtc = DateTime.UtcNow;
                     }
 
-                    // 通知外部本次展示了哪些账号
-                    AccountsServed?.Invoke(visibleAccounts.Select(a => a.Id).ToList());
+                    // 通知外部本次展示了哪些账号。
+                    // 必须包起来：订阅者在退出过程中调用 Dispatcher 会抛异常，
+                    // 那个异常会把这次已经成功的 SSOLOGIN 变成 500（希沃拿不到列表），而统计已经改过了。
+                    try { AccountsServed?.Invoke(visibleAccounts.Select(a => a.Id).ToList()); }
+                    catch (Exception ex) { Log($"账号服务回调异常: {ex.GetType().Name}"); }
                     ThrottledSaveConfig();
 
                     await WriteJson(resp, new { message = "success", statusCode = "200", data = accounts });
@@ -701,6 +731,8 @@ namespace SeewoAutoLogin
 
                         if (!loginResult.Success)
                         {
+                            SeewoAutoLogin.Services.LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
+                                "seewo", false, loginResult.ErrorMessage ?? "登录失败");
                             resp.StatusCode = 401;
                             await WriteJson(resp, new { message = "login_failed", statusCode = "401", detail = loginResult.ErrorMessage });
                             Log($"SSOLOGIN/{userId}: 登录失败 - {loginResult.ErrorMessage}");
@@ -714,6 +746,11 @@ namespace SeewoAutoLogin
 
                         account.UserInfo = loginResult.UserInfo;
                         _onLoginSuccess?.Invoke(account);
+
+                        // 记一条登录记录：老师点快捷登录之后能查到「哪个账号、什么时候被谁登录过」
+                        SeewoAutoLogin.Services.LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
+                            "seewo", true,
+                            string.IsNullOrEmpty(account.Password) ? "希沃快捷登录（扫码凭据续期）" : "希沃快捷登录（密码）");
 
                         Log($"SSOLOGIN/{userId}: 登录成功 - {loginResult.UserInfo?.NickName}");
                         return;

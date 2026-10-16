@@ -133,6 +133,23 @@ namespace SeewoAutoLogin.Services
         };
 
         /// <summary>
+        /// 地址是否指向本仓库的发布资源。
+        ///
+        /// IsTrustedDownloadUrl 只认主机，而默认更新源里有第三方镜像（它代取 GitHub API 的响应）。
+        /// 镜像一旦被控，就能返回 https://github.com/任意账号/任意仓库/releases/download/... 这种
+        /// 「主机合法、内容任意」的直链，再配上自洽的 SHA256，最后被以管理员权限静默安装。
+        /// 所以下载直链除了主机合法，路径还得对得上本仓库。
+        /// </summary>
+        public static bool IsOwnRepoUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+            var needle = "/" + RepoOwner + "/" + RepoName + "/";
+            // 加速镜像形如 https://gh-proxy.com/https://github.com/Pro-Qin/SeewoAutoLogin/...，
+            // 原始地址整段落在路径里，所以这里做子串匹配就够了。
+            return url.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
         /// 判断下载地址是否可信：必须是合法的 https 绝对地址，且主机命中白名单（含受信任域名的子域）。
         /// </summary>
         public static bool IsTrustedDownloadUrl(string url)
@@ -296,7 +313,7 @@ namespace SeewoAutoLogin.Services
 
             var tag = root.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
             var pageUrl = root.TryGetProperty("html_url", out var htmlElement) ? htmlElement.GetString() : null;
-            if (string.IsNullOrWhiteSpace(pageUrl) || !IsTrustedDownloadUrl(pageUrl))
+            if (string.IsNullOrWhiteSpace(pageUrl) || !IsTrustedDownloadUrl(pageUrl) || !IsOwnRepoUrl(pageUrl))
             {
                 if (!string.IsNullOrWhiteSpace(pageUrl))
                     log?.Invoke($"[Update] 忽略不可信的发布页地址，改用官方发布页：{pageUrl}");
@@ -325,8 +342,9 @@ namespace SeewoAutoLogin.Services
                         : null;
                     if (string.IsNullOrWhiteSpace(download)) continue;
 
-                    // browser_download_url 不可原样信任：只接受 https + 白名单主机，否则丢弃该资源
-                    if (!IsTrustedDownloadUrl(download))
+                    // browser_download_url 不可原样信任：除了 https + 白名单主机，路径还必须指向本仓库 ——
+                    // 否则一个被控的镜像就能给出「主机合法、其实指向别人仓库」的安装包。
+                    if (!IsTrustedDownloadUrl(download) || !IsOwnRepoUrl(download))
                     {
                         log?.Invoke($"[Update] 忽略不可信下载地址（{HostOf(download.Trim())}）：{download.Trim()}");
                         continue;
@@ -395,14 +413,14 @@ namespace SeewoAutoLogin.Services
                 info.PageUrl = ReleasesPageUrl;
             }
 
-            if (!string.IsNullOrEmpty(info.ExeUrl) && !IsTrustedDownloadUrl(info.ExeUrl))
+            if (!string.IsNullOrEmpty(info.ExeUrl) && (!IsTrustedDownloadUrl(info.ExeUrl) || !IsOwnRepoUrl(info.ExeUrl)))
             {
                 log?.Invoke($"[Update] 单文件版下载地址未通过可信校验，已忽略：{info.ExeUrl}");
                 info.ExeUrl = "";
             }
 
             // 便携版直链同样要过一遍：它的消费端也会把文件落到本机并交给替换脚本执行
-            if (!string.IsNullOrEmpty(info.PortableUrl) && !IsTrustedDownloadUrl(info.PortableUrl))
+            if (!string.IsNullOrEmpty(info.PortableUrl) && (!IsTrustedDownloadUrl(info.PortableUrl) || !IsOwnRepoUrl(info.PortableUrl)))
             {
                 log?.Invoke($"[Update] 便携版下载地址未通过可信校验，已置空并改用发布页：{info.PortableUrl}");
                 info.PortableUrl = "";
@@ -426,7 +444,12 @@ namespace SeewoAutoLogin.Services
             string latest = null;
             foreach (var entry in versions.EnumerateArray())
             {
-                var version = NormalizeVersion(entry.TryGetProperty("version", out var element) ? element.GetString() : null);
+                var raw = entry.TryGetProperty("version", out var element) ? element.GetString() : null;
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                // jsDelivr 的版本列表含预发布 tag，GitHub 的 latest 接口只给正式版：这里跟上。
+                // 否则可能把 1.15.0-beta 当成最新，拼出来的直链不存在，用户只会看到「检查更新失败」。
+                if (raw.IndexOf('-') >= 0) continue;
+                var version = NormalizeVersion(raw);
                 if (string.IsNullOrWhiteSpace(version)) continue;
                 if (latest == null || CompareVersions(version, latest) > 0) latest = version;
             }

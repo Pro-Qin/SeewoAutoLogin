@@ -78,9 +78,14 @@ namespace SeewoAutoLogin.Services
         /// <summary>候选源数量上限（官方 + 加速），防止配置被写坏后并发探测过多</summary>
         private const int MaxCandidates = 12;
 
-        /// <summary>下载目录：%TEMP%\SeewoAutoLogin\update</summary>
+        /// <summary>
+        /// 下载目录：%LOCALAPPDATA%\SeewoAutoLogin\update。
+        /// 不用 %TEMP%：那是个同用户下人人可写的共享位置，别的进程可以预置同名文件。
+        /// </summary>
         public static string DownloadDirectory
-            => Path.Combine(Path.GetTempPath(), "SeewoAutoLogin", "update");
+            => Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "SeewoAutoLogin", "update");
 
         /// <summary>
         /// 生成候选下载源列表：第一项是官方直链本身，其余是「加速前缀 + 原始 URL」。

@@ -95,6 +95,14 @@ namespace SeewoAutoLogin
                 Publish(version, QrLoginState.Cancelled);
                 return null;
             }
+            catch (TaskCanceledException ex)
+            {
+                // 长轮询到点、客户端超时都会走到这里。它既不是取消（token 没被取消）也不是协议错误，
+                // 原先落到通用分支会把 "A task was canceled." 这句英文原样显示到界面上。
+                Log($"扫码会话 #{version} 超时: {ex.GetType().Name}");
+                Publish(version, QrLoginState.NetworkError, message: "扫码超时，请重试");
+                return null;
+            }
             catch (HttpRequestException ex)
             {
                 Log($"扫码会话 #{version} 网络错误: {ex.GetType().Name}; status={(ex.StatusCode.HasValue ? ((int)ex.StatusCode.Value).ToString() : "<none>")}");

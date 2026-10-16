@@ -78,6 +78,9 @@ namespace SeewoAutoLogin
                     if (payload != null) Array.Clear(payload, 0, payload.Length);
                 }
             }
+            // Try 契约：参数非法也只返回 false。原先 ArgumentException 会一路穿透到 SSO 网关，
+            // 让整次 SSOLOGIN 变成 500（导入外部配置把 QrCredentialId 改坏就会这样）。
+            catch (ArgumentException) { return false; }
             catch (CryptographicException) { return false; }
             catch (IOException) { return false; }
             catch (UnauthorizedAccessException) { return false; }

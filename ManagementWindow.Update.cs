@@ -80,11 +80,10 @@ namespace SeewoAutoLogin
             if (!manual && _updateChecked) return;
             _updateChecked = true;
 
-            if (!manual)
-            {
-                _app.Config.LastAutoUpdateCheckUtc = DateTimeOffset.UtcNow;
-                _app.SaveConfig();
-            }
+            // 手动检查也记一次时间戳：否则关掉界面再打开时，那个「1 小时内只自动查一次」
+            // 的节流形同虚设，会立刻又打一次接口。
+            _app.Config.LastAutoUpdateCheckUtc = DateTimeOffset.UtcNow;
+            _app.SaveConfig();
 
             var current = AppVersion;
             try
@@ -149,10 +148,17 @@ namespace SeewoAutoLogin
             {
                 // 判定统一放在 App 侧（TryConsumeUpgradeNotice）：桌面提醒与界面内提醒共用同一份逻辑，
                 // 所以两者不会同时弹 —— 先到的那边走完就把「已提示」标记消费掉了。
-                var notice = _app?.TryConsumeUpgradeNotice(markShown: true);
+                // 先看不消费：界面还没就绪时消息发不出去，标记一旦用掉，这次升级提示就再也看不到了
+                var notice = _app?.TryConsumeUpgradeNotice(markShown: false);
                 if (notice == null) return;
+                if (!_webViewReady)
+                {
+                    _app?.WriteDiagnosticLog("[Update] 界面尚未就绪，升级提示留到下次打开时再显示");
+                    return;
+                }
 
                 await SendToJs(BuildUpgradeNoticePayload(notice.From, notice.To, notice.AtUtc, notice.Notes, false));
+                _app?.TryConsumeUpgradeNotice(markShown: true);
                 _app.WriteDiagnosticLog(
                     $"[Update] 已提示升级完成：{(string.IsNullOrWhiteSpace(notice.From) ? "（无起始版本记录）" : notice.From)} → {notice.To}");
             }
@@ -371,20 +377,21 @@ namespace SeewoAutoLogin
                 // 这一步可能由用户手动点「下载新版本」触发，弹一条通知；后台静默下载走 UpdateCoordinator，不经过这里
                 _app.TrayIcon?.Notify("更新包下载完成");
 
-                // 便携版没有安装向导可以交给用户：目录版必须整体替换，只能走自替换流程
-                if (isPortable)
-                {
-                    await RunPortableSelfUpdateAsync(localPath, info, downloadSha);
-                    return;
-                }
-
-                // 关掉自动安装时保持旧行为：把安装包交给用户，由他自己走安装向导
+                // 关掉自动安装时保持旧行为：把安装包交给用户，由他自己决定什么时候装。
+                // 这条判断要在便携版分支之前 —— 便携版是自替换 + 自动重启，同样属于「自动安装」。
                 if (!_app.Config.AutoInstallAfterDownload)
                 {
                     _app.WriteDiagnosticLog("[Update] 「下载完成后自动安装」已关闭，改为打开安装包由用户手动安装");
                     await SendToJs(new { type = "update-progress", state = "done", text = "下载完成，已为你打开安装程序（自动安装已关闭）" });
                     await SendToJs(new { type = "toast", text = "更新包已下载，已为你打开安装程序（自动安装已关闭）", level = "info" });
                     OpenExternal(localPath);
+                    return;
+                }
+
+                // 便携版没有安装向导可以交给用户：目录版必须整体替换，只能走自替换流程
+                if (isPortable)
+                {
+                    await RunPortableSelfUpdateAsync(localPath, info, downloadSha);
                     return;
                 }
 

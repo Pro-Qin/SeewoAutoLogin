@@ -133,9 +133,21 @@ namespace SeewoAutoLogin
 
                 // 2) 刷新遮罩（基于希沃窗口矩形，不用遮罩自身坐标）
                 double scale = GetDpi() / 96.0;
-                User32.GetWindowRect(_seewoHwnd, out RECT winRect);
-                int winW = winRect.Right - winRect.Left;
-                int winH = winRect.Bottom - winRect.Top;
+                // 句柄可能已经失效（希沃正在重启）：拿不到矩形就用主屏尺寸兜底。
+                // 否则 winW=0 会算出负的 Width/Height 直接抛异常，整个切换流程断在这一步。
+                var winRect = default(RECT);
+                int winW = 0, winH = 0;
+                if (_seewoHwnd != IntPtr.Zero && User32.GetWindowRect(_seewoHwnd, out winRect))
+                {
+                    winW = winRect.Right - winRect.Left;
+                    winH = winRect.Bottom - winRect.Top;
+                }
+                if (winW < 200 || winH < 200)
+                {
+                    winW = (int)(SystemParameters.PrimaryScreenWidth * scale);
+                    winH = (int)(SystemParameters.PrimaryScreenHeight * scale);
+                    winRect = new RECT { Left = 0, Top = 0, Right = winW, Bottom = winH };
+                }
                 var waitWnd = new Window
                 {
                     WindowStyle = WindowStyle.None, AllowsTransparency = true,
@@ -165,10 +177,15 @@ namespace SeewoAutoLogin
                     try
                     {
                         string exePath = null;
-                        foreach (var p in Process.GetProcessesByName("EasiNote"))
+                        var procs = Process.GetProcessesByName("EasiNote");
+                        try
                         {
-                            try { exePath = p.MainModule?.FileName; break; } catch { }
+                            foreach (var p in procs)
+                            {
+                                try { exePath = p.MainModule?.FileName; break; } catch { }
+                            }
                         }
+                        finally { foreach (var p in procs) p.Dispose(); }
                         if (string.IsNullOrEmpty(exePath))
                         {
                             exePath = @"C:\Program Files\Seewo\EasiNote5\EasiNote.exe";
@@ -201,9 +218,15 @@ namespace SeewoAutoLogin
 
         private static IntPtr FindEasiNote()
         {
-            foreach (var p in Process.GetProcessesByName("EasiNote"))
-                if (p.MainWindowHandle != IntPtr.Zero) return p.MainWindowHandle;
-            return IntPtr.Zero;
+            // 这个查询每 300ms 一次：Process 不释放会一路堆到 GC 才回收
+            var procs = Process.GetProcessesByName("EasiNote");
+            try
+            {
+                foreach (var p in procs)
+                    if (p.MainWindowHandle != IntPtr.Zero) return p.MainWindowHandle;
+                return IntPtr.Zero;
+            }
+            finally { foreach (var p in procs) p.Dispose(); }
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -216,6 +239,8 @@ namespace SeewoAutoLogin
         private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { }
         private void OnClosedHandler(object sender, EventArgs e)
         {
+            // 让自动显示逻辑知道「这个遮罩已经关过了」，别在 2 秒后原样弹回来
+            try { if (System.Windows.Application.Current is App app) app.OverlayDismissedByUser = true; } catch { }
             _closing = true;
             _trackTimer?.Stop();
             _autoCloseTimer?.Stop();

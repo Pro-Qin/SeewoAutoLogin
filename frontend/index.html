@@ -323,7 +323,18 @@
           </div>
           <div id="settingsUpdateStatus" class="update-status"></div>
         </div>
-        <!-- 5 数据与迁移 -->
+        <!-- 5 登录记录 -->
+        <div class="card">
+          <h2 class="card-title">登录记录</h2>
+          <div class="card-desc">哪个账号、什么时候登录过、是谁触发的</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+            <select id="loginHistoryAccount" class="input" style="max-width:200px;margin:0"><option value="">全部账号</option></select>
+            <button class="btn btn-secondary" id="loginHistoryRefresh">刷新</button>
+            <button class="btn btn-secondary" id="loginHistoryClear">清空记录</button>
+          </div>
+          <div id="loginHistoryList" class="login-history"><div class="backup-empty">点「刷新」查看登录记录</div></div>
+        </div>
+        <!-- 6 数据与迁移 -->
         <div class="card">
           <h2 class="card-title">数据与迁移</h2>
           <div class="card-desc">换电脑、备份，或者从旧机器搬过来</div>
@@ -369,7 +380,6 @@
           <h2 class="card-title">调试</h2>
           <div class="card-desc">排查问题时用，平时可以不管</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
-            <button class="btn btn-secondary" onclick="addFakeAccount()">添加假账号</button>
             <button class="btn btn-secondary" onclick="send({type:'refresh-debug'})">刷新希沃状态</button>
             <button class="btn btn-secondary" onclick="debugUpgradeNotice()" title="预览「升级完成」提醒的样子与动效，只显示一次，不影响更新状态">显示升级提醒</button>
             <button class="btn btn-secondary" onclick="debugDesktopNotice()" title="预览桌面级提醒窗口（独立于主界面，托盘常驻时也会出现）">桌面提醒预览</button>

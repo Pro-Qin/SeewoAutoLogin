@@ -76,6 +76,7 @@ namespace SeewoAutoLogin
                     Username = uname, Password = "", UserInfo = outcome.UserInfo
                 };
                 _app.AddQrAccount(acct, outcome);
+                Services.LoginHistoryService.Record(acct.Id, acct.DisplayName, acct.Username, "qr", true, "界面扫码登录");
                 await RefreshAccountList();
                 await SendToJs(new { type = "qr-state", state = "succeeded", text = "登录成功！" });
             }

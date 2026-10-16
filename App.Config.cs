@@ -209,6 +209,20 @@ namespace SeewoAutoLogin
             {
                 WriteDiagnosticLog($"[Uninstall] 删除数据目录失败: {ex.Message}");
             }
+
+            // 4) hosts 的备份文件：它写在系统目录里，删数据目录带不走它
+            try
+            {
+                if (File.Exists(Services.HostsFileService.BackupPath))
+                {
+                    File.Delete(Services.HostsFileService.BackupPath);
+                    WriteDiagnosticLog("[Uninstall] 已清理 hosts 备份文件");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Uninstall] 清理 hosts 备份失败: {ex.Message}");
+            }
         }
 
         /// <summary>

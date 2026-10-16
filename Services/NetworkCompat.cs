@@ -79,6 +79,20 @@ namespace SeewoAutoLogin.Services
 
             try
             {
+                // 改的是全系统的 TLS 设置：先把原值记到数据目录，出问题能照着还原
+                try
+                {
+                    var dir = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SeewoAutoLogin");
+                    System.IO.Directory.CreateDirectory(dir);
+                    using var before = Registry.LocalMachine.OpenSubKey(SchannelProtocolsPath + @"\TLS 1.2\Client");
+                    System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "schannel-tls12-before.txt"),
+                        "Enabled=" + (before?.GetValue("Enabled")?.ToString() ?? "<未设置>") + "\r\n"
+                        + "DisabledByDefault=" + (before?.GetValue("DisabledByDefault")?.ToString() ?? "<未设置>") + "\r\n"
+                        + "记录时间=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\r\n");
+                }
+                catch { }
+
                 using (var protocols = Registry.LocalMachine.CreateSubKey(SchannelProtocolsPath))
                 using (var tls12 = protocols?.CreateSubKey("TLS 1.2"))
                 using (var client = tls12?.CreateSubKey("Client"))

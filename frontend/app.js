@@ -107,6 +107,12 @@ function handleCSharpMessage(raw) {
       if (msg.autoStart!==undefined) document.getElementById('autoStartCheck').checked = msg.autoStart;
       if (msg.minimizeToTray!==undefined) document.getElementById('minimizeToTrayCheck').checked = msg.minimizeToTray;
       if (msg.startMinimized!==undefined) document.getElementById('startMinimizedCheck').checked = msg.startMinimized;
+  // 粒子背景按保存的开关初始化：initParticles 是无条件启动的，关过的人必须在这被按住
+  if (msg.particleBackground !== undefined) {
+    var pToggle = document.getElementById('particleToggle');
+    if (pToggle) pToggle.checked = !!msg.particleBackground;
+    if (msg.particleBackground === false) stopParticles();
+  }
       if (msg.restoreHostsOnExit!==undefined) document.getElementById('restoreHostsOnExitCheck').checked = msg.restoreHostsOnExit;
       if (msg.autoRepairEnabled!==undefined) document.getElementById('autoRepairCheck').checked = msg.autoRepairEnabled;
       if (msg.autoShowOverlay!==undefined) document.getElementById('autoShowOverlayCheck').checked = msg.autoShowOverlay;
@@ -142,6 +148,7 @@ function handleCSharpMessage(raw) {
     case 'batch-import-result': renderBatchImportResult(msg); break;
     case 'csv-imported': renderCsvImportResult(msg); break;
     case 'backups': renderBackups(msg); break;
+    case 'login-history': renderLoginHistory(msg); break;
     case 'toast': showToast(msg.text, msg.level); break;
     case 'start-tour': startTour(); break;
     case 'update-progress': {
@@ -708,9 +715,11 @@ function stopParticles() {
   if (pAniId) { cancelAnimationFrame(pAniId); pAniId = null; }
   if (pCtx) pCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
 }
-function toggleParticles(on) {
+function toggleParticles(on, persist) {
   state.particles = on;
   if (on) startParticles(); else stopParticles();
+  // 与同页其它开关一样落盘：否则关掉粒子后下次打开界面又回来了
+  if (persist !== false) send({ type: 'update-setting', key: 'particleBackground', value: !!on });
 }
 // 页面加载完自动初始化
 if (document.readyState === 'complete') initParticles();
@@ -1425,15 +1434,28 @@ window.addEventListener('resize', moveNavIndicator);
 // 有任何一项异常时自动展开一次，让问题显眼。
 var healthAutoExpanded = false;
 function syncHealthBar() {
-  var summary = document.getElementById('healthSummary');
   var dot = document.getElementById('healthDot');
   var text = document.getElementById('healthText');
   var bar = document.getElementById('selfcheckBar');
-  if (!summary || !dot || !text) return;
-  var raw = (summary.textContent || '').trim();
-  var bad = /异常|失败|未运行|未提权|不可用/.test(raw);
+  if (!dot || !text) return;
+
+  // 判据直接取自检项本身的颜色（网关 / hosts / 权限 / 希沃进程）。
+  // 原先读的 healthSummary 只在账号巡检之后才有值，空着的时候这里永远显示「一切正常」，
+  // 网关没起来、hosts 没写、没提权都不会反映出来 —— 那是界面唯一常显的健康入口。
+  var problems = [];
+  var items = document.querySelectorAll('#selfcheckItems [id^="sc-"]');
+  for (var i = 0; i < items.length; i++) {
+    var el = items[i];
+    if (!el.classList.contains('error') && !el.classList.contains('warn')) continue;
+    var labelEl = el.querySelector('.sc-label');
+    var label = labelEl ? (labelEl.textContent || '').trim() : '';
+    var subEl = el.querySelector('.sc-sub');
+    var sub = subEl ? (subEl.textContent || '').trim() : '';
+    problems.push(label + (sub ? '（' + sub + '）' : ''));
+  }
+  var bad = problems.length > 0;
   dot.className = 'health-dot' + (bad ? ' bad' : '');
-  text.textContent = raw || (bad ? '有项目需要处理' : '一切正常');
+  text.textContent = bad ? ('需要处理：' + problems.join('、')) : '一切正常';
   if (bad && bar && !healthAutoExpanded) {
     healthAutoExpanded = true;
     bar.classList.add('open');
@@ -1463,10 +1485,58 @@ function bindHealthBar() {
   syncHealthBar();
 }
 
+// ===== 登录记录 =====
+function loadLoginHistory() {
+  var sel = document.getElementById('loginHistoryAccount');
+  send({ type: 'get-login-history', accountId: sel ? (sel.value || '') : '', limit: 200 });
+}
+function renderLoginHistory(msg) {
+  var list = document.getElementById('loginHistoryList');
+  if (!list) return;
+  msg = msg || {};
+
+  var sel = document.getElementById('loginHistoryAccount');
+  if (sel && Array.isArray(msg.accounts)) {
+    var current = sel.value || '';
+    var opts = ['<option value="">全部账号</option>'];
+    msg.accounts.forEach(function (a) {
+      opts.push('<option value="' + escAttr(a.id) + '">' + esc(a.name || a.id) + '</option>');
+    });
+    sel.innerHTML = opts.join('');
+    sel.value = current;
+  }
+
+  if (msg.error) { list.innerHTML = '<div class="backup-empty">读取失败：' + esc(msg.error) + '</div>'; return; }
+  var items = msg.items || [];
+  if (!items.length) { list.innerHTML = '<div class="backup-empty">还没有登录记录</div>'; return; }
+
+  list.innerHTML = items.map(function (it) {
+    return '<div class="lh-row' + (it.success ? '' : ' bad') + '">'
+      + '<span class="lh-time">' + esc(it.time) + '</span>'
+      + '<span class="lh-name">' + esc(it.name || '') + '</span>'
+      + '<span class="lh-src">' + esc(it.source || '') + '</span>'
+      + '<span class="lh-detail">' + esc(it.detail || '') + '</span>'
+      + '</div>';
+  }).join('');
+}
+function bindLoginHistory() {
+  bindClick('loginHistoryRefresh', loadLoginHistory);
+  bindClick('loginHistoryClear', function () {
+    send({ type: 'clear-login-history' });
+    showToast('登录记录已清空', 'ok');
+  });
+  var sel = document.getElementById('loginHistoryAccount');
+  if (sel) sel.addEventListener('change', loadLoginHistory);
+  // 切到设置页时自动拉一次，打开就能看到最近记录
+  var nav = document.querySelector('[data-page="settings"]');
+  if (nav) nav.addEventListener('click', function () { setTimeout(loadLoginHistory, 120); });
+}
+
 function bootNavIndicator() {
   bindAddPage();
   bindNavHover();
   bindHealthBar();
+  bindLoginHistory();
   moveNavIndicator();
   requestAnimationFrame(function () { requestAnimationFrame(moveNavIndicator); });
 }
@@ -1591,21 +1661,8 @@ function confirmQrLogin() {
   if (typeof pickSide === "function") pickSide("qr");
   send({ type: "start-qr" });
 }
-function closeQrWarn() {
-  var ov = document.getElementById('qrWarnOverlay');
-  if (ov) ov.hidden = true;
-}
-// 次选：维持现状，继续用扫码
-bindClick('qrWarnStayBtn', function () {
-  closeQrWarn();
-  send({ type: 'start-qr' });
-});
-// 优先：改用密码方式
-bindClick('qrWarnPwdBtn', function () {
-  closeQrWarn();
-  navigate('add');
-  showToast('在「账号密码」页填写手机号与密码即可；这种方式不受关机时间影响', 'info');
-});
+// 说明：扫码前的确认弹窗（qrWarnOverlay）早已并入扫码面板下方的常驻说明，
+// 这些绑定与 closeQrWarn 一并删掉 —— 留着只会让后来的人以为还有一个界面。
 (function bindQrWarnMask() {
   var ov = document.getElementById('qrWarnOverlay');
   if (!ov) return;

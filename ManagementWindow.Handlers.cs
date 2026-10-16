@@ -21,6 +21,46 @@ namespace SeewoAutoLogin
     {
         #region Handlers
 
+        /// <summary>登录记录：按账号查「什么时候登录过、谁触发的、成没成」</summary>
+        private async Task HandleGetLoginHistory(JsonElement root)
+        {
+            try
+            {
+                var accountId = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("accountId", out var a)
+                    ? a.GetString() : "";
+                var limit = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("limit", out var l) && l.TryGetInt32(out var n)
+                    ? n : 200;
+
+                var records = LoginHistoryService.Query(accountId, limit);
+                var accounts = _app.Config.Accounts
+                    .Select(x => new { id = x.Id, name = x.DisplayName ?? x.Username ?? x.Id })
+                    .ToList();
+
+                await SendToJs(new
+                {
+                    type = "login-history",
+                    filter = accountId ?? "",
+                    accounts,
+                    items = records.Select(r => new
+                    {
+                        accountId = r.AccountId,
+                        time = DateTimeOffset.TryParse(r.AtUtc, out var at)
+                            ? at.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                            : r.AtUtc,
+                        name = string.IsNullOrWhiteSpace(r.Name) ? r.Username : r.Name,
+                        source = LoginHistoryService.DescribeSource(r.Source),
+                        success = r.Success,
+                        detail = r.Detail
+                    }).ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[History] 读取登录记录失败: {ex.GetType().Name} - {ex.Message}");
+                await SendToJs(new { type = "login-history", items = new object[0], accounts = new object[0], error = ex.Message });
+            }
+        }
+
         private async Task HandleLogin(JsonElement root)
         {
             var username = root.GetProperty("username").GetString() ?? "";
@@ -47,6 +87,7 @@ namespace SeewoAutoLogin
                         Username = username, Password = password, UserInfo = result.UserInfo
                     };
                     _app.AddAccount(acct);
+                    Services.LoginHistoryService.Record(acct.Id, acct.DisplayName, acct.Username, "password", true, "界面密码登录");
                     await SendToJs(new { type = "login-status", text = "登录成功，已保存" });
                     await Task.Delay(600);
                     await RefreshAccountList();
@@ -208,6 +249,9 @@ namespace SeewoAutoLogin
                 case "restoreHostsOnExit": _app.Config.RestoreHostsOnExit = val.GetBoolean(); break;
                 case "autoRepairEnabled": _app.Config.AutoRepairEnabled = val.GetBoolean(); break;
                 case "autoShowOverlay": _app.Config.AutoShowOverlay = val.GetBoolean(); break;
+                case "particleBackground":
+                    _app.Config.ParticleBackground = val.GetBoolean();
+                    break;
                 case "performanceMode":
                     _app.Config.PerformanceMode = val.GetBoolean();
                     _app.WriteDiagnosticLog("[Perf] 性能模式：" + (_app.Config.PerformanceMode ? "已开启（关闭大量界面动效）" : "已关闭"));
@@ -221,11 +265,13 @@ namespace SeewoAutoLogin
                     {
                         // 与欢迎界面共用同一份状态：优先创建最高权限计划任务（开机免 UAC），失败回退注册表启动项
                         var enabled = val.GetBoolean();
-                        _app.Config.AutoStartEnabled = enabled;
                         if (enabled)
                         {
                             var ok = AutoStartService.Enable(out var error, out var mode);
                             _app.WriteDiagnosticLog($"[AutoStart] 启用自启: ok={ok}; mode={mode}; {error}");
+                            // 只有真的写成功才把配置标成已启用。失败时（用户拒绝提权、计划任务没建成）
+                            // 系统里没有启动项、配置却记着「已启用」，两边对不上。
+                            _app.Config.AutoStartEnabled = ok;
                             if (!ok || !string.IsNullOrEmpty(error)) _app.TrayIcon?.Notify(error);
                             if (!ok)
                             {
@@ -252,9 +298,11 @@ namespace SeewoAutoLogin
                                 }
                             }
                         }
-                        else if (!AutoStartService.Disable(out var offError))
+                        else
                         {
-                            _app.WriteDiagnosticLog($"[AutoStart] 停用自启失败: {offError}");
+                            _app.Config.AutoStartEnabled = false;
+                            if (!AutoStartService.Disable(out var offError))
+                                _app.WriteDiagnosticLog($"[AutoStart] 停用自启失败: {offError}");
                         }
                         break;
                     }
@@ -334,11 +382,15 @@ namespace SeewoAutoLogin
             {
                 rows = ParseCsv(ReadCsvText(dialog.FileName));
 
+                var dataRowSeen = false;
                 for (var i = 0; i < rows.Count; i++)
                 {
                     var cells = rows[i];
                     if (cells.All(c => string.IsNullOrWhiteSpace(c))) continue;
-                    if (i == 0 && IsCsvHeaderRow(cells)) { headerSkipped = true; continue; }
+                    // 按「这是不是第一条数据」判断，不看行号：文件开头是空行时表头会落到第 2 行，
+                    // 用 i==0 判断就会把「账号,密码,备注」当成一条账号记录导进去。
+                    if (!dataRowSeen && IsCsvHeaderRow(cells)) { headerSkipped = true; continue; }
+                    dataRowSeen = true;
 
                     var lineNo = i + 1;
                     var username = cells.Count > 0 ? cells[0].Trim() : "";
@@ -361,6 +413,9 @@ namespace SeewoAutoLogin
                             // 备注留空时保留原有显示名，避免一次导入把用户自己改过的备注清掉
                             if (note.Length > 0) existing.DisplayName = note;
                             updated++;
+                            // 覆盖密码要说出来：一次误导入就能把某个账号的密码换成 CSV 里的旧值，
+                            // 而用户只看到一句「更新 N 个」。
+                            AddCsvMessage(messages, $"已更新：{existing.DisplayName ?? username}（密码被 CSV 里的值覆盖，备注为空白时保留原值）");
                         }
                         else
                         {

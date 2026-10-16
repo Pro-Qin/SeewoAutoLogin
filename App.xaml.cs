@@ -190,10 +190,24 @@ namespace SeewoAutoLogin
             {
                 // 更新后第一次启动：静默接管 24300。EasiAgent 被结束后希沃会重新拉起它并重新请求账号列表，
                 // 快捷登录随之恢复；这里不能再弹窗，否则静默更新就断在最后一步了。
-                if (_isPostUpdateBoot || _config?.AutoRepairEnabled == true)
+                if (_isPostUpdateBoot)
                 {
-                    WriteDiagnosticLog($"[AutoRepair] 自动结束 EasiAgent 以接管 SSO 端口; pid={pid}; 更新后启动={_isPostUpdateBoot}");
+                    WriteDiagnosticLog($"[AutoRepair] 自动结束 EasiAgent 以接管 SSO 端口; pid={pid}; 更新后启动");
                     return true;
+                }
+
+                // 自动修复开启时也不再无条件结束希沃的进程：老师正在用希沃（最近 15 分钟内有过
+                // 快捷登录请求）时，结束 EasiAgent 会直接打断他手上的操作。这时宁可降级到备用端口，
+                // 等希沃空闲下来，下一轮再接管。
+                if (_config?.AutoRepairEnabled == true)
+                {
+                    if (IsSeewoIdleForTakeover())
+                    {
+                        WriteDiagnosticLog($"[AutoRepair] 希沃空闲，自动结束 EasiAgent 以接管 SSO 端口; pid={pid}");
+                        return true;
+                    }
+                    WriteDiagnosticLog($"[AutoRepair] 希沃可能正在使用，本次不结束 EasiAgent(pid={pid})，改用备用端口");
+                    return false;
                 }
                 return Dispatcher.Invoke(() =>
                 MessageBox.Show(
@@ -545,7 +559,8 @@ namespace SeewoAutoLogin
                 _seewoVersionChange = Services.SeewoVersionMonitor.CheckAndRecord(
                     Path.Combine(AppDataDir, "seewo-version.json"), WriteDiagnosticLog);
 
-                if (_seewoVersionChange != null && _seewoVersionChange.Changed)
+                // 只在网关正常时才说这句话：悬停提示只显示一条，网关起不来是更要紧的事，别把它顶掉
+                if (_seewoVersionChange != null && _seewoVersionChange.Changed && _gateway?.IsRunning == true)
                     _trayIcon?.SetStatusText($"检测到希沃客户端已更新（{_seewoVersionChange.Previous} → {_seewoVersionChange.Current}）");
                 if (!string.IsNullOrWhiteSpace(_seewoVersionChange?.Current))
                     WriteDiagnosticLog($"[SeewoVersion] 兼容性: {Services.CompatibilityMatrix.Describe(_seewoVersionChange.Current)}");
@@ -634,6 +649,33 @@ namespace SeewoAutoLogin
 
             // 自动修复：启动后定时自检 hosts、网关与开机自启，不依赖主界面。
             _ = RunAutoRepairLoopAsync();
+        }
+
+        /// <summary>
+        /// 遮罩被关掉过（用户手动关或它自己到点关）。
+        ///
+        /// 自动显示逻辑据此不再反复弹：此前只判「希沃在运行且未登录」，用户关掉后 2 秒内
+        /// 又被弹出来，变成一个关不掉的窗口。希沃退出或登录成功后复位。
+        /// </summary>
+        internal bool OverlayDismissedByUser { get; set; }
+
+        /// <summary>
+        /// 现在能不能动手结束希沃的 EasiAgent。
+        ///
+        /// 唯一判据是「最近有没有在用」：15 分钟内有 SSOLOGIN 请求就算在用。
+        /// 宁可多用一会儿备用端口，也不在老师讲课讲一半时把他的希沃掐掉。
+        /// </summary>
+        private static bool IsSeewoIdleForTakeover()
+        {
+            try
+            {
+                var last = Services.SeewoSsoGateway.LastSsologinUtc;
+                return last == DateTime.MinValue || DateTime.UtcNow - last >= TimeSpan.FromMinutes(15);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -753,6 +795,10 @@ namespace SeewoAutoLogin
             _authService?.Dispose();
             _userListRotation?.Dispose();
             _trayIcon?.Dispose();
+            // 唤醒监听：不撤销的话那个后台线程会每秒轮询直到进程结束
+            try { _instanceSignalCts?.Cancel(); } catch { }
+            try { _instanceSignal?.Dispose(); } catch { }
+            try { _instanceSignalCts?.Dispose(); } catch { }
             _instanceMutex?.Dispose();
             base.OnExit(e);
         }
