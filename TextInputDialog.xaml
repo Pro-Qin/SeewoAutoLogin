@@ -1,14 +1,16 @@
 <Window x:Class="SeewoAutoLogin.TextInputDialog"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="输入" Width="380" Height="190"
+    Title="输入" Width="400" SizeToContent="Height" MinHeight="170"
     WindowStartupLocation="CenterOwner"
     ResizeMode="NoResize" Background="{StaticResource ContentBg}"
     TextElement.Foreground="{StaticResource PrimaryTextBrush}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <!-- 输入行用 Auto 而不是 *：提示文字一换行，* 行会被压扁，
+                 文本框和密码框就叠在一起、边框糊成一团 —— 这就是「点备注后界面变形」 -->
+            <RowDefinition Height="Auto" MinHeight="34"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" x:Name="PromptText" FontSize="14" TextWrapping="Wrap" Margin="0,0,0,10"/>

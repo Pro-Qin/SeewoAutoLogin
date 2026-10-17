@@ -557,18 +557,13 @@ namespace SeewoAutoLogin
             if (string.IsNullOrEmpty(origin))
             {
                 // 一类请求不带 Origin —— <img src="http://127.0.0.1:24300/getData/SSOLOGOUT">、
-                // 表单导航都算，浏览器照样会发。它们同样能把希沃的登录态清掉，所以这里补一道：
-                // 只认浏览器明确标注为同源/无来源的请求，以及不携带任何浏览器指纹的调用方（希沃客户端自己）。
+                // 表单导航都算，浏览器照样会发。
+                //
+                // 判据只认 Sec-Fetch-Site：**不能看 Referer**。希沃自己的界面就带
+                // Referer: https://easinote5.seewo.com/，按 Referer 判会把它的 SSOLOGIN、saveData、
+                // deleteData 全部拒成 403 —— 表现就是「健康检查全绿，但希沃里根本没有快捷登录入口」。
                 var fetchSite = req.Headers["Sec-Fetch-Site"];
-                var referer = req.Headers["Referer"];
-                var refererOrigin = "";
-                if (!string.IsNullOrEmpty(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var refererUri))
-                    refererOrigin = refererUri.Scheme + "://" + refererUri.Authority;
-
-                var crossSite = string.Equals(fetchSite, "cross-site", StringComparison.OrdinalIgnoreCase)
-                                || (!string.IsNullOrEmpty(refererOrigin) && !IsLocalOrigin(refererOrigin));
-
-                if (crossSite)
+                if (string.Equals(fetchSite, "cross-site", StringComparison.OrdinalIgnoreCase))
                 {
                     Log($"拒绝疑似跨站的 SSO 请求: {req.HttpMethod} {path} fetchSite={fetchSite} referer={referer}");
                     resp.StatusCode = 403;

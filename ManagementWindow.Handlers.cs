@@ -61,6 +61,43 @@ namespace SeewoAutoLogin
             }
         }
 
+        /// <summary>
+        /// 拖拽后的新顺序：前端把两栏的最终顺序整份发过来，这里照单全收。
+        /// 生效区仍然是「列表前 N 个」，所以拖到哪一栏、第几位，就是它最终的位置。
+        /// </summary>
+        private async void HandleReorderAccounts(JsonElement root)
+        {
+            try
+            {
+                if (!root.TryGetProperty("ids", out var idsElement) || idsElement.ValueKind != JsonValueKind.Array) return;
+                var ids = idsElement.EnumerateArray()
+                    .Select(x => x.GetString() ?? "")
+                    .Where(x => x.Length > 0)
+                    .ToList();
+                if (ids.Count == 0) return;
+
+                var list = _app.Config.Accounts;
+                var ordered = new List<SeewoAccount>();
+                foreach (var id in ids)
+                {
+                    var account = list.FirstOrDefault(a => a.Id == id);
+                    if (account != null && !ordered.Contains(account)) ordered.Add(account);
+                }
+                // 被标签筛掉、没出现在这次拖拽里的账号，保持原顺序接在后面
+                foreach (var account in list)
+                    if (!ordered.Contains(account)) ordered.Add(account);
+
+                list.Clear();
+                list.AddRange(ordered);
+                _app.SaveConfig();
+                await RefreshAccountList();
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[Accounts] 重排失败: {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
         /// <summary>界面上的「续期」/「全部续期」：立刻用保存的凭据重试，并把结果说清楚</summary>
         private async Task HandleRenewAccountsAsync(JsonElement root)
         {

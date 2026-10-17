@@ -20,7 +20,9 @@ namespace SeewoAutoLogin
         /// <summary>后台保活的检查频率：每 5 分钟看一次有哪些账号该续期了</summary>
         private static readonly TimeSpan KeepAliveTick = TimeSpan.FromMinutes(5);
         /// <summary>账号超过这么久没有续期，就主动刷新一次</summary>
-        private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMinutes(25);
+        // 15 分钟（原 25）：扫码凭据的有效期不是固定的，越早续上越不容易断档；
+        // 断档一次就得让老师重新扫码，那才是真正麻烦的事。
+        private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMinutes(15);
 
         private bool _keepAliveRunning;
         private int _keepAliveRunningFlag;
@@ -62,7 +64,7 @@ namespace SeewoAutoLogin
         ///
         /// 原先的实现是 `Timer(..., FromDays(1), FromDays(1))`：启动满一天才执行第一次，
         /// 而程序每次重启计时器都从头开始，实际几乎从不触发；且它只处理扫码账号，
-        /// 密码账号完全不刷新。这里改为每 5 分钟检查、超过 25 分钟未续期即刷新，两类账号都覆盖。
+        /// 密码账号完全不刷新。这里改为每 5 分钟检查、超过 15 分钟未续期即刷新，两类账号都覆盖。
         /// </summary>
         private void StartDailyTokenRefresh()
         {
@@ -116,10 +118,12 @@ namespace SeewoAutoLogin
                     // 需要用户处理的凭据问题：不再每 5 分钟自动重试，避免反复用错误密码打接口、触发风控。
                     // 用户改好密码或重新扫码后，健康巡检（force=true）会立刻重试；
                     // 另外每 6 小时给一次自动复查机会，便于旧版本误标的 bad 状态自动恢复。
+                    // 冷却 15 分钟（原先是 6 小时）：老师可能下一节课就要用，不能让他等半天。
+                    // 反复用错误密码打接口会被风控，所以这里不能无间隔地试。
                     if (!force && account.HealthState == "bad")
                     {
                         var lastCheck = account.LastHealthCheckAtUtc ?? DateTime.MinValue;
-                        if (DateTime.UtcNow - lastCheck < TimeSpan.FromHours(6)) continue;
+                        if (DateTime.UtcNow - lastCheck < TimeSpan.FromMinutes(15)) continue;
                     }
 
                     // 临时性网络故障：退避到 NextRetryAtUtc 之前不再请求希沃接口。
@@ -157,6 +161,22 @@ namespace SeewoAutoLogin
                         WriteDiagnosticLog(
                             $"[KeepAlive] 网络原因暂缓续期; account-id={account.Id}; kind={kind}; " +
                             $"连续第 {account.TransientFailureCount} 次; 下次重试={delay.TotalMinutes:0} 分钟后; reason={message}");
+                        continue;
+                    }
+
+                    // 凭据类失败也先给一次机会：希沃对同一个账号偶发会返回「密码不正确」（风控、
+                    // 瞬时限流、DNS 抖动都见过），一次就标红会让老师和用户都以为密码真的错了。
+                    // 连续两次才算需要人工处理 —— 真改了密码的话第二次照样会失败，结论不变。
+                    if (kind == SeewoFailureKind.Credential && account.TransientFailureCount < 1)
+                    {
+                        transient++;
+                        account.TransientFailureCount++;
+                        account.HealthState = "warn";
+                        account.HealthMessage = message + "（15 分钟后自动重试）";
+                        account.NextRetryAtUtc = DateTime.UtcNow.AddMinutes(15);
+                        WriteDiagnosticLog(
+                            $"[KeepAlive] 凭据续期失败，先按可恢复处理; account-id={account.Id}; " +
+                            $"reason={message}; 15 分钟后重试");
                         continue;
                     }
 

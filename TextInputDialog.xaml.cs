@@ -29,6 +29,8 @@ namespace SeewoAutoLogin
             PromptText.Text = prompt;
             IsPassword = isPassword;
             if (!isPassword) InputBox.Text = defaultValue;
+            // 构造时窗口还没显示，Focus 无效；显示后按当前模式再聚焦一次
+            Loaded += (_, __) => ApplyPasswordMode();
         }
 
         /// <summary>按当前 IsPassword 切换明文框/密码框的可见性与焦点</summary>

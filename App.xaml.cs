@@ -327,6 +327,16 @@ namespace SeewoAutoLogin
                 return;
             }
 
+            // 无人值守部署：批量装到一体机时，一次把配置灌进去、开好开机自启就退出，不弹任何窗口。
+            // 放在单实例判定之前 —— 部署时往往还有一个旧实例挂着，不能因为它在跑就把这次部署吞掉。
+            if (e.Args.Contains("--unattended"))
+            {
+                RunUnattendedSetup(e.Args);
+                _isExiting = true;
+                Shutdown();
+                return;
+            }
+
             // 崩溃可观测性与安全模式：先注册异常处理并记录本次启动尝试。
             Services.CrashReporter.Install(this, WriteDiagnosticLog);
             // 启动失败的计数放到后面（真正开始跑之前），见下面 MarkStartupAttempt 的注释。
@@ -658,6 +668,65 @@ namespace SeewoAutoLogin
         /// 又被弹出来，变成一个关不掉的窗口。希沃退出或登录成功后复位。
         /// </summary>
         internal bool OverlayDismissedByUser { get; set; }
+
+        /// <summary>
+        /// 无人值守部署：--unattended [--config 配置文件路径] [--no-autostart]
+        ///
+        /// 面向学校批量部署（Intune / SCCM / 组策略脚本）。它只做三件事：导入配置、
+        /// 打开开机自启、写一条结果日志，然后退出 —— 全程不弹窗，退出码 0/1 供脚本判断。
+        /// </summary>
+        private void RunUnattendedSetup(string[] args)
+        {
+            var ok = true;
+            try
+            {
+                var configPath = GetArgValue(args, "--config");
+                if (!string.IsNullOrWhiteSpace(configPath))
+                {
+                    if (File.Exists(configPath))
+                    {
+                        ok &= ImportConfig(configPath);
+                        WriteDiagnosticLog($"[Unattended] 已导入配置：{configPath}（{(ok ? "成功" : "失败")}）");
+                    }
+                    else
+                    {
+                        ok = false;
+                        WriteDiagnosticLog($"[Unattended] 配置文件不存在：{configPath}");
+                    }
+                }
+
+                if (!args.Contains("--no-autostart"))
+                {
+                    if (Services.AutoStartService.Enable(out var error, out var mode))
+                        WriteDiagnosticLog($"[Unattended] 已启用开机自启（{mode}）");
+                    else
+                    {
+                        ok = false;
+                        WriteDiagnosticLog($"[Unattended] 启用开机自启失败：{error}");
+                    }
+                }
+
+                WriteDiagnosticLog(ok ? "[Unattended] 部署完成" : "[Unattended] 部署未完全成功，请看上面的日志");
+            }
+            catch (Exception ex)
+            {
+                ok = false;
+                WriteDiagnosticLog($"[Unattended] 部署异常: {ex.GetType().Name} - {ex.Message}");
+            }
+
+            Environment.ExitCode = ok ? 0 : 1;
+        }
+
+        private static string GetArgValue(string[] args, string name)
+        {
+            if (args == null) return null;
+            for (var i = 0; i < args.Length - 1; i++)
+            {
+                if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
+                    return args[i + 1];
+            }
+            return null;
+        }
 
         /// <summary>
         /// 现在能不能动手结束希沃的 EasiAgent。

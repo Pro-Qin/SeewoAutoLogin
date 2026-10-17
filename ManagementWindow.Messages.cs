@@ -93,6 +93,7 @@ namespace SeewoAutoLogin
                     case "export-logs-to-desktop": await HandleExportLogsToDesktopAsync(); break;
                     case "get-terms": await SendTerms(); break;
                     case "open-external": HandleOpenExternal(root); break;
+                    case "reorder-accounts": HandleReorderAccounts(root); break;
                     case "renew-account": await HandleRenewAccountsAsync(root); break;
                     case "get-login-history": await HandleGetLoginHistory(root); break;
                     case "clear-login-history":

@@ -38,6 +38,8 @@ function navigate(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + page));
   const t = { accounts:'账号列表', add:'添加账号', qr:'扫码登录', settings:'设置', history:'登录记录', about:'关于' };
+  // 注意：操作栏里凡是要「先选中账号」的按钮，都必须出现在 updateActionButtons 的 id 列表里，
+  // 否则它会一直停在 HTML 初始的 disabled 上，选中账号也点不动。
   document.getElementById('pageTitle').textContent = t[page] || '';
   if (page === 'accounts') renderAccounts();
   if (page === 'settings') { send({ type: 'get-credential-lifetime' }); send({ type: 'get-switch-pin' }); }
@@ -491,7 +493,7 @@ function cardHtml(a, isActive, idx, isFull, animate) {
       </button>`
     : '';
 
-  return `<div class="acct-card${sel}${animate ? ' enter' : ''}" data-id="${escAttr(a.id)}">
+  return `<div class="acct-card${sel}${animate ? ' enter' : ''}" draggable="true" data-id="${escAttr(a.id)}">
     <div class="row1">
       <div class="avatar-mini"><span>${esc(a.initial||'S')}</span></div>
       <div class="info">
@@ -547,7 +549,7 @@ function selectAccount(id) {
 function updateActionBar() {
   const sel = state.selectedId;
   const has = !!sel && (state.accounts||[]).some(a => a.id === sel);
-  ['actEditName','actEditTags','actSetActive','actDelete','actMoveUp','actMoveDown'].forEach(id => {
+  ['actEditName','actEditTags','actRenew','actDelete','actMoveUp','actMoveDown'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = !has;
   });
@@ -1537,11 +1539,72 @@ function bindLoginHistory() {
   // 记录页的加载挂在 navigate 里：切页即刷新，不用在这里再绑一次点击
 }
 
+// ===== 拖拽排序：同栏内调整顺序，拖到另一栏即切换生效/未生效 =====
+// 比「上移/下移/移到生效」三个按钮直观得多：看到哪儿就放到哪儿。
+function initAccountDrag() {
+  ['activeCol', 'inactiveCol'].forEach(function (colId) {
+    var col = document.getElementById(colId);
+    if (!col || col.__dragBound) return;
+    col.__dragBound = true;
+
+    col.addEventListener('dragstart', function (e) {
+      var card = e.target.closest ? e.target.closest('.acct-card') : null;
+      if (!card) return;
+      card.classList.add('dragging');
+      try {
+        e.dataTransfer.setData('text/plain', card.getAttribute('data-id'));
+        e.dataTransfer.effectAllowed = 'move';
+      } catch (_) { }
+    });
+
+    col.addEventListener('dragend', function () {
+      document.querySelectorAll('.acct-card.dragging').forEach(function (el) { el.classList.remove('dragging'); });
+      document.querySelectorAll('.acct-card.drop-before,.acct-card.drop-after').forEach(function (el) {
+        el.classList.remove('drop-before', 'drop-after');
+      });
+    });
+
+    col.addEventListener('dragover', function (e) {
+      var dragging = document.querySelector('.acct-card.dragging');
+      if (!dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      document.querySelectorAll('.acct-card.drop-before,.acct-card.drop-after').forEach(function (el) {
+        el.classList.remove('drop-before', 'drop-after');
+      });
+      var card = e.target.closest ? e.target.closest('.acct-card') : null;
+      if (card && card !== dragging) {
+        var rect = card.getBoundingClientRect();
+        card.classList.add((e.clientY - rect.top) > rect.height / 2 ? 'drop-after' : 'drop-before');
+      }
+    });
+
+    col.addEventListener('drop', function (e) {
+      var dragging = document.querySelector('.acct-card.dragging');
+      if (!dragging) return;
+      e.preventDefault();
+      var card = e.target.closest ? e.target.closest('.acct-card') : null;
+      if (card && card !== dragging) {
+        var after = card.classList.contains('drop-after');
+        card.insertAdjacentElement(after ? 'afterend' : 'beforebegin', dragging);
+      } else if (!card) {
+        col.appendChild(dragging);
+      }
+      // 栏目在 DOM 里的先后就是「生效 → 未生效」，所以直接按文档顺序读出来的就是新列表
+      var ids = Array.from(document.querySelectorAll('#activeCol .acct-card, #inactiveCol .acct-card'))
+        .map(function (el) { return el.getAttribute('data-id'); })
+        .filter(function (x) { return !!x; });
+      if (ids.length) send({ type: 'reorder-accounts', ids: ids });
+    });
+  });
+}
+
 function bootNavIndicator() {
   bindAddPage();
   bindNavHover();
   bindHealthBar();
   bindLoginHistory();
+  initAccountDrag();
   moveNavIndicator();
   requestAnimationFrame(function () { requestAnimationFrame(moveNavIndicator); });
 }
