@@ -565,7 +565,7 @@ namespace SeewoAutoLogin
                 var fetchSite = req.Headers["Sec-Fetch-Site"];
                 if (string.Equals(fetchSite, "cross-site", StringComparison.OrdinalIgnoreCase))
                 {
-                    Log($"拒绝疑似跨站的 SSO 请求: {req.HttpMethod} {path} fetchSite={fetchSite} referer={referer}");
+                    Log($"拒绝疑似跨站的 SSO 请求: {req.HttpMethod} {path}");
                     resp.StatusCode = 403;
                     try { await WriteJson(resp, new { message = "forbidden_origin", statusCode = "403" }); } catch { }
                     return;
