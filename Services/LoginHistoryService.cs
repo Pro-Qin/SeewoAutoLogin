@@ -50,7 +50,12 @@ namespace SeewoAutoLogin.Services
         private static string DataDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SeewoAutoLogin");
 
-        public static string FilePath => Path.Combine(DataDir, "login-history.jsonl");
+        /// <summary>仅供测试：把记录文件指到别处，避免单元测试往真实数据目录里写。</summary>
+        internal static string FilePathOverride { get; set; }
+
+        public static string FilePath => string.IsNullOrEmpty(FilePathOverride)
+            ? Path.Combine(DataDir, "login-history.jsonl")
+            : FilePathOverride;
 
         public static void Record(string accountId, string name, string username, string source, bool success, string detail)
         {

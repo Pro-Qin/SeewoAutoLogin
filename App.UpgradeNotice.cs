@@ -23,6 +23,34 @@ namespace SeewoAutoLogin
         ///
         /// 主界面内的提醒与桌面提醒都走这里，所以两边永远不会同时弹：先到的那边走完就把标记消费掉了。
         /// </summary>
+        /// <summary>
+        /// 记录这次升级的起止版本、时间与更新内容，供新版本第一次打开界面时提示一次。
+        ///
+        /// 后台静默更新与手动点「下载新版本」都要记 —— 原先只有前者会写，
+        /// 手动升级的人在新版本打开后永远看不到升级提醒。
+        /// </summary>
+        internal void RecordUpgradeNotice(UpdateInfo info)
+        {
+            try
+            {
+                if (info == null || string.IsNullOrWhiteSpace(info.Version)) return;
+
+                _config.UpgradeNoticeFromVersion = CurrentAppVersion;
+                _config.UpgradeNoticeToVersion = info.Version;
+                _config.UpgradeNoticeAtUtc = DateTimeOffset.UtcNow;
+
+                var notes = (info.Notes ?? "").Trim();
+                _config.UpgradeNoticeNotes = notes.Length <= 4000 ? notes : notes.Substring(0, 4000) + "\n…";
+                // 这是一次新的升级，允许再提示一次
+                _config.UpgradeNoticeShown = false;
+                WriteDiagnosticLog($"[Update] 已记录升级提醒：{CurrentAppVersion} → {info.Version}");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Update] 记录升级提醒失败: {ex.Message}");
+            }
+        }
+
         /// <param name="markShown">true 表示顺带把「已提示」落盘，保证只提示一次。</param>
         internal UpgradeNoticeData TryConsumeUpgradeNotice(bool markShown)
         {

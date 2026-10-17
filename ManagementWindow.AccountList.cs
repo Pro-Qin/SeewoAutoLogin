@@ -40,7 +40,7 @@ namespace SeewoAutoLogin
                 displayName = a.DisplayName ?? a.Username ?? "",
                 username = a.Username ?? "",
                 loginType = string.IsNullOrEmpty(a.Password) ? "扫码" : "密码",
-                isActive = a.Id == _app.Config.ActiveAccountId,
+
                 initial = (a.DisplayName ?? a.Username ?? "S").Substring(0, 1).ToUpperInvariant(),
                 tags = a.Tags != null && a.Tags.Count > 0 ? string.Join(", ", a.Tags) : "",
                 requestCount = a.RequestCount,

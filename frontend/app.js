@@ -37,10 +37,11 @@ function navigate(page) {
   state.currentPage = page; state.selectedId = null;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + page));
-  const t = { accounts:'账号列表', add:'添加账号', qr:'扫码登录', settings:'设置', about:'关于' };
+  const t = { accounts:'账号列表', add:'添加账号', qr:'扫码登录', settings:'设置', history:'登录记录', about:'关于' };
   document.getElementById('pageTitle').textContent = t[page] || '';
   if (page === 'accounts') renderAccounts();
   if (page === 'settings') { send({ type: 'get-credential-lifetime' }); send({ type: 'get-switch-pin' }); }
+  if (page === 'history') loadLoginHistory();
   moveNavIndicator();
 }
 
@@ -550,13 +551,6 @@ function updateActionBar() {
     const el = document.getElementById(id);
     if (el) el.disabled = !has;
   });
-  if (has) {
-    const acct = state.accounts.find(a => a.id === sel);
-    if (acct) {
-      const setActiveBtn = document.getElementById('actSetActive');
-      if (setActiveBtn) setActiveBtn.style.display = acct.isActive ? 'none' : '';
-    }
-  }
 }
 
 // ===== Action Handlers =====
@@ -574,9 +568,14 @@ function actEditTags() {
   // 用 prompt 会出现「点了『标签』毫无反应」的静默失败。
   send({type:'edit-tags-dialog', id:state.selectedId});
 }
-function actSetActive() {
+function actRenew() {
   if (!state.selectedId) return;
-  send({type:'set-active', id:state.selectedId});
+  send({ type: 'renew-account', id: state.selectedId });
+  showToast('正在续期该账号…', 'info');
+}
+function actRenewAll() {
+  send({ type: 'renew-account', id: '' });
+  showToast('正在续期所有账号…', 'info');
 }
 function actDelete() {
   if (!state.selectedId) return;
@@ -1443,9 +1442,13 @@ function syncHealthBar() {
   // 原先读的 healthSummary 只在账号巡检之后才有值，空着的时候这里永远显示「一切正常」，
   // 网关没起来、hosts 没写、没提权都不会反映出来 —— 那是界面唯一常显的健康入口。
   var problems = [];
+  var unknown = 0;
   var items = document.querySelectorAll('#selfcheckItems [id^="sc-"]');
   for (var i = 0; i < items.length; i++) {
     var el = items[i];
+    // 希沃进程没开是常态（老师没在用），不该把它算成「不健康」；它仍然在展开区里标黄
+    if (el.id === 'sc-seewo') continue;
+    if (el.classList.contains('unknown')) { unknown++; continue; }
     if (!el.classList.contains('error') && !el.classList.contains('warn')) continue;
     var labelEl = el.querySelector('.sc-label');
     var label = labelEl ? (labelEl.textContent || '').trim() : '';
@@ -1455,7 +1458,9 @@ function syncHealthBar() {
   }
   var bad = problems.length > 0;
   dot.className = 'health-dot' + (bad ? ' bad' : '');
-  text.textContent = bad ? ('需要处理：' + problems.join('、')) : '一切正常';
+  if (bad) text.textContent = '需要处理：' + problems.join('、');
+  else if (unknown > 0) text.textContent = '正在检测…';   // 还没拿到结果时别说「一切正常」
+  else text.textContent = '一切正常';
   if (bad && bar && !healthAutoExpanded) {
     healthAutoExpanded = true;
     bar.classList.add('open');
@@ -1520,6 +1525,8 @@ function renderLoginHistory(msg) {
   }).join('');
 }
 function bindLoginHistory() {
+  bindClick('actRenew', actRenew);
+  bindClick('actRenewAll', actRenewAll);
   bindClick('loginHistoryRefresh', loadLoginHistory);
   bindClick('loginHistoryClear', function () {
     send({ type: 'clear-login-history' });
@@ -1527,9 +1534,7 @@ function bindLoginHistory() {
   });
   var sel = document.getElementById('loginHistoryAccount');
   if (sel) sel.addEventListener('change', loadLoginHistory);
-  // 切到设置页时自动拉一次，打开就能看到最近记录
-  var nav = document.querySelector('[data-page="settings"]');
-  if (nav) nav.addEventListener('click', function () { setTimeout(loadLoginHistory, 120); });
+  // 记录页的加载挂在 navigate 里：切页即刷新，不用在这里再绑一次点击
 }
 
 function bootNavIndicator() {

@@ -80,7 +80,7 @@ namespace SeewoAutoLogin
         /// 后台保活：在凭据失效前主动续期，返回（成功数, 失败数）。
         /// force=true 时忽略时间间隔 —— 供「健康巡检」按钮手动触发，即“发现问题就地修好”。
         /// </summary>
-        internal async Task<(int refreshed, int failed)> RunKeepAliveAsync(bool force = false)
+        internal async Task<(int refreshed, int failed)> RunKeepAliveAsync(bool force = false, string onlyAccountId = null)
         {
             // 返回 -1 表示「这一轮根本没跑」：调用方要能区分它和「跑了但没问题」，
             // 否则界面会显示「已自动修复 0 个」，让用户以为账号都没事。
@@ -109,6 +109,9 @@ namespace SeewoAutoLogin
                         }
                         continue;
                     }
+
+                    // 界面上的「续期」按钮只刷一个账号
+                    if (!string.IsNullOrEmpty(onlyAccountId) && account.Id != onlyAccountId) continue;
 
                     // 需要用户处理的凭据问题：不再每 5 分钟自动重试，避免反复用错误密码打接口、触发风控。
                     // 用户改好密码或重新扫码后，健康巡检（force=true）会立刻重试；
@@ -348,11 +351,12 @@ namespace SeewoAutoLogin
                 if (pwdCount > 0) hint.Add($"{pwdCount} 个密码账号：请确认密码是否已修改");
                 if (qrCount > 0) hint.Add($"{qrCount} 个扫码账号：需要重新扫码添加");
 
-                // 不弹窗、不出声：续期是后台行为，它自己弹一个带提示音的模态框，
-                // 比账号失效本身更糟 —— 正好落在上课时间。托盘角标已经把这些账号标出来了
-                // （见 UpdateTrayAlertForHealth），打开界面就能看到具体是哪几个、要做什么。
-                WriteDiagnosticLog($"[KeepAlive] 有 {bad.Count} 个账号需要人工处理（托盘角标已点亮，不弹窗）；"
-                    + $"{string.Join("；", hint)}；账号：{nameList.Replace("\n", " ").Replace("  · ", "")}");
+                // 用托盘气球而不是模态框：不抢焦点、会自己消失，也不会有系统提示音，
+                // 一天最多一次。账号失效是必须让用户知道的事，但没必要在他上课时拦住他。
+                var summary = $"有 {bad.Count} 个账号需要处理：" + string.Join("、", shown);
+                WriteDiagnosticLog($"[KeepAlive] {summary}；{string.Join("；", hint)}");
+                _trayIcon?.SetAlert(true);
+                _trayIcon?.Notify(summary + "（详情见账号列表或登录记录）");
             }
             catch { }
         }
@@ -388,6 +392,13 @@ namespace SeewoAutoLogin
                 WriteDiagnosticLog($"[KeepAlive] 退出前刷新异常: {ex.GetType().Name}");
             }
         }
+
+        /// <summary>
+        /// 界面上的「续期」/「全部续期」：立刻用保存的凭据重试一遍。
+        /// accountId 为空表示全部；返回 (-1, -1) 表示后台那一轮正在跑。
+        /// </summary>
+        internal Task<(int refreshed, int failed)> RenewAccountsAsync(string accountId)
+            => RunKeepAliveAsync(force: true, onlyAccountId: string.IsNullOrWhiteSpace(accountId) ? null : accountId.Trim());
 
         /// <summary>让主界面刷新账号列表（主界面未打开或已销毁时静默跳过）</summary>
         private async Task RefreshAccountListUiAsync()

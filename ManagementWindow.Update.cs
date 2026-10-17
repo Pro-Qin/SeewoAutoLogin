@@ -153,7 +153,15 @@ namespace SeewoAutoLogin
                 if (notice == null) return;
                 if (!_webViewReady)
                 {
-                    _app?.WriteDiagnosticLog("[Update] 界面尚未就绪，升级提示留到下次打开时再显示");
+                    // 等界面就绪（最多 15 秒）：这段代码跑在开场遮罩收起之后，
+                    // 慢机器上 WebView2 可能还没加载完，直接放弃等于这次提醒白丢。
+                    var readyDeadline = DateTime.UtcNow.AddSeconds(15);
+                    while (!_webViewReady && DateTime.UtcNow < readyDeadline)
+                        await Task.Delay(200);
+                }
+                if (!_webViewReady)
+                {
+                    _app?.WriteDiagnosticLog("[Update] 界面未就绪，升级提示留到下次打开时再显示");
                     return;
                 }
 
@@ -533,6 +541,9 @@ namespace SeewoAutoLogin
                 _app.Config.PendingUpdatePath = localPath;
                 _app.Config.PendingUpdateSha256 = info.Sha256;
                 _app.Config.PendingUpdateStage = UpdateStages.Downloaded;
+                // 记下这次升级，供新版本第一次打开界面时提示一次。
+                // 原先只有后台静默更新会写这份记录，手动点「下载新版本」的人永远看不到升级提醒。
+                _app.RecordUpgradeNotice(info);
                 _app.SaveConfig();
 
                 await SendToJs(new { type = "update-progress", state = "installing", text = "正在静默安装，本程序即将退出…" });

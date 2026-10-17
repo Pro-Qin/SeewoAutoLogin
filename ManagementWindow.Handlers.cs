@@ -61,6 +61,39 @@ namespace SeewoAutoLogin
             }
         }
 
+        /// <summary>界面上的「续期」/「全部续期」：立刻用保存的凭据重试，并把结果说清楚</summary>
+        private async Task HandleRenewAccountsAsync(JsonElement root)
+        {
+            try
+            {
+                var accountId = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("id", out var idElement)
+                    ? idElement.GetString()
+                    : "";
+                var single = !string.IsNullOrWhiteSpace(accountId);
+
+                await SendToJs(new { type = "renew-status", running = true, single });
+                var (refreshed, failed) = await _app.RenewAccountsAsync(accountId).ConfigureAwait(true);
+
+                if (refreshed < 0)
+                {
+                    await SendToJs(new { type = "renew-status", running = false, text = "后台正在自动巡检，请稍候再试" });
+                    return;
+                }
+
+                await RefreshAccountList();
+                var text = failed == 0
+                    ? (refreshed > 0 ? $"续期完成：成功 {refreshed} 个" : "没有需要续期的账号")
+                    : $"续期完成：成功 {refreshed} 个，失败 {failed} 个（详情见「登录记录」或账号卡片上的说明）";
+                await SendToJs(new { type = "renew-status", running = false, text });
+                await SendToast(text, failed > 0 ? "warn" : "ok");
+            }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[KeepAlive] 手动续期异常: {ex.GetType().Name} - {ex.Message}");
+                await SendToJs(new { type = "renew-status", running = false, text = "续期失败：" + ex.Message });
+            }
+        }
+
         private async Task HandleLogin(JsonElement root)
         {
             var username = root.GetProperty("username").GetString() ?? "";
@@ -117,12 +150,6 @@ namespace SeewoAutoLogin
             if (MessageBox.Show($"确定删除 \"{acct.DisplayName ?? acct.Username}\" 吗？", "删除", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             _app.RemoveAccount(id);
             await RefreshAccountList();
-        }
-
-        private async void HandleSetActive(JsonElement root)
-        {
-            var id = root.GetProperty("id").GetString();
-            if (!string.IsNullOrEmpty(id)) { _app.SwitchActiveAccount(id); await RefreshAccountList(); }
         }
 
         private async void HandleMove(JsonElement root, int dir)

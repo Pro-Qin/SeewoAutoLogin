@@ -48,7 +48,7 @@ namespace SeewoAutoLogin
                     case "start-qr": _ = StartQrLoginAsync(); break;
                     case "cancel-qr": _qrLoginCancellation?.Cancel(); _qrLoginCoordinator?.Cancel(); break;
                     case "delete-account": HandleDeleteAccount(root); break;
-                    case "set-active": HandleSetActive(root); break;
+
                     case "move-up": HandleMove(root, -1); break;
                     case "move-down": HandleMove(root, 1); break;
                     case "edit-tags": HandleEditTags(root); break;
@@ -93,6 +93,7 @@ namespace SeewoAutoLogin
                     case "export-logs-to-desktop": await HandleExportLogsToDesktopAsync(); break;
                     case "get-terms": await SendTerms(); break;
                     case "open-external": HandleOpenExternal(root); break;
+                    case "renew-account": await HandleRenewAccountsAsync(root); break;
                     case "get-login-history": await HandleGetLoginHistory(root); break;
                     case "clear-login-history":
                         LoginHistoryService.Clear();
