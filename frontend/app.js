@@ -829,7 +829,17 @@ function renderSelfCheck(msg) {
   setCheckItem('admin', adminLevel, '管理员权限', adminLevel === 'unknown' ? '' : (st.isAdmin ? '' : '未提权'));
 
   const seewoLevel = triLevel(st.seewoRunning, 'warn');
-  setCheckItem('seewo', seewoLevel, '希沃进程', seewoLevel === 'unknown' ? '' : (st.seewoRunning ? '' : '未运行'));
+  let seewoSub = '';
+  if (seewoLevel === 'ok') {
+    // 进程开着不代表希沃真的连上了本程序：拉过一次账号列表才算
+    if (st.lastSsoMinutes === null || st.lastSsoMinutes === undefined)
+      seewoSub = '运行中 · 还没收到过请求';
+    else
+      seewoSub = '运行中 · 最近请求 ' + (st.lastSsoMinutes < 1 ? '刚刚' : (st.lastSsoMinutes + ' 分钟前'));
+  } else if (seewoLevel === 'warn') {
+    seewoSub = '未运行';
+  }
+  setCheckItem('seewo', seewoLevel, '希沃进程', seewoSub);
 
   const bar = document.getElementById('selfcheckBar');
   if (bar) {
@@ -1448,8 +1458,14 @@ function syncHealthBar() {
   var items = document.querySelectorAll('#selfcheckItems [id^="sc-"]');
   for (var i = 0; i < items.length; i++) {
     var el = items[i];
-    // 希沃进程没开是常态（老师没在用），不该把它算成「不健康」；它仍然在展开区里标黄
-    if (el.id === 'sc-seewo') continue;
+    // 希沃进程没开是常态（老师没在用），不该把它算成「不健康」。
+    // 但「开着却一次请求都没发过来」是另一回事——那说明快捷入口根本没生效。
+    if (el.id === 'sc-seewo') {
+      var seewoSubEl = el.querySelector('.sc-sub');
+      if (seewoSubEl && (seewoSubEl.textContent || '').indexOf('还没收到过请求') >= 0)
+        problems.push('希沃没连上（快捷入口不会出现）');
+      continue;
+    }
     if (el.classList.contains('unknown')) { unknown++; continue; }
     if (!el.classList.contains('error') && !el.classList.contains('warn')) continue;
     var labelEl = el.querySelector('.sc-label');

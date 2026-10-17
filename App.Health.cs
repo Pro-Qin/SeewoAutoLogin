@@ -39,6 +39,11 @@ namespace SeewoAutoLogin
             hostsState = Services.HostsFileService.DescribeState(),
             isAdmin = IsAdministrator(),
             seewoRunning = seewoRunning,
+            // 距最近一次 SSOLOGIN 的分钟数（null = 从没收到过）。这是「快捷入口到底有没有生效」的
+            // 唯一硬信号：我们这边全绿、希沃却一个请求都没发过来，入口就是没出现。
+            lastSsoMinutes = SeewoSsoGateway.LastSsologinUtc == DateTime.MinValue
+                ? (double?)null
+                : Math.Round((DateTime.UtcNow - SeewoSsoGateway.LastSsologinUtc).TotalMinutes, 0),
             autoStartEnabled = Services.AutoStartService.IsEnabled,
             autoStartMode = Services.AutoStartService.CurrentMode(),
             autoStartText = Services.AutoStartService.DescribeState(),
