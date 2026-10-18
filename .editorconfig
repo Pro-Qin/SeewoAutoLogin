@@ -1,0 +1,25 @@
+root = true
+
+# 这个仓库的历史文件同时存在 CRLF 与 LF（Windows 上的 WPF 项目 + 多次跨工具编辑）。
+# 从这里开始统一：新文件与保存时一律 CRLF、UTF-8（无 BOM）、行尾不保留空格。
+# 不批量转换历史文件：那会产生一份覆盖全部行的 diff，把真正的改动淹掉。
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{js,css,html}]
+indent_size = 2
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{csproj,props,targets,iss}]
+indent_size = 2

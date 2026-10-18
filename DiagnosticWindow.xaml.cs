@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -26,14 +23,26 @@ namespace SeewoAutoLogin
             _items.Clear();
             DiagnosticResults.Items.Refresh();
 
-            await System.Threading.Tasks.Task.Run(() => RunAllChecks());
+            try
+            {
+                await System.Threading.Tasks.Task.Run(() => RunAllChecks());
 
-            DiagnosticResults.Items.Refresh();
-            RunDiagnosticBtn.IsEnabled = true;
+                DiagnosticResults.Items.Refresh();
 
-            var pass = _items.Count(i => i.Status == "pass");
-            var fail = _items.Count(i => i.Status == "fail");
-            SummaryText.Text = $"{pass}/{_items.Count} 项通过，{fail} 项异常";
+                var pass = _items.Count(i => i.Status == "pass");
+                var fail = _items.Count(i => i.Status == "fail");
+                SummaryText.Text = $"{pass}/{_items.Count} 项通过，{fail} 项异常";
+            }
+            catch (Exception ex)
+            {
+                // async void 事件处理器：任何漏出的异常都会终止进程，这里兜住并写进结论
+                SummaryText.Text = "自检执行失败：" + ex.Message;
+                try { _app?.WriteDiagnosticLog($"[Diagnostic] 自检异常: {ex.GetType().Name} - {ex.Message}"); } catch { }
+            }
+            finally
+            {
+                RunDiagnosticBtn.IsEnabled = true;
+            }
         }
 
         private void RunAllChecks()

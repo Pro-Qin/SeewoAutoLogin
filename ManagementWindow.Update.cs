@@ -1,15 +1,4 @@
 using Microsoft.Web.WebView2.Core;
-using SeewoAutoLogin.Services;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -19,7 +8,6 @@ namespace SeewoAutoLogin
 {
     public partial class ManagementWindow
     {
-        #region 更新检查
 
         private bool _updateChecked;
         /// <summary>最近一次检查到的更新信息（下载时复用其直链与校验值）</summary>
@@ -227,42 +215,10 @@ namespace SeewoAutoLogin
         /// <summary>
         /// 处理前端发来的外链跳转请求（作者主页、项目仓库）。
         /// 前端消息不可信，这里按「https + 主机白名单」再校验一次，避免被改成 file:// 或任意网址。
-        /// </summary>
-        private void HandleOpenExternal(JsonElement root)
+
+        private async Task HandleOpenUpdatePageAsync(JsonElement root)
         {
-            var url = root.TryGetProperty("url", out var element) ? element.GetString() : null;
-            if (string.IsNullOrWhiteSpace(url)) return;
-
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
-                || uri.Scheme != Uri.UriSchemeHttps
-                || !TrustedExternalHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase))
-            {
-                _app.WriteDiagnosticLog($"[External] 已拦截不可信的外链请求: {url}");
-                return;
-            }
-
-            try
-            {
-                Process.Start(new ProcessStartInfo { FileName = uri.ToString(), UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                _app.WriteDiagnosticLog($"[External] 打开链接失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>把用户协议正文下发给前端（「关于」页点击《用户协议》时请求，与欢迎界面共用同一份资源）</summary>
-        private async Task SendTerms()
-        {
-            var text = App.LoadTermsText();
-            if (string.IsNullOrWhiteSpace(text))
-                _app.WriteDiagnosticLog("[Terms] 协议正文载入失败（嵌入资源缺失？）");
-            await SendToJs(new { type = "terms", text });
-        }
-
-        private async void HandleOpenUpdatePage(JsonElement root)
-        {
-            var url = root.TryGetProperty("url", out var element) ? element.GetString() : null;
+            var url = root.Str("url", null);
             // 该 URL 来自前端消息且会用 ShellExecute 打开，必须校验协议与主机，避免被篡改成 file:// 或 UNC 路径
             if (string.IsNullOrWhiteSpace(url) || !UpdateChecker.IsTrustedDownloadUrl(url))
             {
@@ -283,7 +239,7 @@ namespace SeewoAutoLogin
         /// 下载新版本：先按网络情况挑最快的加速源，下载完成后校验 SHA256 再启动安装程序。
         /// 直链不可用或下载失败时，回退到打开发布页让用户手动下载。
         /// </summary>
-        private async void HandleDownloadUpdate()
+        private async Task HandleDownloadUpdateAsync()
         {
             // 后台可能正拿着同一个包在下载。先看它跑到哪了：
             // 够快就接过它的进度显示（前台不重复下载），慢就掐断它、由前台重下一遍 ——
@@ -600,28 +556,10 @@ namespace SeewoAutoLogin
             }
         }
 
-        /// <summary>打开本地文件或受信任的网页；不可信地址一律回落到官方发布页</summary>
-        private void OpenExternal(string target, bool alreadyValidated = false)
-        {
-            try
-            {
-                if (File.Exists(target))
-                {
-                    Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true });
-                    return;
-                }
+        /// <summary>前端命令入口：异常与取消统一由 <see cref="RunCommand"/> 兜底。</summary>
+        private void HandleOpenUpdatePage(JsonElement root) => RunCommand(() => HandleOpenUpdatePageAsync(root), "HandleOpenUpdatePage");
 
-                var url = (alreadyValidated || UpdateChecker.IsTrustedDownloadUrl(target))
-                    ? target
-                    : UpdateChecker.ReleasesPageUrl;
-                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                _app.WriteDiagnosticLog($"[Update] 打开失败: {ex.Message}");
-            }
-        }
-
-        #endregion
+        /// <summary>前端命令入口：异常与取消统一由 <see cref="RunCommand"/> 兜底。</summary>
+        private void HandleDownloadUpdate() => RunCommand(() => HandleDownloadUpdateAsync(), "HandleDownloadUpdate");
     }
 }

@@ -1,15 +1,4 @@
 using Microsoft.Web.WebView2.Core;
-using SeewoAutoLogin.Services;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -21,9 +10,24 @@ namespace SeewoAutoLogin
     {
         #region QR Login
 
-        private async void QrLoginCoordinator_StateChanged(object sender, QrLoginStateChangedEventArgs e)
+        /// <summary>
+        /// 扫码状态变化：事件来自后台线程，必须回到 UI 线程再渲染。
+        /// 这是 async void（事件签名要求），所以渲染异常必须在这里就地吃掉 ——
+        /// 逃出去就是 DispatcherUnhandledException，托盘程序会直接消失。
+        /// </summary>
+        private void QrLoginCoordinator_StateChanged(object sender, QrLoginStateChangedEventArgs e)
         {
-            await Dispatcher.BeginInvoke(new Action(async () => await RenderQrState(e)));
+            _ = Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    await RenderQrState(e);
+                }
+                catch (Exception ex)
+                {
+                    _app?.WriteDiagnosticLog($"[QR] 状态渲染失败: {ex.GetType().Name} - {ex.Message}");
+                }
+            }));
         }
 
         private async Task RenderQrState(QrLoginStateChangedEventArgs e)

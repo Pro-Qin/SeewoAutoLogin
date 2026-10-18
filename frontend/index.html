@@ -512,6 +512,23 @@
 
 <!-- Toast 容器 -->
 <div id="toastContainer" class="toast-container"></div>
-<script src="app.js" defer></script>
+<!-- 前端按职责拆分为多个普通脚本（非 ES module）：共享全局作用域，标签顺序即依赖顺序；调整顺序前先看各文件顶部注释 -->
+<script src="js/core.js" defer></script>
+<script src="js/ui.js" defer></script>
+<script src="js/nav.js" defer></script>
+<script src="js/accounts.js" defer></script>
+<script src="js/update.js" defer></script>
+<script src="js/qr.js" defer></script>
+<script src="js/particles.js" defer></script>
+<script src="js/settings.js" defer></script>
+<script src="js/health.js" defer></script>
+<script src="js/import.js" defer></script>
+<script src="js/backup.js" defer></script>
+<script src="js/history.js" defer></script>
+<script src="js/tour.js" defer></script>
+<script src="js/terms.js" defer></script>
+<script src="js/bindings.js" defer></script>
+<script src="js/upgrade.js" defer></script>
+<script src="js/boot.js" defer></script>
 </body>
 </html>

@@ -159,3 +159,58 @@ Edge headless 截图有两个坑：--window-size 有最小宽度，data URI 大�
 - Source: user_feedback
 - Related Files: App.Health.cs, Core/Models.cs, ManagementWindow.Settings.cs, frontend/index.html
 - Tags: auto-repair, unattended, product-principle
+
+---
+
+## [LRN-20261017-001] best_practice
+
+**Logged**: 2026-10-17T15:20:00Z
+**Priority**: high
+**Status**: active
+**Area**: frontend
+
+### Summary
+前端缓存不再靠「改代码就抬版本号」：虚拟主机名已带前端资源内容指纹
+
+### Details
+`WebContentProvisioner.VirtualHostName` 现在是 `seewo-v<程序版本>-<资源指纹>.example`，
+指纹是全部 `frontend/**` 资源的 SHA256 前 8 位（含资源名）。改动任何前端文件都会换 origin，
+WebView2 不可能再拿旧 JS 配新 HTML。
+
+这解决了 LRN-20260925-005 那个坑：以前改前端必须把 `<Version>` 抬一位，忘了就会出现
+「点了没反应」这类假 bug。现在版本号只用于发布，不再兼任缓存键。
+
+### Suggested Action
+改前端时照常构建即可，不必为了刷缓存抬版本号；发布时按正常流程改 `<Version>`。
+
+### Metadata
+- Source: refactor
+- Related Files: Services/WebContentProvisioner.cs, frontend/**
+- Tags: webview2, cache, version, false-symptom
+- See Also: LRN-20260925-005
+
+---
+
+## [LRN-20261017-002] insight
+
+**Logged**: 2026-10-17T15:20:00Z
+**Priority**: medium
+**Status**: active
+**Area**: backend
+
+### Summary
+界面消息的参数一律走 JsonArgs，命令入口一律走 RunCommand
+
+### Details
+前端发来的 JSON 没有编译期约束。直接用 `GetProperty` 取字段，字段缺失或类型不符都会抛异常，
+而异常被消息循环统一 catch 成一行日志 —— 现象是「点了没反应」，排查时看不出是哪个字段。
+
+### Suggested Action
+- 读参数：`root.Str/Flag/Int/Node/Strings`（`Ui/JsonArgs.cs`）
+- 写命令：`private Task XxxAsync(...)` + `private void Xxx(...) => RunCommand(() => XxxAsync(...), nameof(Xxx))`
+- 见 `docs/REFACTORING.md` 的约定表。
+
+### Metadata
+- Source: refactor
+- Related Files: Ui/JsonArgs.cs, ManagementWindow.Helpers.cs, ManagementWindow.Messages.cs
+- Tags: json, async-void, observability

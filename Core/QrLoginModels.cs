@@ -1,5 +1,3 @@
-using System;
-
 namespace SeewoAutoLogin
 {
     public enum QrLoginState

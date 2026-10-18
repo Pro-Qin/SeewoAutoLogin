@@ -1,15 +1,4 @@
 using Microsoft.Web.WebView2.Core;
-using SeewoAutoLogin.Services;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -29,7 +18,7 @@ namespace SeewoAutoLogin
                 if (string.IsNullOrEmpty(json)) return;
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-                var type = root.GetProperty("type").GetString();
+                var type = root.Str("type");
 
                 // 来源校验：消息是唯一的特权入口（删账号、导配置、退出、恢复出厂都走它），
                 // 不能只看「有没有 postMessage」，还得看是谁发的。
@@ -86,7 +75,7 @@ namespace SeewoAutoLogin
                     case "list-backups": await SendBackups(); break;
                     case "restore-backup": await HandleRestoreBackupAsync(root); break;
                     case "tour-started": _app.WriteDiagnosticLog("[Tour] 用户开始观看使用教程"); break;
-                    case "tour-debug": _app.WriteDiagnosticLog("[Tour] " + (root.TryGetProperty("text", out var dbg) ? dbg.GetString() : "")); break;
+                    case "tour-debug": _app.WriteDiagnosticLog("[Tour] " + (root.Str("text"))); break;
                     case "tour-done": HandleTourDone(root); break;
                     case "factory-reset": HandleFactoryReset(); break;
                     case "export-diagnostics": await HandleExportDiagnosticsAsync(); break;

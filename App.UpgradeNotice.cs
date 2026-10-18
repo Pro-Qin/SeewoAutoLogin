@@ -1,7 +1,3 @@
-using SeewoAutoLogin.Services;
-using System;
-using System.Threading.Tasks;
-
 namespace SeewoAutoLogin
 {
     public partial class App

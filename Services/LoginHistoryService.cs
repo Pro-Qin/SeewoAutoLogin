@@ -1,10 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Json;
-
 namespace SeewoAutoLogin.Services
 {
     /// <summary>一条登录记录。字段都用字符串，方便人直接看 jsonl 文件。</summary>

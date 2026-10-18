@@ -1,15 +1,4 @@
 using Microsoft.Web.WebView2.Core;
-using SeewoAutoLogin.Services;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -65,6 +54,13 @@ namespace SeewoAutoLogin
                         showRetry: true, showInstall: true, showDownload: true);
                 }
             }
+            catch (Exception ex)
+            {
+                _app?.WriteDiagnosticLog($"[WebView2] 安装运行时异常: {ex.GetType().Name} - {ex.Message}");
+                ShowStatusPanel("WebView2 安装未成功",
+                    "安装过程出错：" + ex.Message + "\n可重试，或用「手动下载」装好官方运行时后点「重新检测」。",
+                    showRetry: true, showInstall: true, showDownload: true);
+            }
             finally
             {
                 InstallButton.IsEnabled = true;
@@ -73,8 +69,16 @@ namespace SeewoAutoLogin
 
         private async void RetryButton_Click(object sender, RoutedEventArgs e)
         {
-            _autoInstallAttempted = false; // 重新检测时允许再次自动安装
-            await RetryInitializeAsync();
+            try
+            {
+                _autoInstallAttempted = false; // 重新检测时允许再次自动安装
+                await RetryInitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                // 事件处理器是 async void：异常逃出去会带走整个进程
+                _app?.WriteDiagnosticLog($"[WebView2] 重新检测异常: {ex.GetType().Name} - {ex.Message}");
+            }
         }
 
         private void DownloadButton_Click(object sender, RoutedEventArgs e)

@@ -1,9 +1,6 @@
-using System;
-using System.IO;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
-using System.Text;
 
 namespace SeewoAutoLogin.Services
 {

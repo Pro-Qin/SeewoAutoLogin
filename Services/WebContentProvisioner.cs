@@ -1,9 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-
 namespace SeewoAutoLogin.Services
 {
     /// <summary>
@@ -19,18 +13,48 @@ namespace SeewoAutoLogin.Services
         private const string ResourcePrefix = "SeewoAutoLogin.frontend.";
 
         /// <summary>
-        /// 虚拟主机名带版本号：升级后 URL 变化，避免 WebView2 命中旧版本的 HTML/CSS/JS 缓存。
+        /// 虚拟主机名 = 程序版本 + 前端资源内容指纹。
+        ///
+        /// 版本号保证升级后换 origin；内容指纹保证「只改了前端、没抬版本号」时也换 origin。
+        /// 以前改前端必须手动把 &lt;Version&gt; 抬一位，否则 WebView2 会拿旧 JS 配新 HTML，
+        /// 表现为按钮点了没反应、页面切换失效这类假 bug（见 .learnings/LRN-20260925-005）。
         /// </summary>
-        public static string VirtualHostName
+        public static string VirtualHostName => HostName.Value;
+
+        private static readonly Lazy<string> HostName =
+            new(BuildHostName, LazyThreadSafetyMode.ExecutionAndPublication);
+
+        private static string BuildHostName()
         {
-            get
+            var version = Assembly.GetExecutingAssembly().GetName().Version;
+            var id = version == null
+                ? "dev"
+                : $"{version.Major}-{version.Minor}-{version.Build}";
+            return $"seewo-v{id}-{ComputeContentHash()}.example";
+        }
+
+        /// <summary>前端资源整体指纹（SHA256 前 8 位）：资源名与内容一起参与，改名也算变化。</summary>
+        private static string ComputeContentHash()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var names = assembly.GetManifestResourceNames()
+                .Where(name => name.StartsWith(ResourcePrefix, StringComparison.Ordinal))
+                .OrderBy(name => name, StringComparer.Ordinal);
+
+            using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(
+                System.Security.Cryptography.HashAlgorithmName.SHA256);
+            var buffer = new byte[81920];
+            foreach (var name in names)
             {
-                var version = Assembly.GetExecutingAssembly().GetName().Version;
-                var id = version == null
-                    ? "dev"
-                    : $"{version.Major}-{version.Minor}-{version.Build}";
-                return $"seewo-v{id}.example";
+                hash.AppendData(Encoding.UTF8.GetBytes(name));
+                using var stream = assembly.GetManifestResourceStream(name);
+                if (stream == null) continue;
+                int read;
+                while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                    hash.AppendData(buffer, 0, read);
             }
+
+            return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant()[..8];
         }
 
         /// <summary>前端资源目录（LOCALAPPDATA 下，避免 Program Files 写权限问题）。</summary>
