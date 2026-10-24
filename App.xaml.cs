@@ -285,9 +285,14 @@ namespace SeewoAutoLogin
         protected override void OnExit(ExitEventArgs e)
         {
             // 退出时按设置恢复 hosts：本程序不在运行时，local.id.seewo.com 不应继续指向本机。
+            //
+            // 只有真正接管了这台机器的主实例才做这件事（_instanceMutex 非空）。
+            // 否则「双击图标唤醒已有实例」的那条路径也会在退出时删映射：它自己没写过 hosts，
+            // 却会把正在运行的主实例刚写好的映射删掉 —— 若唤醒者是管理员，快捷登录当场失效。
+            // 重启/静默升级的路径已经把互斥锁置空，同样不会误删。
             try
             {
-                if (_config?.RestoreHostsOnExit != false && !_skipHostsRestoreOnExit)
+                if (_instanceMutex != null && _config?.RestoreHostsOnExit != false && !_skipHostsRestoreOnExit)
                 {
                     if (Services.HostsFileService.RemoveLoopbackMapping(out var hostsError))
                         WriteDiagnosticLog("[Hosts] 退出时已恢复 hosts 映射");
