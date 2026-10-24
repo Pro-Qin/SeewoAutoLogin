@@ -30,7 +30,6 @@ namespace SeewoAutoLogin
             // 换图标后用户看到的仍是旧的。从嵌入资源直接加载可确保与安装包一致。
             try { Icon = App.LoadWindowIcon(); } catch { }
             _app = (App)Application.Current;
-            InitializeWindowChrome();
             _qrLoginCoordinator = _app?.QrLoginCoordinator;
             _authService = _app?.AuthService;
 

@@ -18,10 +18,6 @@ document.addEventListener('change', function(e) {
     case 'tagFilter': setTagFilter(e.target.value); break;
     case 'particleToggle': toggleParticles(e.target.checked); break;
     case 'perfModeCheck': setPerformanceMode(e.target.checked); break;
-    case 'systemTitleBarCheck':
-      send({type:'update-setting', key:'useSystemTitleBar', value:e.target.checked});
-      showToast(e.target.checked ? '已切换为系统标题栏（下次打开窗口生效）' : '已切换为自绘标题栏（下次打开窗口生效）', 'info');
-      break;
   }
 });
 function setPassword() { const p = document.getElementById('newPasswordInput').value; if(p){send({type:'set-password',password:p});document.getElementById('newPasswordInput').value='';} }

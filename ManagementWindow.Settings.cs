@@ -28,7 +28,6 @@ namespace SeewoAutoLogin
 autoRepairEnabled = _app.Config.AutoRepairEnabled,
                 autoShowOverlay = _app.Config.AutoShowOverlay,
                 performanceMode = _app.Config.PerformanceMode,
-                useSystemTitleBar = _app.Config.UseSystemTitleBar,
             particleBackground = _app.Config.ParticleBackground,
                 autoCheckUpdate = _app.Config.AutoCheckUpdate,
                 autoInstallAfterDownload = _app.Config.AutoInstallAfterDownload

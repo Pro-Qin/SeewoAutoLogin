@@ -31,11 +31,6 @@ namespace SeewoAutoLogin
         /// <summary>粒子背景开关（界面装饰，关掉后不再绘制）。默认开启。</summary>
         public bool ParticleBackground { get; set; } = true;
 
-        /// <summary>
-        /// 使用系统标题栏（默认关闭 = 自绘）。
-        /// Win7 上无论这个值是什么都强制用系统标题栏，见 ManagementWindow.Chrome.cs。
-        /// </summary>
-        public bool UseSystemTitleBar { get; set; }
         /// <summary>启动时自动检查更新（默认开启）</summary>
         public bool AutoCheckUpdate { get; set; } = true;
         /// <summary>

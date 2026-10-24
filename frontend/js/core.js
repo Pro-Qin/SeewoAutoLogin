@@ -147,7 +147,6 @@ function handleCSharpMessage(raw) {
       if (msg.restoreHostsOnExit!==undefined) document.getElementById('restoreHostsOnExitCheck').checked = msg.restoreHostsOnExit;
       if (msg.autoRepairEnabled!==undefined) document.getElementById('autoRepairCheck').checked = msg.autoRepairEnabled;
       if (msg.autoShowOverlay!==undefined) document.getElementById('autoShowOverlayCheck').checked = msg.autoShowOverlay;
-      if (msg.useSystemTitleBar!==undefined) { var stb = document.getElementById('systemTitleBarCheck'); if (stb) stb.checked = !!msg.useSystemTitleBar; }
       if (msg.performanceMode!==undefined) {
         const perfBox = document.getElementById('perfModeCheck');
         if (perfBox) perfBox.checked = !!msg.performanceMode;
