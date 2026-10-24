@@ -66,7 +66,7 @@ function renderLoginHistory(msg) {
       +   '<span class="lh-group-name">' + esc(g.name) + '</span>'
       +   '<span class="lh-group-src">' + esc(g.source) + '</span>'
       +   '<span class="lh-group-count">' + g.items.length + ' 条</span>'
-      +   '<span class="lh-group-time">' + esc(recent.slice(0, 16)) + '</span>'
+      +   '<span class="lh-group-time">' + esc(recent.length >= 16 ? recent.slice(5, 16) : recent) + '</span>'
       + '</summary>'
       + '<div class="lh-group-body">' + body + '</div>'
       + '</details>';
