@@ -14,6 +14,16 @@ namespace SeewoAutoLogin
         // 断档一次就得让老师重新扫码，那才是真正麻烦的事。
         private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMinutes(15);
 
+        /// <summary>
+        /// 密码账号的续期间隔：6 小时。
+        ///
+        /// 密码账号的"续期"本质是重新登录一次。每 15 分钟重登一次，一天 96 次，
+        /// 希沃那边就是典型的高频登录 —— 4906（要验证码）、4909（假密码错误）都由此而来。
+        /// 扫码账号才需要频繁换令牌（令牌会过期）；密码账号的 token 失效时，
+        /// 希沃发 SSOLOGIN 那一刻会自动重登，不需要后台盲刷。
+        /// </summary>
+        private static readonly TimeSpan PasswordKeepAliveInterval = TimeSpan.FromHours(6);
+
         private bool _keepAliveRunning;
         private int _keepAliveRunningFlag;
 
@@ -119,8 +129,12 @@ namespace SeewoAutoLogin
                     // 临时性网络故障：退避到 NextRetryAtUtc 之前不再请求希沃接口。
                     if (!force && account.NextRetryAtUtc.HasValue && now < account.NextRetryAtUtc.Value) continue;
 
+                    // 扫码账号频繁换令牌；密码账号只在兜底间隔到点时才重登（见 PasswordKeepAliveInterval）
+                    var keepAliveInterval = string.IsNullOrEmpty(account.Password)
+                        ? KeepAliveInterval
+                        : PasswordKeepAliveInterval;
                     if (!force && account.LastTokenExchangeAtUtc.HasValue &&
-                        now - account.LastTokenExchangeAtUtc.Value < KeepAliveInterval)
+                        now - account.LastTokenExchangeAtUtc.Value < keepAliveInterval)
                         continue;
 
                     var (ok, message, kind) = await RefreshAccountCredentialAsync(account).ConfigureAwait(true);

@@ -311,5 +311,6 @@
   "tray.ok": "一切正常",
   "tray.problem": "{0} 个账号有问题",
   "tray.risk": "被风控（{0} 个账号）",
-  "accounts.captchaFix": "在白板里手动登录一次即可解除"
+  "accounts.captchaFix": "在白板里手动登录一次即可解除",
+  "settings.tab.danger": "危险"
 }

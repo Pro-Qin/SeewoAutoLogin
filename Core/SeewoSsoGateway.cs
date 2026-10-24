@@ -9,6 +9,19 @@ namespace SeewoAutoLogin
         private HttpListener _listener;
         private CancellationTokenSource _cts;
         private readonly SemaphoreSlim _loginGate = new SemaphoreSlim(1, 1);
+
+        /// <summary>
+        /// 每个账号最近一次登录失败的结果与时间。
+        ///
+        /// 希沃在登录界面开着时会每 2 秒轮询一次 SSOLOGIN，一个失败的账号几秒钟就能攒出十几次失败登录。
+        /// 这对希沃那边就是「高频失败」：风控会从「需要图片验证码」（4906）升级成「密码不正确」（4909），
+        /// 用户没改密码却被告知密码错——就是这么来的。
+        /// 冷却期内直接复用上一次失败结果，不再打登录接口。
+        /// </summary>
+        private readonly ConcurrentDictionary<string, (DateTime AtUtc, SeewoLoginResult Result)> _loginFailures
+            = new ConcurrentDictionary<string, (DateTime, SeewoLoginResult)>();
+
+        private const int LoginFailureCooldownSeconds = 60;
         private readonly SeewoAuthService _authService;
         private readonly Func<PluginConfig> _getConfig;
         private readonly Func<SeewoAccount, bool> _tryRestoreQrSession;
@@ -699,6 +712,39 @@ namespace SeewoAutoLogin
                         }
                         else
                         {
+                            // 冷却期内不再打登录接口：每次希沃轮询都去登录一次，只会把账号往风控里推。
+                            if (_loginFailures.TryGetValue(account.Id, out var lastFailure) &&
+                                (DateTime.UtcNow - lastFailure.AtUtc).TotalSeconds < LoginFailureCooldownSeconds)
+                            {
+                                resp.StatusCode = 401;
+                                await WriteJson(resp, new
+                                {
+                                    message = "login_failed",
+                                    statusCode = "401",
+                                    detail = lastFailure.Result.ErrorMessage
+                                });
+                                Log($"SSOLOGIN/{userId}: 冷却中（{LoginFailureCooldownSeconds}s 内不重试）; reason={lastFailure.Result.ErrorMessage}");
+                                return;
+                            }
+
+                            // 会话仍然属于这个账号就直接复用 token。
+                            // 以前每次都重新登录：既慢，又让希沃看到一串连续登录（风控的养料）。
+                            if (_authService.IsSessionFor(account))
+                            {
+                                loginResult = _authService.GetCurrentLoginResult();
+                                Log($"SSOLOGIN/{userId}: 复用现有会话（未重复登录）");
+                                if (!loginResult.Success)
+                                {
+                                    resp.StatusCode = 401;
+                                    await WriteJson(resp, new { message = "login_failed", statusCode = "401", detail = loginResult.ErrorMessage });
+                                    return;
+                                }
+                                resp.Headers.Set("Set-Cookie", $"pt_token={loginResult.Token}; Path=/; HttpOnly; SameSite=Lax");
+                                resp.Headers.Set("X-Auth-Token", loginResult.Token);
+                                await WriteJson(resp, new { message = "success", statusCode = "200", data = new { pt_token = loginResult.Token } });
+                                return;
+                            }
+
                             var password = account.DecryptedPassword;
                             if (string.IsNullOrEmpty(password))
                             {
@@ -717,6 +763,7 @@ namespace SeewoAutoLogin
 
                         if (!loginResult.Success)
                         {
+                            _loginFailures[account.Id] = (DateTime.UtcNow, loginResult);
                             SeewoAutoLogin.Services.LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
                                 "seewo", false, loginResult.ErrorMessage ?? "登录失败");
                             resp.StatusCode = 401;
@@ -730,6 +777,7 @@ namespace SeewoAutoLogin
 
                         await WriteJson(resp, new { message = "success", statusCode = "200", data = new { pt_token = loginResult.Token } });
 
+                        _loginFailures.TryRemove(account.Id, out _);
                         account.UserInfo = loginResult.UserInfo;
                         _onLoginSuccess?.Invoke(account);
 

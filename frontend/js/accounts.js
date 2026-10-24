@@ -164,7 +164,7 @@ function cardHtml(a, isActive, idx, isFull, animate) {
         .replace('{0}', when ? relativeTime(when) : '刚刚');
       const hint = t('accounts.renewCaptchaHint', '登录频率过高触发风控，约 2 小时后自动重试');
       renewLine = '<div class="renew-line bad">' + esc(line)
-        + '<span class="help-dot" title="' + escAttr(hint) + '">?</span>'
+        + '<span class="help-dot" data-tip="' + escAttr(hint) + '">?</span>'
         + '</div>'
         // 唯一能"清掉"风控的动作是人工登录一次 —— 这句必须显眼，否则用户只会去试改密码
         + '<div class="renew-fix">' + esc(t('accounts.captchaFix', '在白板里手动登录一次即可解除')) + '</div>';
@@ -189,7 +189,7 @@ function cardHtml(a, isActive, idx, isFull, animate) {
 
   return `<div class="acct-card${sel}${animate ? ' enter' : ''}" draggable="true" data-id="${escAttr(a.id)}">
     <div class="row1">
-      <div class="avatar-mini"><span>${esc(a.initial||'S')}</span></div>
+      <div class="avatar-mini">${a.photoUrl ? '<img src="' + escAttr(a.photoUrl) + '" alt="" loading="lazy">' : '<span>' + esc(a.initial||'S') + '</span>'}</div>
       <div class="info">
         <div class="name">${esc(a.displayName||a.username||'')}</div>
         <div class="meta">${esc(a.username||'')} · ${esc(a.loginType||'')}</div>

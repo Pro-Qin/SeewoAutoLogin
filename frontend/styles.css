@@ -1509,3 +1509,23 @@ a[role="link"] { cursor: pointer; }
 
 /* 关于页彩带：全屏 canvas，不吃点击 */
 .confetti-canvas { position: fixed; inset: 0; z-index: 950; pointer-events: none; }
+
+/* 侧栏导航整体再上移约 5%：视觉重心略高于几何中心，看起来更稳 */
+nav { padding-bottom: 5%; }
+.settings-nav-item.danger { color: rgba(255, 122, 100, .85); }
+.settings-nav-item.danger:hover { background: rgba(255, 122, 100, .1); color: #FF9A8A; }
+.settings-nav-item.danger.active { background: rgba(255, 122, 100, .14); color: #FF9A8A; }
+
+/* 网页级浮窗（替代原生 title） */
+.ui-tip {
+  position: fixed; top: 0; left: 0; z-index: 1000;
+  max-width: 260px; padding: 7px 10px;
+  border-radius: 8px; background: rgba(22, 24, 28, .97);
+  border: 1px solid var(--border-blue);
+  color: var(--text-primary); font-size: 12px; line-height: 1.6;
+  box-shadow: var(--shadow-md); pointer-events: none;
+}
+.ui-tip[hidden] { display: none; }
+
+/* 希沃头像：填满圆形头像位 */
+.avatar-mini img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }

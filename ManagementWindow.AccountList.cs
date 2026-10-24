@@ -31,6 +31,8 @@ namespace SeewoAutoLogin
                 loginType = string.IsNullOrEmpty(a.Password) ? "扫码" : "密码",
 
                 initial = (a.DisplayName ?? a.Username ?? "S").Substring(0, 1).ToUpperInvariant(),
+                // 希沃头像：登录成功后 UserInfo 里带 photoUrl，卡片直接用它（拿不到就退回首字母）
+                photoUrl = a.UserInfo?.PhotoUrl ?? "",
                 tags = a.Tags != null && a.Tags.Count > 0 ? string.Join(", ", a.Tags) : "",
                 requestCount = a.RequestCount,
                 lastRequestAtUtc = a.LastRequestAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
