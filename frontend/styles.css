@@ -1349,3 +1349,70 @@ body.perf-lite .upgrade-notice.show{transform:none !important}
 body.perf-lite .upgrade-card{animation:none !important}
 body.perf-lite .upgrade-card::after{display:none !important}
 
+
+/* ===== 2026-10 观感与交互修正 ===== */
+
+/* 侧栏：logo 在上、退出区在下，导航条整体垂直居中 */
+nav { justify-content: center; }
+
+/* 品牌标题渐变与「关于」页统一（同一套绿色渐变） */
+.brand-text {
+  background: linear-gradient(135deg, #f2ffe6 10%, #3FD9A0 55%, #00A86B 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* 文案强调：时效提醒（黄）/ 不受影响（绿） */
+.note-warn { color: #F5C451; font-weight: 600; }
+.note-good { color: #4ADE80; font-weight: 600; }
+.inline-link {
+  color: var(--accent, #00C880); font-weight: 600; cursor: pointer; text-decoration: none;
+  border-bottom: 1px dashed rgba(0, 200, 128, .5);
+}
+.inline-link:hover { color: #6EE7B7; }
+
+/* 二维码倒计时进入最后 10 秒 */
+.qr-countdown.urgent { color: #FF6B5A; font-weight: 600; }
+
+/* 续期失败后的「?」提示点 */
+.renew-line { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.help-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; margin-left: 5px; flex: 0 0 auto;
+  border-radius: 50%; border: 1px solid rgba(255, 122, 100, .55);
+  color: rgba(255, 122, 100, .95); font-size: 10px; font-weight: 700; line-height: 1;
+  cursor: help; transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.help-dot:hover { background: rgba(255, 122, 100, .15); border-color: rgba(255, 122, 100, .9); }
+
+/* 下拉框：高度与同排按钮对齐、统一圆角；展开项也不再是直角 */
+select.input { height: 34px; padding: 0 32px 0 14px; border-radius: var(--radius-sm); }
+select.input option { background: var(--bg-elevated); color: var(--text-primary); border-radius: var(--radius-sm); }
+
+/* 登录记录：跟随窗口高度伸展，不再固定在 280px */
+#page-history .card { display: flex; flex-direction: column; }
+.login-history { max-height: none; flex: 1 1 auto; min-height: 180px; overflow-y: auto; }
+
+/* 复选框：自绘对勾（原生方框在深色界面上太糙） */
+.checkbox-row input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  width: 18px; height: 18px; border-radius: 5px; flex: 0 0 auto;
+  border: 1.5px solid rgba(255, 255, 255, .28);
+  background: rgba(255, 255, 255, .04);
+  display: inline-grid; place-content: center;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform .12s ease;
+}
+.checkbox-row input[type="checkbox"]::before {
+  content: ""; width: 11px; height: 11px; transform: scale(0);
+  transition: transform .14s cubic-bezier(.22, 1, .36, 1);
+  clip-path: polygon(14% 52%, 0 66%, 39% 100%, 100% 24%, 86% 10%, 38% 72%);
+  background: #06281c;
+}
+.checkbox-row input[type="checkbox"]:checked {
+  background: linear-gradient(140deg, #6EE7B7, #00C880); border-color: #00C880;
+}
+.checkbox-row input[type="checkbox"]:checked::before { transform: scale(1); }
+.checkbox-row input[type="checkbox"]:active { transform: scale(.94); }
+
+/* 无 href 的链接（去掉 javascript:void(0) 的悬停提示） */
+a[role="link"] { cursor: pointer; }

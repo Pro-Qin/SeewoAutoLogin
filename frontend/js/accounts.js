@@ -156,12 +156,24 @@ function cardHtml(a, isActive, idx, isFull, animate) {
   const renewTransient = hState === 'warn';
   if (!a.isPlaceholder && (a.lastTokenExchangeAtUtc || renewFailed || renewTransient)) {
     const when = a.lastTokenExchangeAtUtc || a.lastHealthCheckAtUtc;
-    const reason = (renewFailed || renewTransient) ? renewReason(hMsg) : '';
-    renewLine = '<div class="renew-line' + (renewFailed ? ' bad' : '') + '" title="' + escAttr(hMsg || '') + '">'
-      + (renewFailed ? '续期失败 · ' : (renewTransient ? '网络异常，自动重试 · ' : '已自动续期 · '))
-      + esc(when ? relativeTime(when) : '刚刚')
-      + (reason ? ' · ' + esc(reason) : '')
-      + '</div>';
+    const captcha = /图片验证码/.test(hMsg || '');
+    if (captcha) {
+      // 被希沃要求图片验证码：这不是密码错，也不该让用户去改密码。
+      // 卡片上说清"被什么拦住了"，问号里说清"多久后自动重试、还能怎么解"。
+      const line = t('accounts.renewCaptcha', '续期失败 · {0} · 被希沃图片验证码拦截')
+        .replace('{0}', when ? relativeTime(when) : '刚刚');
+      const hint = t('accounts.renewCaptchaHint', '登录频率过高触发风控，约 2 小时后自动重试');
+      renewLine = '<div class="renew-line bad">' + esc(line)
+        + '<span class="help-dot" title="' + escAttr(hint) + '">?</span>'
+        + '</div>';
+    } else {
+      const reason = (renewFailed || renewTransient) ? renewReason(hMsg) : '';
+      renewLine = '<div class="renew-line' + (renewFailed ? ' bad' : '') + '" title="' + escAttr(hMsg || '') + '">'
+        + (renewFailed ? '续期失败 · ' : (renewTransient ? '网络异常，自动重试 · ' : '已自动续期 · '))
+        + esc(when ? relativeTime(when) : '刚刚')
+        + (reason ? ' · ' + esc(reason) : '')
+        + '</div>';
+    }
   }
 
   // 扫码账号的凭据一旦过期就无法自动恢复（希沃只发一个 token，没有 refresh token），
@@ -273,9 +285,9 @@ function actRenewAll() {
 }
 function actDelete() {
   if (!state.selectedId) return;
-  const acct = state.accounts.find(a => a.id === state.selectedId);
-  if (confirm(`确定删除账号 "${acct ? (acct.displayName || acct.username) : ''}" 吗？`))
-    send({type:'delete-account', id:state.selectedId});
+  // 确认统一交给 C#（原生对话框，默认焦点在「否」）：
+  // 这里再 confirm 一次会出现两个确认框，点掉第一个之后还要再点一次。
+  send({type:'delete-account', id:state.selectedId});
 }
 
 // ===== 事件委托：账号卡片 / 生效切换（替代内联 onclick 字符串拼接，避免单引号注入）=====

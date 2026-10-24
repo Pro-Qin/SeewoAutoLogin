@@ -119,7 +119,17 @@ function handleCSharpMessage(raw) {
       if (ls) { ls.textContent = msg.text; ls.style.display = msg.text ? '' : 'none'; }
       break;
     case 'qr-state': renderQrState(msg); break;
-    case 'qr-countdown': document.getElementById('qrCountdown').textContent = msg.text; break;
+    case 'qr-countdown': {
+      const cd = document.getElementById('qrCountdown');
+      if (cd) {
+        cd.textContent = msg.text;
+        // 最后 10 秒标红：扫码的人需要知道二维码快过期了
+        const nums = /(\d+)/.exec(msg.text || '');
+        const sec = nums ? parseInt(nums[1], 10) : NaN;
+        cd.classList.toggle('urgent', isFinite(sec) && sec <= 10);
+      }
+      break;
+    }
     case 'settings':
       if (msg.passwordEnabled !== undefined) { document.getElementById('usePasswordCheck').checked = msg.passwordEnabled; document.getElementById('passwordPanel').style.display = msg.passwordEnabled ? 'block' : 'none'; }
       if (msg.passwordSet !== undefined) document.getElementById('passwordStatus').textContent = msg.passwordSet ? '密码已设置' : '密码未设置';

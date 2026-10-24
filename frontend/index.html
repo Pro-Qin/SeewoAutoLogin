@@ -58,7 +58,7 @@
         <span class="status-text" id="accountCountText"></span>
       </div>
       <div class="update-badge" id="updateBadge" style="display:none" onclick="navigate('about')"></div>
-      <div class="made-by">Made by <a class="author-link" id="madeByLink" href="javascript:void(0)">Qin_zzq</a></div>
+      <div class="made-by">Made by <a class="author-link" id="madeByLink" role="link" tabindex="0">Qin_zzq</a></div>
     </div>
   </aside>
   <main id="main">
@@ -151,7 +151,7 @@
               <svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg>
             </div>
             <div class="lbl"><span data-i18n="add.sidePw">账号密码</span><span class="side-tag" data-i18n="add.sidePw-2">推荐</span>
-              <small><span data-i18n="add.sidePw-3">密码存在本机，凭据过期时会自动重新登录</span><br><span data-i18n="add.sidePw-4">不受关机时间影响</span></small>
+              <small><span data-i18n="add.sidePw-3">密码存在本机，凭据过期时会自动重新登录</span><br><span class="note-good" data-i18n="add.sidePw-4">不受关机时间影响</span></small>
             </div>
             <div class="panel">
               <div class="form-group"><label data-i18n="add.sidePw-5">显示名称</label><input type="text" id="displayNameInput" class="input" placeholder="可选" data-i18n-placeholder="app.text.placeholder"></div>
@@ -182,7 +182,7 @@
               <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M12 12h.01"/></svg>
             </div>
             <div class="lbl"><span data-i18n="add.sideQr">扫码登录
-              </span><small><span data-i18n="add.sideQr-2">用希沃 App 扫一下就好，不用记密码</span><br><span data-i18n="add.sideQr-3">但凭据长时间不开程序可能失效</span></small>
+              </span><small><span data-i18n="add.sideQr-2">用希沃 App 扫一下就好，不用记密码</span><br><span class="note-warn" data-i18n="add.sideQr-3">但凭据长时间不开程序可能失效</span></small>
             </div>
             <div class="panel">
               <div class="qrmini">
@@ -209,12 +209,8 @@
               </div>
               <div class="qr-note">
                 <div class="qr-note-row">
-                  <span class="qr-note-label" data-i18n="add.sideQr-10">扫码方式</span>
-                  <span data-i18n="add.sideQr-11">凭据由希沃签发，程序运行期间会自动续期；但长时间没有运行本程序时凭据可能失效，届时需要重新扫码。</span>
-                </div>
-                <div class="qr-note-row">
-                  <span class="qr-note-label alt" data-i18n="add.sideQr-12">密码方式</span>
-                  <span><span data-i18n="add.sideQr-13">密码保存在本机，凭据过期时会自动用密码重新登录，</span><b data-i18n="add.sideQr-14">不受关机时间影响</b><span data-i18n="add.sideQr-15">。希望一劳永逸的话，建议用左侧的密码方式。</span></span>
+                  <span class="qr-note-label" data-i18n="add.qrTipLabel">提示</span>
+                  <span><span data-i18n="add.qrTipPrefix">扫码登录的账号总是过期？试试</span><a class="inline-link" id="qrTipSwitch" role="link" tabindex="0" data-i18n="add.qrTipAction">密码登录</a><span data-i18n="add.qrTipSuffix">！</span></span>
                 </div>
               </div>
             </div>
@@ -383,7 +379,7 @@
           <hr class="divider" style="margin:20px 0">
           <p style="font-size:12px;color:#d7d7d7;margin:4px 0"><span data-i18n="about.page-about-2">版本: </span><span id="appVersion">-</span></p>
           <p class="credit-dim" data-i18n="about.page-about-3">灵感提供：CJKmkp</p>
-          <p style="font-size:12px;color:#d7d7d7;margin:4px 0"><span data-i18n="about.page-about-4">作者：</span><a class="author-link" id="authorLink" href="javascript:void(0)">Qin_zzq</a></p>
+          <p style="font-size:12px;color:#d7d7d7;margin:4px 0"><span data-i18n="about.page-about-4">作者：</span><a class="author-link" id="authorLink" role="link" tabindex="0">Qin_zzq</a></p>
           <hr class="divider" style="margin:20px 0">
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
             <button class="btn btn-secondary" id="checkUpdateBtn" onclick="checkUpdate()" data-i18n="about.checkUpdateBtn">检查更新</button>
@@ -401,7 +397,7 @@
             <span data-i18n="about.page-about-5">后台静默更新</span>
           </label>
           <div style="font-size:12px;color:#d7d7d7;margin:6px 0 0 0" data-i18n="about.page-about-6">发现新版本会自动后台下载并静默安装，完成后自动重启回托盘；关闭后需手动下载安装</div>
-          <p class="terms-note"><span data-i18n="about.page-about-7">当您使用此软件时，则默认您已经阅读并同意 </span><a id="termsLink" href="javascript:void(0)" data-i18n="about.termsLink">《用户协议》</a></p>
+          <p class="terms-note"><span data-i18n="about.page-about-7">当您使用此软件时，则默认您已经阅读并同意 </span><a id="termsLink" role="link" tabindex="0" data-i18n="about.termsLink">《用户协议》</a></p>
         </div>
       </div>
     </div>

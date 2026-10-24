@@ -146,6 +146,8 @@ function bindAddPage() {
     setQrStage('loading');
     send({ type: 'start-qr' });
   });
+  // 「扫码过期？试试密码登录」里的链接：等价于点左侧那个密码登录大圆钮
+  bindClick('qrTipSwitch', function () { pickSide('pw'); });
   watchQrStatus();
 }
 // 说明：扫码前的确认弹窗（qrWarnOverlay）早已并入扫码面板下方的常驻说明。
