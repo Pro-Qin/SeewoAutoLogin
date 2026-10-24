@@ -72,8 +72,8 @@
             <Setter Property="Height" Value="34"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="#C8C8CC"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontFamily" Value="Segoe UI Symbol"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets, Segoe UI Symbol"/>
             <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Template">
