@@ -84,7 +84,8 @@ namespace SeewoAutoLogin
             catch { return null; }
         }
 
-        public void SaveConfig()
+        /// <summary>保存配置。reason 只影响备份的来源标记（account / settings / import …），不改变落盘内容。</summary>
+        public void SaveConfig(string reason = null)
         {
             lock (ConfigIoLock)
             {
@@ -116,7 +117,7 @@ namespace SeewoAutoLogin
                         File.Move(temp, ConfigPath);
                     }
 
-                    Services.ConfigBackupService.Archive(json);
+                    Services.ConfigBackupService.Archive(json, reason);
                 }
                 catch (Exception ex)
                 {
@@ -310,6 +311,10 @@ namespace SeewoAutoLogin
         /// <summary>列出配置备份（供设置页「配置备份」区域展示）</summary>
         internal List<Services.ConfigBackupService.BackupItem> ListConfigBackups()
             => Services.ConfigBackupService.List();
+
+        /// <summary>删除一份配置备份</summary>
+        internal bool DeleteConfigBackup(string name, out string error)
+            => Services.ConfigBackupService.Delete(name, out error);
 
         /// <summary>从指定备份恢复配置</summary>
         internal bool RestoreConfigBackup(string name, out string error)

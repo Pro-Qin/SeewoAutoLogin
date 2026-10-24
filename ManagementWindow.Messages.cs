@@ -74,6 +74,7 @@ namespace SeewoAutoLogin
                     case "import-csv": await HandleCsvImportAsync(); break;
                     case "list-backups": await SendBackups(); break;
                     case "restore-backup": await HandleRestoreBackupAsync(root); break;
+                    case "delete-backup": await HandleDeleteBackupAsync(root); break;
                     case "tour-started": _app.WriteDiagnosticLog("[Tour] 用户开始观看使用教程"); break;
                     case "tour-debug": _app.WriteDiagnosticLog("[Tour] " + (root.Str("text"))); break;
                     case "tour-done": HandleTourDone(root); break;

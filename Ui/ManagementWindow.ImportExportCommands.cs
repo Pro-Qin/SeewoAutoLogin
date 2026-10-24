@@ -130,9 +130,23 @@ namespace SeewoAutoLogin
             {
                 name = b.Name,
                 time = b.Time.ToString("yyyy-MM-dd HH:mm"),
-                accounts = b.Accounts
+                accounts = b.Accounts,
+                size = b.Size,
+                reason = b.Reason ?? ""
             }).ToList();
             await SendToJs(new { type = "backups", items });
+        }
+
+        /// <summary>删除一份备份（清理用；保留策略之外的手动动作）</summary>
+        private async Task HandleDeleteBackupAsync(JsonElement root)
+        {
+            var name = root.Str("name");
+            if (string.IsNullOrEmpty(name)) return;
+            if (_app.DeleteConfigBackup(name, out var error))
+                await SendToast("已删除该备份", "ok");
+            else
+                await SendToast("删除失败：" + error, "error");
+            await SendBackups();
         }
 
         /// <summary>从备份恢复配置</summary>

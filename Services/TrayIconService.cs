@@ -83,7 +83,7 @@ namespace SeewoAutoLogin.Services
             {
                 if (alert)
                 {
-                    _alertIcon ??= BuildAlertIcon();
+                    _alertIcon ??= BuildAlertIcon(Color.FromArgb(230, 40, 40));
                     _notifyIcon.Icon = _alertIcon ?? _cachedIcon;
                 }
                 else
@@ -95,6 +95,51 @@ namespace SeewoAutoLogin.Services
             catch { }
         }
 
+        /// <summary>
+        /// 托盘整体健康状态：正常 / 有账号要处理（红）/ 被风控（黄）。
+        /// 悬停提示写成人话，图标角标用颜色区分性质 —— 黄色提醒"是希沃风控，不是密码错"。
+        /// </summary>
+        public void SetHealthState(int badCount, int riskCount)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                try { dispatcher.BeginInvoke(new Action(() => SetHealthState(badCount, riskCount))); } catch { }
+                return;
+            }
+            if (_notifyIcon == null) return;
+
+            var level = riskCount > 0 ? 2 : (badCount > 0 ? 1 : 0);
+            try
+            {
+                if (level != _healthLevel)
+                {
+                    _healthLevel = level;
+                    _alertState = level > 0;
+                    if (level == 2) _riskIcon ??= BuildAlertIcon(Color.FromArgb(240, 190, 40));
+                    if (level == 1) _alertIcon ??= BuildAlertIcon(Color.FromArgb(230, 40, 40));
+                    _notifyIcon.Icon = level switch
+                    {
+                        2 => _riskIcon ?? _cachedIcon,
+                        1 => _alertIcon ?? _cachedIcon,
+                        _ => _cachedIcon
+                    };
+                }
+
+                var text = level switch
+                {
+                    2 => I18n.T("tray.risk", "被风控（{0} 个账号）").Replace("{0}", riskCount.ToString()),
+                    1 => I18n.T("tray.problem", "{0} 个账号有问题").Replace("{0}", badCount.ToString()),
+                    _ => I18n.T("tray.ok", "一切正常")
+                };
+                ApplyTooltipText(Strings.AppTitle + " - " + text);
+            }
+            catch { }
+        }
+
+        private int _healthLevel;
+        private Icon _riskIcon;
+
         private static readonly string AlertText = Strings.AppTitle + " — 有账号需要处理";
 
         private static string Truncate(string text, int max)
@@ -103,8 +148,8 @@ namespace SeewoAutoLogin.Services
         private bool _alertState;
         private Icon _alertIcon;
 
-        /// <summary>在原图标右下角叠一个红色圆点 + 白色感叹号</summary>
-        private Icon BuildAlertIcon()
+        /// <summary>在原图标右下角叠一个圆点 + 白色感叹号（颜色区分：红=账号需处理，黄=被风控）</summary>
+        private Icon BuildAlertIcon(Color dotColor)
         {
             try
             {
@@ -120,7 +165,7 @@ namespace SeewoAutoLogin.Services
                     var d = Math.Max(13, size / 2);
                     var x = size - d;
                     var y = size - d;
-                    using var brush = new SolidBrush(Color.FromArgb(230, 40, 40));
+                    using var brush = new SolidBrush(dotColor);
                     g.FillEllipse(brush, x, y, d, d);
 
                     using var pen = new Pen(Color.White, Math.Max(2f, d / 6f))

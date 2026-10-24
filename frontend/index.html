@@ -221,8 +221,19 @@
 
       <!-- ===== SETTINGS PAGE ===== -->
       <div id="page-settings" class="page">
+        <div class="settings-layout">
+          <aside class="settings-nav">
+            <input id="settingsSearch" class="input settings-search" placeholder="搜索设置…" data-i18n-placeholder="settings.search">
+            <div class="settings-nav-item active" data-group="general"><span data-i18n="settings.tab.general">常规</span></div>
+            <div class="settings-nav-item" data-group="appearance"><span data-i18n="settings.tab.appearance">外观</span></div>
+            <div class="settings-nav-item" data-group="security"><span data-i18n="settings.tab.security">安全</span></div>
+            <div class="settings-nav-item" data-group="update"><span data-i18n="settings.tab.update">更新</span></div>
+            <div class="settings-nav-item" data-group="data"><span data-i18n="settings.tab.data">数据</span></div>
+            <div class="settings-nav-item" data-group="advanced"><span data-i18n="settings.tab.advanced">高级</span></div>
+          </aside>
+          <div class="settings-pane" id="settingsPane">
         <!-- 1 启动与运行 -->
-        <div class="card">
+        <div class="card" data-group="general">
           <h2 class="card-title" data-i18n="settings.page-settings">启动与运行</h2>
           <div class="card-desc" data-i18n="settings.page-settings-2">程序怎么启动、窗口怎么显示</div>
           <label class="checkbox-row"><input type="checkbox" id="autoStartCheck"><span data-i18n="settings.page-settings-3">开机自启</span></label>
@@ -240,7 +251,7 @@
           </div>
         </div>
         <!-- 2 外观与显示 -->
-        <div class="card">
+        <div class="card" data-group="appearance">
           <h2 class="card-title" data-i18n="settings.page-settings-12">外观与显示</h2>
           <div class="card-desc" data-i18n="settings.page-settings-13">希沃界面上的提示与动效</div>
           <label class="checkbox-row"><input type="checkbox" id="autoShowOverlayCheck"><span data-i18n="settings.page-settings-14">希沃打开但未登录时自动显示切换遮罩</span></label>
@@ -253,7 +264,7 @@
           </div>
         </div>
         <!-- 3 安全 -->
-        <div class="card">
+        <div class="card" data-group="security">
           <h2 class="card-title" data-i18n="settings.page-settings-20">安全</h2>
           <div class="card-desc" data-i18n="settings.page-settings-21">一台设备多人使用时，避免别人点开你的账号</div>
           <label class="checkbox-row"><input type="checkbox" id="usePasswordCheck"><span data-i18n="settings.page-settings-22">使用密码保护应用设置</span></label>
@@ -277,7 +288,7 @@
           </div>
         </div>
         <!-- 4 更新 -->
-        <div class="card">
+        <div class="card" data-group="update">
           <h2 class="card-title" data-i18n="settings.page-settings-24">更新</h2>
           <div class="card-desc" data-i18n="settings.page-settings-25">新版本怎么检查和安装</div>
           <label class="checkbox-row"><input type="checkbox" id="autoCheckUpdateCheck"><span data-i18n="settings.page-settings-26">启动时自动检查更新</span></label>
@@ -291,7 +302,7 @@
           <div id="settingsUpdateStatus" class="update-status"></div>
         </div>
         <!-- 5 数据与迁移 -->
-        <div class="card">
+        <div class="card" data-group="data">
           <h2 class="card-title" data-i18n="settings.page-settings-32">数据与迁移</h2>
           <div class="card-desc" data-i18n="settings.page-settings-33">换电脑、备份，或者从旧机器搬过来</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
@@ -307,7 +318,7 @@
           <div id="backupList" class="backup-list"></div>
         </div>
         <!-- 6 维护与诊断 -->
-        <div class="card">
+        <div class="card" data-group="advanced">
           <h2 class="card-title" data-i18n="settings.page-settings-40">维护与诊断</h2>
           <div class="card-desc" data-i18n="settings.page-settings-41">出问题时把现场留给我，或者重看一遍教程</div>
           <p style="color:#d7d7d7;font-size:12px;margin:0 0 12px 0" data-i18n="settings.page-settings-42">第一次用？30 秒看完教程就知道账号怎么加、希沃那边会变成什么样。教程可以随时重看。</p>
@@ -332,7 +343,7 @@
           <div id="factoryResetStatus" style="font-size:12px;margin-top:10px;color:var(--text-tertiary);line-height:1.6"></div>
         </div>
         <!-- 8 调试 -->
-        <div class="card">
+        <div class="card" data-group="advanced">
           <h2 class="card-title" data-i18n="settings.page-settings-49">调试</h2>
           <div class="card-desc" data-i18n="settings.page-settings-50">排查问题时用，平时可以不管</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
@@ -343,6 +354,8 @@
           <div style="font-size:12px;color:#d7d7d7;margin:10px 0 0 0" data-i18n="settings.page-settings-54">「显示升级提醒」只是预览：它会用当前记录的版本信息弹一次右下角提醒，不会改动任何更新状态。真实的提醒只在后台自动更新完成后的第一次打开主界面时出现。</div>
           <div id="debugInfo" style="margin-top:10px;font-size:12px;color:var(--text-tertiary);line-height:1.6">
             <div><span data-i18n="settings.debugInfo">希沃状态: </span><span id="seewoStatus" data-i18n="settings.seewoStatus">检测中...</span></div>
+          </div>
+        </div>
           </div>
         </div>
       </div>
@@ -516,6 +529,18 @@
   </div>
 </div>
 
+<!-- 配置备份：独立弹窗（内联展开时一列十几条会把设置页撑得很长） -->
+<div id="backupModal" class="terms-overlay" hidden>
+  <div class="terms-panel backup-panel">
+    <div class="terms-head">
+      <h2 data-i18n="backup.title">配置备份</h2>
+      <button class="btn btn-secondary" id="backupModalClose" type="button" data-i18n="backup.close">关闭</button>
+    </div>
+    <div class="card-desc" data-i18n="backup.hint">最多保留 12 份、30 天内的备份；账号变动会单独标记。</div>
+    <div id="backupList" class="backup-list"></div>
+  </div>
+</div>
+
 <!-- Toast 容器 -->
 <div id="toastContainer" class="toast-container"></div>
 <!-- 前端按职责拆分为多个普通脚本（非 ES module）：共享全局作用域，标签顺序即依赖顺序；调整顺序前先看各文件顶部注释 -->
@@ -537,4 +562,4 @@
 <script src="js/upgrade.js" defer></script>
 <script src="js/boot.js" defer></script>
 </body>
-</html>
+</html>

@@ -335,9 +335,13 @@ namespace SeewoAutoLogin
         {
             try
             {
-                var needAttention = _config.Accounts.Any(a =>
-                    !IsPlaceholderAccount(a) && a.HealthState == "bad");
-                _trayIcon?.SetAlert(needAttention);
+                var bad = _config.Accounts
+                    .Where(a => !IsPlaceholderAccount(a) && a.HealthState == "bad")
+                    .ToList();
+                // 被希沃图片验证码拦住的那一类单独算：密码是对的，只是登录频率触发风控。
+                // 托盘用黄点而不是红点，避免用户以为密码错了跑去改密码。
+                var risk = bad.Count(a => (a.HealthMessage ?? "").Contains("验证码"));
+                _trayIcon?.SetHealthState(bad.Count, risk);
             }
             catch { }
         }
@@ -389,7 +393,7 @@ namespace SeewoAutoLogin
                 // 一天最多一次。账号失效是必须让用户知道的事，但没必要在他上课时拦住他。
                 var summary = $"有 {bad.Count} 个账号需要处理：" + string.Join("、", shown);
                 WriteDiagnosticLog($"[KeepAlive] {summary}；{string.Join("；", hint)}");
-                _trayIcon?.SetAlert(true);
+                UpdateTrayAlertForHealth();
                 _trayIcon?.Notify(summary + "（详情见账号列表或登录记录）");
             }
             catch { }

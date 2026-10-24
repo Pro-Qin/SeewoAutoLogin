@@ -32,3 +32,4 @@ bindClick('importCsvBtn', function() { importCsvFile(); });
 // 标签筛选的「清除」：下拉框右侧的 × 和提示条里的按钮都归零到「全部」
 bindClick('tagFilterClear', function() { setTagFilter(''); });
 bindClick('listBackupsBtn', function() { listBackups(); });
+bindClick('backupModalClose', function() { closeBackupModal(); });

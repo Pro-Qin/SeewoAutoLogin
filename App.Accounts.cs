@@ -49,7 +49,7 @@ namespace SeewoAutoLogin
             _config.Accounts.Add(account);
             if (_config.Accounts.Count == 1)
                 _config.ActiveAccountId = account.Id;
-            SaveConfig();
+            SaveConfig("account");
             WriteDiagnosticLog($"[Account] 已保存账号; account-id={account.Id}");
         }
 
@@ -64,7 +64,7 @@ namespace SeewoAutoLogin
             _config.Accounts.RemoveAll(a => a.Id == accountId);
             if (_config.ActiveAccountId == accountId)
                 _config.ActiveAccountId = _config.Accounts.FirstOrDefault()?.Id ?? "";
-            SaveConfig();
+            SaveConfig("account");
         }
 
         public void SwitchActiveAccount(string accountId)

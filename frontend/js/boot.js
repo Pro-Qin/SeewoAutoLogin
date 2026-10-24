@@ -3,6 +3,7 @@
 function bootNavIndicator() {
   // 首屏没有经过 navigate()，这里补一次，否则右下角加号不会出现
   document.body.dataset.page = state.currentPage || 'accounts';
+  bindSettingsLayout();
   bindAddPage();
   bindNavHover();
   bindHealthBar();

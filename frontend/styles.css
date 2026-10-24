@@ -1416,3 +1416,39 @@ select.input option { background: var(--bg-elevated); color: var(--text-primary)
 
 /* 无 href 的链接（去掉 javascript:void(0) 的悬停提示） */
 a[role="link"] { cursor: pointer; }
+
+/* ===== 设置页：左侧类目 + 右侧内容 ===== */
+.settings-layout { display: flex; gap: 22px; align-items: flex-start; }
+.settings-nav {
+  width: 150px; flex: 0 0 150px;
+  display: flex; flex-direction: column; gap: 3px;
+  position: sticky; top: 0;
+}
+.settings-search { height: 32px; font-size: 12.5px; padding: 0 12px; margin-bottom: 8px; }
+.settings-nav-item {
+  padding: 9px 12px; border-radius: 8px; font-size: 13px;
+  color: var(--text-secondary); cursor: pointer; user-select: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.settings-nav-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.settings-nav-item.active { background: var(--blue-glass); color: var(--text-blue); font-weight: 600; }
+.settings-pane { flex: 1 1 auto; min-width: 0; }
+.settings-pane .card[data-group] { display: none; }
+.settings-pane .card[data-group].shown { display: block; }
+
+/* ===== 备份弹窗 ===== */
+.backup-panel { width: 92%; max-width: 640px; }
+.backup-panel .backup-list { max-height: 56vh; overflow-y: auto; margin-top: 10px; }
+.backup-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; margin-bottom: 8px; border-radius: 10px;
+  background: rgba(255, 255, 255, .03); border: 1px solid var(--border-light);
+}
+.backup-info { min-width: 0; }
+.backup-time { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-primary); }
+.backup-tag {
+  font-size: 10.5px; padding: 1px 7px; border-radius: 999px;
+  background: var(--blue-glass); color: var(--text-blue);
+}
+.backup-file { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
+.backup-actions { display: flex; gap: 6px; flex-shrink: 0; }
