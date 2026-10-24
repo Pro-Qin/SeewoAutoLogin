@@ -149,7 +149,7 @@ namespace SeewoAutoLogin
             MigratePlaceholderFlags();
 
             _updateCoordinator = new UpdateCoordinator(
-                _config, WriteDiagnosticLog, SaveConfig,
+                _config, WriteDiagnosticLog, () => SaveConfig(),
                 status => _trayIcon?.SetStatusText(status),
                 BeginSilentUpdateExit,
                 action => Dispatcher.Invoke(action),
@@ -178,7 +178,7 @@ namespace SeewoAutoLogin
             _gateway = new SeewoSsoGateway(_authService, () => _config, TryRestoreQrSession,
                 GetVisibleAccounts,
                 account => { account.UserInfo = _authService.UserInfo; SaveConfig(); },
-                OnQrTokenValidated, _userListRotation, SaveConfig);
+                OnQrTokenValidated, _userListRotation, () => SaveConfig());
             // 希沃固定请求 24300：始终以该端口为首选（配置里记录的值只用于诊断展示，不作为首选端口）
             _gateway.Port = SeewoSsoGateway.SeewoExpectedPort;
             _gateway.ConfirmStopEasiAgent = (pid, path) =>
