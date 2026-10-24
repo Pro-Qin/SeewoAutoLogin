@@ -139,7 +139,13 @@ function bindAddPage() {
     setQrStage('loading');
     send({ type: 'start-qr' });
   });
-  bindClick('refreshQrBtn', function () { setQrStage('loading'); });
+  // 刷新 = 重新要一张二维码 + 切到 loading。
+  // 原先一半写在 HTML 的 inline onclick（发消息）、一半写在这里（切状态），
+  // 改行为时两处都得改，漏一处就出现「切了状态但没发请求」这类半截操作。
+  bindClick('refreshQrBtn', function () {
+    setQrStage('loading');
+    send({ type: 'start-qr' });
+  });
   watchQrStatus();
 }
 // 说明：扫码前的确认弹窗（qrWarnOverlay）早已并入扫码面板下方的常驻说明。

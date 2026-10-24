@@ -214,3 +214,62 @@ WebView2 不可能再拿旧 JS 配新 HTML。
 - Source: refactor
 - Related Files: Ui/JsonArgs.cs, ManagementWindow.Helpers.cs, ManagementWindow.Messages.cs
 - Tags: json, async-void, observability
+
+---
+
+## [LRN-20261024-001] correction
+
+**Logged**: 2026-10-24T10:10:00Z
+**Priority**: high
+**Status**: active
+**Area**: backend
+
+### Summary
+密码账号「续期失败」的真实原因是希沃返回 error_code 4906「需要图片验证码」，不是密码错
+
+### Details
+密码账号的续期 = 每 15 分钟用保存的密码重新调一次 `/api/v1/auth/login`。同一账号高频登录会触发希沃风控，
+服务端返回 HTTP 200 + `{"error_code":4906,"message":"需要图片验证码"}`。
+旧实现把 `error_code != 0` 一律归为 `SeewoFailureKind.Credential`，于是后台把"要验证码"当成"密码可能改了"，
+标红并提示用户改密码 —— 而密码其实是对的。日志里能直接看到：
+
+```
+[Login] response; transport=ok; status=200; body={"error_code":4906,"message":"需要图片验证码"}
+[KeepAlive] 续期失败（需要处理）; kind=Credential; reason=需要图片验证码
+```
+
+### Suggested Action
+- 业务错误码要分类：含"验证码/captcha"→ `Captcha`，含"频繁/稍后/风控"→ `Server`。
+- `Captcha` 标黄 + 长退避（2 小时），文案写明"登录频率过高触发风控"，不许说成密码错。
+- 若验证码反复出现，考虑把密码账号的保活间隔从 15 分钟拉长（它不需要像扫码账号那样频繁换令牌）。
+
+### Metadata
+- Source: log-analysis
+- Related Files: Core/SeewoAuthService.cs, App.KeepAlive.cs
+- Tags: captcha, risk-control, keepalive, misclassification
+
+---
+
+## [LRN-20261024-002] insight
+
+**Logged**: 2026-10-24T10:10:00Z
+**Priority**: medium
+**Status**: active
+**Area**: frontend
+
+### Summary
+position:fixed 元素不要放在带 transform 动画的容器里
+
+### Details
+`.page.active` 的入场动画用 `transform: translate3d(0,8px,0)`；右下角加号 `.fab-group` 是 `position:fixed` 且嵌在这个 `.page` 内。
+有 transform 的祖先会成为 fixed 后代的**包含块**，于是动画那 260ms 里加号跟着页面一起位移，动画结束才回到视口定位。
+表现为"滑入动画时位置偏移，动画结束恢复"。
+
+### Suggested Action
+fixed 元素放 body 级（或任何没有 transform / filter / backdrop-filter 的容器）。
+需要"只在某一页显示"时，用 `body[data-page="xxx"]` 这类选择器控制，而不是靠父元素的 display。
+
+### Metadata
+- Source: user_feedback
+- Related Files: frontend/index.html, frontend/styles.css, frontend/js/nav.js
+- Tags: css, transform, containing-block, fixed

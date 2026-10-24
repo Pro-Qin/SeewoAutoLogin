@@ -25,6 +25,14 @@ namespace SeewoAutoLogin
             _ = RunCommandAsync(operation, command);
         }
 
+        /// <summary>把一段说明截断到指定长度：提示条里放不下整段失败原因，但开头那半句通常就够定位问题。</summary>
+        private static string Shorten(string text, int max)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "";
+            var trimmed = text.Trim();
+            return trimmed.Length <= max ? trimmed : trimmed.Substring(0, max) + "…";
+        }
+
         private async Task RunCommandAsync(Func<Task> operation, string command)
         {
             try

@@ -148,13 +148,19 @@ function cardHtml(a, isActive, idx, isFull, animate) {
           </button>`);
   // 后台自动续期状态：让「这个账号有没有被自动刷新过」一眼可见，
   // 而不是只能靠账号突然不可用来发现问题。占位账号不参与续期，不显示。
+  // 续期状态行：失败 / 网络异常时把原因写在这一行。
+  // 以前只有「续期失败 · 3 分钟前」，原因塞在健康小圆点的 title 里，不悬停根本看不到；
+  // 用户点完「续期」只得到一句「失败 N 个」，无处可查。
   let renewLine = '';
-  if (!a.isPlaceholder && a.lastTokenExchangeAtUtc) {
-    const failed = hState === 'bad';
-    const transient = hState === 'warn';
-    renewLine = '<div class="renew-line' + (failed ? ' bad' : '') + '">'
-      + (failed ? '续期失败 · ' : (transient ? '网络异常，自动重试 · ' : '已自动续期 · '))
-      + esc(relativeTime(a.lastTokenExchangeAtUtc))
+  const renewFailed = hState === 'bad';
+  const renewTransient = hState === 'warn';
+  if (!a.isPlaceholder && (a.lastTokenExchangeAtUtc || renewFailed || renewTransient)) {
+    const when = a.lastTokenExchangeAtUtc || a.lastHealthCheckAtUtc;
+    const reason = (renewFailed || renewTransient) ? renewReason(hMsg) : '';
+    renewLine = '<div class="renew-line' + (renewFailed ? ' bad' : '') + '" title="' + escAttr(hMsg || '') + '">'
+      + (renewFailed ? '续期失败 · ' : (renewTransient ? '网络异常，自动重试 · ' : '已自动续期 · '))
+      + esc(when ? relativeTime(when) : '刚刚')
+      + (reason ? ' · ' + esc(reason) : '')
       + '</div>';
   }
 
@@ -181,6 +187,18 @@ function cardHtml(a, isActive, idx, isFull, animate) {
       ${switchBtn}
     </div>
   </div>`;
+}
+
+// 续期失败原因压缩成一行：去掉与状态词重复的前缀，过长截断。
+// 服务端给的是完整说明（例如「网络异常，1 分钟后自动重试：请求超时」），
+// 卡片宽度放不下，这里只保留最关键的那半句。
+function renewReason(text) {
+  var s = String(text || '').trim();
+  if (!s) return '';
+  s = s.replace(/^网络异常，[^：:]*[：:]/, '')
+       .replace(/^凭据失效[：:]/, '')
+       .replace(/（\d+\s*分钟后自动重试）$/, '');
+  return s.length > 46 ? s.slice(0, 46) + '…' : s;
 }
 
 // 把时间戳转成人话（刚刚 / N 分钟前 / N 小时前 / N 天前）

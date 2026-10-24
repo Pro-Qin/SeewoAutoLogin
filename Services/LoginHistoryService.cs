@@ -91,6 +91,14 @@ namespace SeewoAutoLogin.Services
 
         /// <summary>查最近的登录记录，accountId 为空表示全部。返回按时间倒序。</summary>
         public static List<LoginRecord> Query(string accountId, int limit)
+            => Query(accountId, limit, null);
+
+        /// <summary>
+        /// 查最近的登录记录。
+        /// accountId 为空表示全部账号；source 为空表示全部来源，
+        /// 传 "failed" 表示只看失败（界面上的「只看失败」就是这么来的）。
+        /// </summary>
+        public static List<LoginRecord> Query(string accountId, int limit, string source)
         {
             var result = new List<LoginRecord>();
             if (limit <= 0 || limit > 1000) limit = 200;
@@ -98,6 +106,9 @@ namespace SeewoAutoLogin.Services
             {
                 if (!File.Exists(FilePath)) return result;
                 var wanted = string.IsNullOrWhiteSpace(accountId) ? null : accountId.Trim();
+                var wantedSource = string.IsNullOrWhiteSpace(source) ? null : source.Trim();
+                var onlyFailed = string.Equals(wantedSource, "failed", StringComparison.OrdinalIgnoreCase);
+                if (onlyFailed) wantedSource = null;
 
                 lock (Gate)
                 {
@@ -109,6 +120,8 @@ namespace SeewoAutoLogin.Services
                         catch { continue; }   // 半行 / 手工改坏的行直接跳过
                         if (record == null) continue;
                         if (wanted != null && !string.Equals(record.AccountId, wanted, StringComparison.Ordinal)) continue;
+                        if (wantedSource != null && !string.Equals(record.Source, wantedSource, StringComparison.OrdinalIgnoreCase)) continue;
+                        if (onlyFailed && record.Success) continue;
                         result.Add(record);
                     }
                 }
@@ -159,6 +172,7 @@ namespace SeewoAutoLogin.Services
                 case "keepalive": return "自动续期";
                 case "qr": return "扫码登录";
                 case "password": return "密码登录";
+                case "new-account": return "新建账号";
                 default: return string.IsNullOrWhiteSpace(source) ? "未知" : source;
             }
         }

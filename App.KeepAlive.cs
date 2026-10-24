@@ -139,6 +139,23 @@ namespace SeewoAutoLogin
                         continue;
                     }
 
+                    // 需要图片验证码：密码多半是对的，是登录太频繁触发了希沃风控。
+                    // 自动流程过不了验证码，只能等冷却；给它更长的退避，并且文案不许说成"密码错了"。
+                    if (kind == SeewoFailureKind.Captcha)
+                    {
+                        transient++;
+                        account.TransientFailureCount++;
+                        var captchaDelay = TimeSpan.FromHours(2);
+                        account.NextRetryAtUtc = DateTimeOffset.UtcNow + captchaDelay;
+                        account.HealthState = "warn";
+                        account.HealthMessage = "希沃要求图片验证码（登录频率过高触发风控），"
+                                                + "约 2 小时后自动重试；也可在希沃白板里手动登录一次解除";
+                        WriteDiagnosticLog(
+                            $"[KeepAlive] 希沃要求图片验证码，暂缓续期; account-id={account.Id}; " +
+                            $"连续第 {account.TransientFailureCount} 次; 下次重试={captchaDelay.TotalHours:0} 小时后; reason={message}");
+                        continue;
+                    }
+
                     // 只有凭据问题才标 bad；网络 / 超时 / 5xx 一律标 warn 并自动退避重试。
                     if (kind == SeewoFailureKind.Network || kind == SeewoFailureKind.Server)
                     {
@@ -224,7 +241,14 @@ namespace SeewoAutoLogin
                     service.DiagnosticMessage += WriteDiagnosticLog;
                     var result = await service.LoginAsync(account.Username, password).ConfigureAwait(true);
                     if (!result.Success)
-                        return (false, result.ErrorMessage ?? "密码登录失败", result.FailureKind);
+                    {
+                        var reason = result.ErrorMessage ?? "密码登录失败";
+                        // 失败也写一条：否则「登录记录」里只有成功，
+                        // 失败原因只活在这一次调用的内存里，界面刷新一次就查不到了。
+                        LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
+                            "keepalive", false, $"自动续期失败（密码重新登录）：{reason}");
+                        return (false, reason, result.FailureKind);
+                    }
                     if (result.UserInfo != null) account.UserInfo = result.UserInfo;
                     LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
                         "keepalive", true, "自动续期（密码重新登录）");

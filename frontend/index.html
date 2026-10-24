@@ -139,40 +139,6 @@
           </div>
         </div>
 
-        <!-- 新增账号：蓝色加号悬浮按钮 + 二级菜单 -->
-        <div class="fab-group" id="fabGroup">
-          <div class="fab-menu" id="fabMenu" style="display:none">
-            <button class="fab-item" onclick="navigateToAdd()" title="用账号密码登录并保存">
-              <span class="fab-item-text">
-                <b>密码添加</b>
-                <i>账号密码登录</i>
-              </span>
-              <span class="fab-item-icon">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z"/>
-                  <circle cx="16.5" cy="7.5" r="0.6" fill="currentColor" stroke="none"/>
-                </svg>
-              </span>
-            </button>
-            <button class="fab-item" onclick="navigateToAdd()" title="使用希沃App扫码登录">
-              <span class="fab-item-text">
-                <b>扫码添加</b>
-                <i>希沃App扫码</i>
-              </span>
-              <span class="fab-item-icon">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="7" height="7" rx="1.6"/>
-                  <rect x="14" y="3" width="7" height="7" rx="1.6"/>
-                  <rect x="3" y="14" width="7" height="7" rx="1.6"/>
-                  <path d="M14 14h2.5v2.5H14zM18.5 18.5H21V21h-2.5z"/>
-                </svg>
-              </span>
-            </button>
-          </div>
-          <button class="fab" id="fabBtn" aria-label="添加账号" aria-expanded="false" onclick="navigateToAdd()">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5.2v13.6M5.2 12h13.6"/></svg>
-          </button>
-        </div>
       </div>
 
       <!-- ===== ADD ACCOUNT PAGE：双圆钮 + 展开 ===== -->
@@ -236,7 +202,7 @@
                   <div class="step"><div class="n">2</div><div class="t"><b>扫描左侧二维码</b>二维码 120 秒后自动刷新</div></div>
                   <div class="step"><div class="n">3</div><div class="t"><b>在手机上确认登录</b>确认后这里会自动跳转</div></div>
                   <div style="display:flex;gap:8px;margin-top:14px">
-                    <button id="refreshQrBtn" class="btn btn-secondary" style="display:none" onclick="send({type:'start-qr'})">刷新</button>
+                    <button id="refreshQrBtn" class="btn btn-secondary" style="display:none">刷新</button>
                     <button id="cancelQrBtn" class="btn btn-secondary" style="display:none" onclick="send({type:'cancel-qr'})">取消</button>
                   </div>
                 </div>
@@ -392,6 +358,15 @@
           <div class="card-desc">哪个账号、什么时候登录过、是谁触发的、成功还是失败</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
             <select id="loginHistoryAccount" class="input" style="max-width:220px;margin:0"><option value="">全部账号</option></select>
+            <select id="loginHistorySource" class="input" style="max-width:150px;margin:0">
+              <option value="">全部来源</option>
+              <option value="failed">只看失败</option>
+              <option value="seewo">希沃登录</option>
+              <option value="keepalive">自动续期</option>
+              <option value="password">密码登录</option>
+              <option value="qr">扫码登录</option>
+              <option value="new-account">新建账号</option>
+            </select>
             <button class="btn btn-secondary" id="loginHistoryRefresh">刷新</button>
             <button class="btn btn-secondary" id="loginHistoryClear">清空记录</button>
           </div>
@@ -432,6 +407,41 @@
     </div>
   </main>
 </div>
+
+        <!-- 新增账号：蓝色加号悬浮按钮 + 二级菜单 -->
+        <div class="fab-group" id="fabGroup">
+          <div class="fab-menu" id="fabMenu" style="display:none">
+            <button class="fab-item" onclick="navigateToAdd()" title="用账号密码登录并保存">
+              <span class="fab-item-text">
+                <b>密码添加</b>
+                <i>账号密码登录</i>
+              </span>
+              <span class="fab-item-icon">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z"/>
+                  <circle cx="16.5" cy="7.5" r="0.6" fill="currentColor" stroke="none"/>
+                </svg>
+              </span>
+            </button>
+            <button class="fab-item" onclick="navigateToAdd()" title="使用希沃App扫码登录">
+              <span class="fab-item-text">
+                <b>扫码添加</b>
+                <i>希沃App扫码</i>
+              </span>
+              <span class="fab-item-icon">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1.6"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1.6"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1.6"/>
+                  <path d="M14 14h2.5v2.5H14zM18.5 18.5H21V21h-2.5z"/>
+                </svg>
+              </span>
+            </button>
+          </div>
+          <button class="fab" id="fabBtn" aria-label="添加账号" aria-expanded="false" onclick="navigateToAdd()">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5.2v13.6M5.2 12h13.6"/></svg>
+          </button>
+        </div>
 <!-- 用户协议：全屏弹窗（正文由 C# 从嵌入资源下发，与欢迎界面的协议页共用同一份） -->
 <div id="termsOverlay" class="terms-overlay" hidden>
   <div class="terms-panel">

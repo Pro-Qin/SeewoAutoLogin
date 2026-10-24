@@ -135,12 +135,14 @@ namespace SeewoAutoLogin
             var errorCode = GetJsonInt(root, "error_code") ?? GetJsonInt(root, "code");
             if (errorCode.HasValue && errorCode.Value != 0)
             {
-                // 希沃返回的 error_code 属于明确业务错误（账户 / 密码 / 风控），继续重试没有意义。
+                var apiMessage = ReadApiMessage(root);
                 return new SeewoLoginResult
                 {
                     Success = false,
-                    FailureKind = SeewoFailureKind.Credential,
-                    ErrorMessage = ReadApiMessage(root) ?? $"登录失败（错误码 {errorCode.Value}）"
+                    FailureKind = ClassifyBusinessError(apiMessage),
+                    // 错误码留在文案里：出问题时这是唯一能和希沃侧对上的线索
+                    ErrorMessage = (string.IsNullOrWhiteSpace(apiMessage) ? "登录失败" : apiMessage)
+                                   + $"（错误码 {errorCode.Value}）"
                 };
             }
 
@@ -189,6 +191,29 @@ namespace SeewoAutoLogin
             if (ex is TaskCanceledException || ex is OperationCanceledException) return "请求超时";
             if (ex is HttpRequestException) return $"网络请求失败：{ex.Message}";
             return ex.Message;
+        }
+
+        /// <summary>
+        /// 业务错误码（error_code）里也有「等一会儿再试」与「重试没用」之分。
+        ///
+        /// 希沃在频繁登录、限流、风控时会返回业务错误（而不是 429），文案形如
+        /// 「操作过于频繁」「请稍后再试」「请输入验证码」。这类失败过一会儿就恢复，
+        /// 归成凭据问题会让后台保活把账号标红、提示用户改密码 —— 而密码其实是对的。
+        /// </summary>
+        private static SeewoFailureKind ClassifyBusinessError(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return SeewoFailureKind.Credential;
+
+            var text = message.ToLowerInvariant();
+            if (text.Contains("验证码") || text.Contains("captcha"))
+                return SeewoFailureKind.Captcha;
+            if (text.Contains("频繁") || text.Contains("稍后") || text.Contains("稍候")
+                || text.Contains("风控") || text.Contains("限流")
+                || text.Contains("too many") || text.Contains("try again")
+                || text.Contains("frequent"))
+                return SeewoFailureKind.Server;
+
+            return SeewoFailureKind.Credential;
         }
 
         /// <summary>
@@ -554,6 +579,12 @@ namespace SeewoAutoLogin
         Network,
         /// <summary>服务端 5xx / 限流等临时问题，稍后重试可能成功。</summary>
         Server,
+        /// <summary>
+        /// 希沃要求图片验证码（error_code 4906）。密码通常是对的，只是登录频率触发了风控；
+        /// 自动续期无法通过验证码，需要等风控冷却或人工登录一次解除。
+        /// 单独一类是为了不把它说成"密码错了"，也为了给它更长的退避时间。
+        /// </summary>
+        Captcha,
         /// <summary>无法归类的异常，按"不误报密码问题"处理。</summary>
         Unknown
     }

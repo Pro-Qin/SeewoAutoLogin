@@ -44,11 +44,36 @@ namespace SeewoAutoLogin
                 }
 
                 await RefreshAccountList();
-                var text = failed == 0
-                    ? (refreshed > 0 ? $"续期完成：成功 {refreshed} 个" : "没有需要续期的账号")
-                    : $"续期完成：成功 {refreshed} 个，失败 {failed} 个（详情见「登录记录」或账号卡片上的说明）";
+
+                // 失败原因一直在账号的 HealthMessage 里，只是以前从没被端到用户面前：
+                // 提示只说「失败 N 个」，用户点开登录记录又因为密码账号不写失败记录而查不到。
+                // 现在直接把原因摘进提示（最多两条，其余看卡片与登录记录）。
+                var needingAttention = _app.Config.Accounts
+                    .Where(a => !a.IsPlaceholder && (a.HealthState == "bad" || a.HealthState == "warn"))
+                    .ToList();
+
+                string text;
+                if (failed > 0)
+                    text = $"续期完成：成功 {refreshed} 个，失败 {failed} 个";
+                else if (needingAttention.Count > 0)
+                    text = $"续期完成：成功 {refreshed} 个，另有 {needingAttention.Count} 个暂未成功";
+                else
+                    text = refreshed > 0 ? $"续期完成：成功 {refreshed} 个" : "没有需要续期的账号";
+
+                if (needingAttention.Count > 0)
+                {
+                    var reasons = needingAttention
+                        .Select(a => $"{a.DisplayName ?? a.Username}："
+                                     + (string.IsNullOrWhiteSpace(a.HealthMessage) ? "原因见登录记录" : Shorten(a.HealthMessage, 42)))
+                        .Take(2)
+                        .ToList();
+                    text += "（" + string.Join("；", reasons)
+                            + (needingAttention.Count > reasons.Count ? $"；另有 {needingAttention.Count - reasons.Count} 个" : "")
+                            + "）";
+                }
+
                 await SendToJs(new { type = "renew-status", running = false, text });
-                await SendToast(text, failed > 0 ? "warn" : "ok");
+                await SendToast(text, needingAttention.Count > 0 ? "warn" : "ok");
             }
             catch (Exception ex)
             {

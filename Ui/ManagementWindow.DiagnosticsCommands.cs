@@ -8,9 +8,10 @@ namespace SeewoAutoLogin
             try
             {
                 var accountId = root.Str("accountId");
+                var source = root.Str("source");
                 var limit = root.Int("limit", 200);
 
-                var records = LoginHistoryService.Query(accountId, limit);
+                var records = LoginHistoryService.Query(accountId, limit, source);
                 var accounts = _app.Config.Accounts
                     .Select(x => new { id = x.Id, name = x.DisplayName ?? x.Username ?? x.Id })
                     .ToList();
@@ -19,6 +20,7 @@ namespace SeewoAutoLogin
                 {
                     type = "login-history",
                     filter = accountId ?? "",
+                    source = source ?? "",
                     accounts,
                     items = records.Select(r => new
                     {

@@ -3,7 +3,13 @@
 // ===== 登录记录 =====
 function loadLoginHistory() {
   var sel = document.getElementById('loginHistoryAccount');
-  send({ type: 'get-login-history', accountId: sel ? (sel.value || '') : '', limit: 200 });
+  var src = document.getElementById('loginHistorySource');
+  send({
+    type: 'get-login-history',
+    accountId: sel ? (sel.value || '') : '',
+    source: src ? (src.value || '') : '',
+    limit: 200
+  });
 }
 function renderLoginHistory(msg) {
   var list = document.getElementById('loginHistoryList');
@@ -35,7 +41,8 @@ function renderLoginHistory(msg) {
   }).join('');
 }
 function bindLoginHistory() {
-  bindClick('actRenew', actRenew);
+  // 「续期」按钮本身带 inline onclick，这里再绑一次会让一次点击发两条 renew-account：
+  // 第二条必然撞上后台「正在巡检」的互斥，弹出「请稍候再试」，看起来就像续期被触发了两次。
   bindClick('actRenewAll', actRenewAll);
   bindClick('loginHistoryRefresh', loadLoginHistory);
   bindClick('loginHistoryClear', function () {
@@ -44,5 +51,7 @@ function bindLoginHistory() {
   });
   var sel = document.getElementById('loginHistoryAccount');
   if (sel) sel.addEventListener('change', loadLoginHistory);
+  var src = document.getElementById('loginHistorySource');
+  if (src) src.addEventListener('change', loadLoginHistory);
   // 记录页的加载挂在 navigate 里：切页即刷新，不用在这里再绑一次点击
 }

@@ -4,6 +4,8 @@
 function navigate(page) {
   closeFab();
   state.currentPage = page; state.selectedId = null;
+  // 供 CSS 判断「当前在哪一页」（右下角加号只在账号列表出现）
+  document.body.dataset.page = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + page));
   const t = { accounts:'账号列表', add:'添加账号', qr:'扫码登录', settings:'设置', history:'登录记录', about:'关于' };

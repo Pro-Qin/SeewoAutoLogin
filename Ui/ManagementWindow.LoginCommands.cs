@@ -22,14 +22,36 @@ namespace SeewoAutoLogin
                 var result = await svc.LoginAsync(username, password, ct.Token);
                 if (result.Success)
                 {
-                    var acct = new SeewoAccount
+                    // 同一个用户名再次登录：更新原账号，而不是又添一条重复账号。
+                    // 「新建账号」与「用已有账号登录」在登录记录里分成两类 ——
+                    // 前者回答「这个账号哪来的」，后者回答「它最近成功登录过没有」。
+                    var existing = _app.Config.Accounts.FirstOrDefault(a =>
+                        string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase));
+
+                    if (existing != null)
                     {
-                        DisplayName = string.IsNullOrEmpty(displayName) ? (result.UserInfo?.NickName ?? username) : displayName,
-                        Username = username, Password = password, UserInfo = result.UserInfo
-                    };
-                    _app.AddAccount(acct);
-                    Services.LoginHistoryService.Record(acct.Id, acct.DisplayName, acct.Username, "password", true, "界面密码登录");
-                    await SendToJs(new { type = "login-status", text = "登录成功，已保存" });
+                        existing.Password = password;
+                        existing.IsPlaceholder = false;
+                        if (result.UserInfo != null) existing.UserInfo = result.UserInfo;
+                        if (!string.IsNullOrWhiteSpace(displayName)) existing.DisplayName = displayName;
+                        _app.SaveConfig();
+                        LoginHistoryService.Record(existing.Id, existing.DisplayName, existing.Username,
+                            "password", true, "界面密码登录（更新已有账号）");
+                        await SendToJs(new { type = "login-status", text = "登录成功，已更新该账号" });
+                    }
+                    else
+                    {
+                        var acct = new SeewoAccount
+                        {
+                            DisplayName = string.IsNullOrWhiteSpace(displayName) ? (result.UserInfo?.NickName ?? username) : displayName,
+                            Username = username, Password = password, UserInfo = result.UserInfo
+                        };
+                        _app.AddAccount(acct);
+                        LoginHistoryService.Record(acct.Id, acct.DisplayName, acct.Username,
+                            "new-account", true, "通过密码登录新建账号");
+                        await SendToJs(new { type = "login-status", text = "登录成功，已新建账号" });
+                    }
+
                     await Task.Delay(600);
                     await RefreshAccountList();
                 }
