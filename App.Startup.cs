@@ -183,14 +183,24 @@ namespace SeewoAutoLogin
             }
             else if (!isFirstInstance)
             {
-                // 已有实例在运行：请它把主窗口显示出来，本次启动随后静默退出。
+                // 已有实例在运行。
                 //
-                // 原先这里弹一个带系统提示音的「是/否/取消」询问框。开机自启与本人在桌面上
-                // 双击图标很容易撞在一起，于是每次开机都可能弹一个突兀的对话框加提示音 ——
-                // 而用户真正想要的往往只是「把界面叫出来」。现在改为直接唤醒已有实例。
-                SignalExistingInstance();
-                instanceMutex?.Dispose();
-                return false;
+                // 分两种情况：
+                //  · 同一个版本的普通双击 → 唤醒它把窗口显示出来，本次退出（用户只是想看界面）。
+                //  · 升级后启动（换了路径或版本更高）→ 结束旧实例，由本次启动接管。
+                //    否则「覆盖安装完点新图标」会唤醒那个还没退出的旧进程，看起来像是升级没生效。
+                if (TryTakeOverFromOlderInstance())
+                {
+                    instanceMutex?.Dispose();
+                    try { instanceMutex = new Mutex(true, InstanceMutexName, out isFirstInstance); }
+                    catch { isFirstInstance = true; }
+                }
+                else
+                {
+                    SignalExistingInstance();
+                    instanceMutex?.Dispose();
+                    return false;
+                }
             }
 
             if (isUninstall)
@@ -221,6 +231,76 @@ namespace SeewoAutoLogin
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 判断正在运行的同名进程是不是「旧版本 / 别处的副本」。
+        ///
+        /// 只在能读到对方路径与版本时接管；读不到（权限不足）就保守地退回「唤醒」，
+        /// 宁可多一次手动退出，也不要在没有把握时杀掉用户正在用的进程。
+        /// </summary>
+        private bool TryTakeOverFromOlderInstance()
+        {
+            try
+            {
+                var self = Process.GetCurrentProcess();
+                var currentPath = self.MainModule?.FileName;
+                var currentVersion = typeof(App).Assembly.GetName().Version;
+                if (string.IsNullOrEmpty(currentPath) || currentVersion == null) return false;
+
+                var others = Process.GetProcessesByName("SeewoAutoLogin")
+                    .Where(p => p.Id != self.Id)
+                    .ToList();
+                if (others.Count == 0) return false;
+
+                var needTakeOver = false;
+                foreach (var p in others)
+                {
+                    try
+                    {
+                        var path = p.MainModule?.FileName;
+                        if (string.IsNullOrEmpty(path)) continue;
+
+                        if (!string.Equals(path, currentPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            needTakeOver = true;
+                            break;
+                        }
+
+                        var raw = FileVersionInfo.GetVersionInfo(path).FileVersion;
+                        if (Version.TryParse(raw, out var other) && other < currentVersion)
+                        {
+                            needTakeOver = true;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (!needTakeOver) return false;
+
+                WriteDiagnosticLog("[Instance] 检测到旧版本实例，结束它并由本次启动接管");
+                foreach (var p in others)
+                {
+                    try
+                    {
+                        p.Kill();
+                        p.WaitForExit(3000);
+                        WriteDiagnosticLog($"[Instance] 已结束旧实例 pid={p.Id}");
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteDiagnosticLog($"[Instance] 结束旧实例失败 pid={p.Id}: {ex.GetType().Name}");
+                    }
+                }
+                Thread.Sleep(600);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Instance] 版本接管判断失败（按唤醒处理）: {ex.GetType().Name} - {ex.Message}");
+                return false;
+            }
         }
 
         /// <summary>

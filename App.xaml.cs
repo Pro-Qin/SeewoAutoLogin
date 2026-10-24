@@ -39,7 +39,11 @@ namespace SeewoAutoLogin
             get
             {
                 var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                return version == null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
+                if (version == null) return "0.0.0";
+                // 四段版本（1.14.21.1）要原样显示，否则界面版本号会和安装包、更新比较对不上
+                return version.Revision > 0
+                    ? $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}"
+                    : $"{version.Major}.{version.Minor}.{version.Build}";
             }
         }
 
