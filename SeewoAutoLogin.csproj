@@ -35,6 +35,8 @@
     <EmbeddedResource Include="Resources\app.ico" />
     <!-- 用户协议正文：欢迎界面与「关于」页共用同一份，避免两处内容不一致 -->
     <EmbeddedResource Include="Resources\terms.txt" />
+    <!-- 界面文案：一个语言一个 JSON；改文案只改这里，不用翻代码 -->
+    <EmbeddedResource Include="Resources\i18n\*.json" />
   </ItemGroup>
 
   <!-- 测试工程单独编译，不进入主程序 -->

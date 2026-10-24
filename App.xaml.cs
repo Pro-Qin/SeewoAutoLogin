@@ -111,6 +111,10 @@ namespace SeewoAutoLogin
 
         public App()
         {
+            // 界面文案：早于任何窗口创建，之后所有 Strings / I18n.T 都拿得到值。
+            // 语言包缺失时 T() 返回键名，界面不会空白，也不会阻断启动。
+            I18n.Initialize();
+
             // 网络出口决策（系统代理/直连回退）也写进日志，便于排查“登录失败 / 登录信息过期”。
             NetworkRoute.DiagnosticMessage += WriteDiagnosticLog;
             SeewoAccount.DiagnosticSink = WriteDiagnosticLog;

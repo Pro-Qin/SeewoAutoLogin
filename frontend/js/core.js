@@ -10,6 +10,36 @@ try {
   });
 } catch (e) { /* 非 WebView2 环境（例如浏览器预览）忽略 */ }
 
+// ===== 文案（i18n）=====
+// 语言包由 C# 在 init 消息里整份下发（Resources/i18n/<locale>.json）。
+// 页面静态文案用 data-i18n="key"，属性用 data-i18n-title / data-i18n-placeholder / data-i18n-aria-label；
+// 动态文案用 t('key')。键缺失时 t() 返回 fallback 或键名，不会把界面变成空白。
+let I18N = {};
+let LOCALE = 'zh-CN';
+
+function t(key, fallback) {
+  const value = I18N[key];
+  if (value === undefined || value === null || value === '') {
+    return fallback === undefined ? key : fallback;
+  }
+  return value;
+}
+
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(function (el) {
+    const value = I18N[el.getAttribute('data-i18n')];
+    if (value) el.textContent = value;
+  });
+  [['title', 'data-i18n-title'],
+   ['placeholder', 'data-i18n-placeholder'],
+   ['aria-label', 'data-i18n-aria-label']].forEach(function (pair) {
+    document.querySelectorAll('[' + pair[1] + ']').forEach(function (el) {
+      const value = I18N[el.getAttribute(pair[1])];
+      if (value) el.setAttribute(pair[0], value);
+    });
+  });
+}
+
 // ===== App State =====
 let state = { currentPage:'accounts', accounts:[], selectedId:null, config:{}, qrActive:false, needsPassword:false, particles:true,
   performanceMode:false,
@@ -40,6 +70,8 @@ function handleCSharpMessage(raw) {
   if (!msg || typeof msg !== 'object') return;
   switch (msg.type) {
     case 'init':
+      // 先落地语言包：后面的 render* 都按当前语言输出
+      if (msg.i18n) { I18N = msg.i18n || {}; LOCALE = msg.locale || 'zh-CN'; applyI18n(); }
       if (msg.config) applyConfig(msg.config);
       state.accounts = msg.accounts || []; state.health = {}; renderAccounts(); updateStatusBar();
       if (msg.version) setVersion(msg.version);

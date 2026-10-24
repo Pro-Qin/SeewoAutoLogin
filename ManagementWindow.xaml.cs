@@ -116,6 +116,9 @@ namespace SeewoAutoLogin
             {
                 type = "init",
                 version = AppVersion,
+                // 整份语言包随 init 下发：前端按 data-i18n 标注的静态文案与 t() 动态文案共用这一份
+                i18n = I18n.Current,
+                locale = I18n.Locale,
                 accounts = GetAccountList(),
                 needsPassword = _app.Config.UsePluginPassword && !string.IsNullOrEmpty(_app.Config.PluginPasswordHash),
                 config = new
