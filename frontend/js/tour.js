@@ -6,27 +6,29 @@
 const TOUR_PAD = 10;
 const TOUR_STEPS = [
   {
-    step: '第 1 步 · 共 5 步',
+    step: '第 1 步 · 共 6 步',
     title: '平时从任务栏托盘打开它',
-    html: '软件启动后会缩到右下角托盘。双击那个<b>蓝色闪电图标</b>（或右键它）就能随时打开这个管理界面。',
+    html: '软件启动后会缩到右下角托盘。单击那个<b>绿色小人图标</b>（或右键它）就能随时打开这个管理界面。',
     media: 'assets/tutorial-tray.png',
     mediaClass: 'tray'
   },
   {
-    step: '第 2 步 · 共 5 步',
+    step: '第 2 步 · 共 6 步',
     title: '方式一：右下角的 + 号',
     html: '点右下角的 <b>+ 号</b>会展开两个入口：<b>密码添加</b>（账号密码登录）和 <b>扫码添加</b>（希沃 App 扫码）。',
     focus: '#fabBtn, #fabMenu',
     openFab: true
   },
   {
-    step: '第 3 步 · 共 5 步',
+    step: '第 3 步 · 共 6 步',
     title: '方式二：左侧侧边栏',
     html: '左侧的 <b>添加账号</b> 与 <b>扫码登录</b> 是同样的两个入口，挑顺手的一种用就行。',
-    focus: '#navAdd, #navQr'
+    focus: '#navAdd, #navQr',
+    // 这一页的正文就在「添加账号」页，直接切过去看真实界面
+    page: 'add'
   },
   {
-    step: '第 4 步 · 共 5 步',
+    step: '第 4 步 · 共 6 步',
     title: '添加后，希沃会变成这样',
     html: '打开希沃白板的登录界面，账号头像会直接排在这里，<b>点一下头像就能登录</b>，不用再输账号密码。',
     media: 'assets/tutorial-seewo.png',
@@ -34,7 +36,15 @@ const TOUR_STEPS = [
     wide: true
   },
   {
-    step: '第 5 步 · 共 5 步',
+    step: '第 5 步 · 共 6 步',
+    title: '账号过期了怎么办',
+    html: '希沃有时会弹 <b>「登录信息已过期」</b> —— 这是扫码凭据到期了。扫码虽然省事，但长时间不开程序就会失效。<br><br>所以添加账号时<b>优先用密码登录</b>：密码存在本机，<b class="note-good">不受关机时间影响</b>，下次开机照样能用。',
+    media: 'assets/tutorial-expired.png',
+    mediaClass: 'seewo',
+    wide: true
+  },
+  {
+    step: '第 6 步 · 共 6 步',
     title: '可以开始用了',
     html: '教程随时能在「<b>设置 → 帮助与维护</b>」里重看一遍。',
     last: true
@@ -155,6 +165,9 @@ function tourRenderStep(i) {
 
   card.classList.toggle('wide', !!s.wide);
 
+  // 某些步骤要展示某一页的真实界面（例如「添加账号」），先切过去再测量
+  if (s.page && typeof navigate === 'function') navigate(s.page);
+
   // 导航按钮：第一步不显示「上一步」，最后一步把「下一步」换成「完成教学」
   const prevBtn = tourEl('tourPrevBtn');
   if (prevBtn) prevBtn.style.display = i > 0 ? '' : 'none';
@@ -229,8 +242,11 @@ function endTour(completed) {
   if (!ov) return;
 
   ov.addEventListener('click', function (e) {
-    if (e.target && e.target.closest &&
-        (e.target.closest('#tourSkipBtn') || e.target.closest('#tourNextBtn') || e.target.closest('#tourPrevBtn'))) return;
+    if (!e.target || !e.target.closest) { tourNext(); return; }
+    // 教程卡片本身（标题、正文、图片）不是「继续」的点击区：
+    // 用户可能想读一段、放大图片，点正文就跳下一步会很难受。
+    // 真正想继续时点空白处、卡片外的遮罩，或者右下角的「下一步」。
+    if (e.target.closest('#tourCard')) return;
     tourNext();
   });
   bindClick('tourPrevBtn', function (e) {

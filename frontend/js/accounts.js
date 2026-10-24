@@ -165,7 +165,9 @@ function cardHtml(a, isActive, idx, isFull, animate) {
       const hint = t('accounts.renewCaptchaHint', '登录频率过高触发风控，约 2 小时后自动重试');
       renewLine = '<div class="renew-line bad">' + esc(line)
         + '<span class="help-dot" title="' + escAttr(hint) + '">?</span>'
-        + '</div>';
+        + '</div>'
+        // 唯一能"清掉"风控的动作是人工登录一次 —— 这句必须显眼，否则用户只会去试改密码
+        + '<div class="renew-fix">' + esc(t('accounts.captchaFix', '在白板里手动登录一次即可解除')) + '</div>';
     } else {
       const reason = (renewFailed || renewTransient) ? renewReason(hMsg) : '';
       renewLine = '<div class="renew-line' + (renewFailed ? ' bad' : '') + '" title="' + escAttr(hMsg || '') + '">'
