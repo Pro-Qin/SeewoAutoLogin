@@ -187,7 +187,10 @@ namespace SeewoAutoLogin
             get
             {
                 var version = Assembly.GetExecutingAssembly().GetName().Version;
-                return version == null ? "1.8.0" : $"{version.Major}.{version.Minor}.{version.Build}";
+                if (version == null) return "0.0.0";
+                return version.Revision > 0
+                    ? $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}"
+                    : $"{version.Major}.{version.Minor}.{version.Build}";
             }
         }
 
