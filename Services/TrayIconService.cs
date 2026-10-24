@@ -126,11 +126,13 @@ namespace SeewoAutoLogin.Services
                     };
                 }
 
+                // 注意：I18n.T(key, args) 是 string.Format 语义，第二个参数会被当成占位符实参。
+                // 之前这里传了字面量格式串，结果拼出「1 个账号有问题 个账号有问题」。
                 var text = level switch
                 {
-                    2 => I18n.T("tray.risk", "被风控（{0} 个账号）").Replace("{0}", riskCount.ToString()),
-                    1 => I18n.T("tray.problem", "{0} 个账号有问题").Replace("{0}", badCount.ToString()),
-                    _ => I18n.T("tray.ok", "一切正常")
+                    2 => I18n.T("tray.risk", riskCount),
+                    1 => I18n.T("tray.problem", badCount),
+                    _ => I18n.T("tray.ok")
                 };
                 ApplyTooltipText(Strings.AppTitle + " - " + text);
             }
@@ -256,6 +258,9 @@ namespace SeewoAutoLogin.Services
         public void SetStatusText(string statusMessage)
         {
             if (string.IsNullOrWhiteSpace(statusMessage)) return;
+            // 健康状态（正常 / N 个账号有问题 / 被风控）优先：否则「已重建开机自启」这类后台提示
+            // 会把用户真正需要看的账号状态顶掉，悬停一看全是修复日志。
+            if (_healthLevel > 0) return;
             ApplyTooltipText(statusMessage);
         }
 

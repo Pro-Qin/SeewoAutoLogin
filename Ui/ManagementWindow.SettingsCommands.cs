@@ -62,6 +62,10 @@ namespace SeewoAutoLogin
                 case "particleBackground":
                     _app.Config.ParticleBackground = flag;
                     break;
+                case "useSystemTitleBar":
+                    _app.Config.UseSystemTitleBar = flag;
+                    _app.WriteDiagnosticLog("[UI] 标题栏: " + (flag ? "系统" : "自绘") + "（下次打开窗口生效）");
+                    break;
                 case "performanceMode":
                     _app.Config.PerformanceMode = flag;
                     _app.WriteDiagnosticLog("[Perf] 性能模式：" + (_app.Config.PerformanceMode ? "已开启（关闭大量界面动效）" : "已关闭"));

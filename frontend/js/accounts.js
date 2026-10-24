@@ -189,7 +189,9 @@ function cardHtml(a, isActive, idx, isFull, animate) {
 
   return `<div class="acct-card${sel}${animate ? ' enter' : ''}" draggable="true" data-id="${escAttr(a.id)}">
     <div class="row1">
-      <div class="avatar-mini">${a.photoUrl ? '<img src="' + escAttr(a.photoUrl) + '" alt="" loading="lazy">' : '<span>' + esc(a.initial||'S') + '</span>'}</div>
+      <div class="avatar-mini">${a.photoUrl
+        ? '<img src="' + escAttr(a.photoUrl) + '" alt="" loading="lazy" onerror="this.parentNode.classList.add(\'img-failed\')"><span class="avatar-fallback">' + esc(a.initial||'S') + '</span>'
+        : '<span>' + esc(a.initial||'S') + '</span>'}</div>
       <div class="info">
         <div class="name">${esc(a.displayName||a.username||'')}</div>
         <div class="meta">${esc(a.username||'')} · ${esc(a.loginType||'')}</div>

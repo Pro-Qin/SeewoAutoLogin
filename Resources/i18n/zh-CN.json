@@ -312,5 +312,6 @@
   "tray.problem": "{0} 个账号有问题",
   "tray.risk": "被风控（{0} 个账号）",
   "accounts.captchaFix": "在白板里手动登录一次即可解除",
-  "settings.tab.danger": "危险"
+  "settings.tab.danger": "危险",
+  "settings.systemTitleBar": "使用系统标题栏（需重启窗口生效；Win7 始终使用系统标题栏）"
 }

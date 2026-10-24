@@ -1529,3 +1529,9 @@ nav { padding-bottom: 5%; }
 
 /* 希沃头像：填满圆形头像位 */
 .avatar-mini img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+
+/* 头像兜底：图片加载失败（无网络 / URL 失效）时显示首字母，不要露出浏览器的破图图标 */
+.avatar-mini { position: relative; overflow: hidden; }
+.avatar-mini .avatar-fallback { display: none; }
+.avatar-mini.img-failed img { display: none; }
+.avatar-mini.img-failed .avatar-fallback { display: block; }
