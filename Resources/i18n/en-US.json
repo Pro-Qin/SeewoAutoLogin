@@ -12,7 +12,7 @@
   "strings.HideWindow": "Hide Window",
   "strings.Exit": "Exit",
   "strings.StartMinimized": "App started, running in system tray",
-  "strings.ConfirmExit": "Are you sure you want to exit? The SSO gateway will stop.",
+  "strings.ConfirmExit": "Exit now?\n\nThe SSO gateway will stop and Seewo Whiteboard will no longer sign in automatically. Background renewal also stops, which may let QR-code based accounts expire.",
   "strings.NavAccounts": "Accounts",
   "strings.NavAddAccount": "Add Account",
   "strings.NavQrLogin": "QR Login",

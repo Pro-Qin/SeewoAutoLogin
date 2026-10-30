@@ -203,7 +203,7 @@
   "strings.HideWindow": "隐藏窗口",
   "strings.Exit": "退出",
   "strings.StartMinimized": "应用已启动，正在系统托盘运行",
-  "strings.ConfirmExit": "确定退出吗？SSO 网关将停止，希沃白板将无法自动登录。",
+  "strings.ConfirmExit": "确定退出吗？\n\n退出后 SSO 网关将停止，希沃白板将无法自动登录；后台也不再续期，可能会使以扫码方式添加的账号过期。",
   "strings.NavAccounts": "账号列表",
   "strings.NavAddAccount": "添加账号",
   "strings.NavQrLogin": "扫码登录",
