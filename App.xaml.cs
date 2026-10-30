@@ -420,37 +420,8 @@ namespace SeewoAutoLogin
             Shutdown();
         }
 
-        /// <summary>
-        /// 更新后健康确认：60 秒内确认网关可用就撤掉回滚保护。
-        ///
-        /// 判据必须排除「本来就不该起来」的情况：非管理员运行时网关启动失败是预期内的降级
-        /// （用户在提权被拒时主动选了以降级模式继续用），不算新版本不健康 —— 否则这类机器每次升级
-        /// 都会被 watcher 在超时后回滚，装上又被换回旧版。
-        /// </summary>
-        private async Task ConfirmUpdateHealthAsync()
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(60));
-
-                var expectedDowngrade = _gatewayDegradedDueToPermissions && !IsAdministrator();
-                var healthy = (_gateway?.IsRunning == true || expectedDowngrade) && _config != null;
-                if (healthy)
-                {
-                    if (expectedDowngrade && _gateway?.IsRunning != true)
-                        WriteDiagnosticLog("[Update] 健康确认：非管理员运行，网关未启动属预期内降级，按健康处理");
-                    Services.UpdateHealthGuard.ConfirmHealthy(WriteDiagnosticLog);
-                }
-                else
-                {
-                    WriteDiagnosticLog("[Update] 健康确认未通过：网关未监听，保留回滚保护");
-                }
-            }
-            catch (Exception ex)
-            {
-                WriteDiagnosticLog($"[Update] 健康确认异常: {ex.GetType().Name} - {ex.Message}");
-            }
-        }
+        // 健康确认已移到 App.Startup.cs 的 ConfirmUpdateHealthNow：
+        // 网关启动成功那一刻同步执行，不再依赖 UI 线程的 60 秒定时。
 
 
 

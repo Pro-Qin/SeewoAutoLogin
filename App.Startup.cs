@@ -418,6 +418,10 @@ namespace SeewoAutoLogin
             {
                 _gateway.Start();
                 WriteDiagnosticLog("SSO 网关启动成功");
+
+                // 升级后的健康确认就在这里做：网关起来了就说明新版本能干活，
+                // 立刻撤掉回滚标记，不让 watcher 等那 150 秒。
+                if (_isPostUpdateBoot) ConfirmUpdateHealthNow("网关已启动");
             }
             catch (Exception ex)
             {
@@ -533,6 +537,32 @@ namespace SeewoAutoLogin
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 同步做一次健康确认：网关在监听（或本来就是非管理员降级运行）就撤掉回滚标记。
+        /// 不碰 UI 线程，因此不会像原来那样被界面卡住而错过 watcher 的时限。
+        /// </summary>
+        private void ConfirmUpdateHealthNow(string reason)
+        {
+            try
+            {
+                var expectedDowngrade = _gatewayDegradedDueToPermissions && !IsAdministrator();
+                var healthy = _gateway?.IsRunning == true || expectedDowngrade;
+                if (healthy)
+                {
+                    Services.UpdateHealthGuard.ConfirmHealthy(WriteDiagnosticLog);
+                    WriteDiagnosticLog($"[Update] 健康确认通过（{reason}）");
+                }
+                else
+                {
+                    WriteDiagnosticLog($"[Update] 健康确认未通过（{reason}）：网关未监听，保留回滚保护");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog($"[Update] 健康确认异常（{reason}）: {ex.GetType().Name} - {ex.Message}");
+            }
         }
 
         /// <summary>启动后台任务：静默更新、启动成功标记、自动修复巡检。</summary>
@@ -683,8 +713,19 @@ namespace SeewoAutoLogin
                     SaveConfig();
                 }
 
-                // 60 秒后确认网关健康并撤掉回滚保护。这是 ConfirmHealthy 唯一的调用点。
-                _ = ConfirmUpdateHealthAsync();
+                // 兜底：60 秒后若仍未确认过，再试一次。
+                // 必须用 Task.Run 把它挪到线程池：这个方法是从 UI 线程调用的，
+                // 一旦那 60 秒里 UI 线程被 WebView2 首帧、模态框之类卡住，续体就排不上队，
+                // 回滚 watcher 会以为新版本没起来，把刚装好的版本换回旧版。
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(60)).ConfigureAwait(false);
+                        if (_isPostUpdateBoot) ConfirmUpdateHealthNow("60s 兜底");
+                    }
+                    catch { }
+                });
             }
             catch (Exception ex)
             {

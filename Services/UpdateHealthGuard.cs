@@ -111,12 +111,53 @@ namespace SeewoAutoLogin.Services
                     return;
                 }
 
+                // 目标文件已经是这次要装的版本、而且主程序正在运行 —— 说明安装本身是成功的，
+                // 只是「健康确认」这一步没跑到（UI 卡住、日志被占、时序问题都可能）。
+                // 这种情况下回滚会把好版本换回旧版本，用户看到的就是「装完又变回旧版、然后再装一遍」。
+                HealthMarker pending = null;
+                try { pending = JsonSerializer.Deserialize<HealthMarker>(File.ReadAllText(marker)); }
+                catch { }
+                if (IsInstalledAndRunning(pending?.TargetExe ?? target, pending?.NewVersion, log))
+                {
+                    TryDelete(marker);
+                    return;
+                }
+
                 log?.Invoke("[Update] 回滚 watcher：超时仍未确认健康，开始回滚");
                 Rollback(marker, target, log);
             }
             catch (Exception ex)
             {
                 log?.Invoke($"[Update] 回滚 watcher 异常: {ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 目标 exe 是否已经是期望的新版本、且主程序进程还活着。
+        /// 两个条件都满足时，安装是成功的；回滚只会把它毁掉。
+        /// </summary>
+        private static bool IsInstalledAndRunning(string targetExe, string expectedVersion, Action<string> log)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(targetExe) || string.IsNullOrWhiteSpace(expectedVersion)) return false;
+                if (!File.Exists(targetExe)) return false;
+
+                var installedRaw = FileVersionInfo.GetVersionInfo(targetExe).FileVersion;
+                if (!Version.TryParse(installedRaw, out var installed)) return false;
+                if (!Version.TryParse(expectedVersion.TrimStart('v', 'V'), out var expected)) return false;
+                if (installed < expected) return false;
+
+                var running = Process.GetProcessesByName("SeewoAutoLogin")
+                    .Any(p => p.Id != Environment.ProcessId);
+                if (!running) return false;
+
+                log?.Invoke($"[Update] 回滚 watcher：已装 {installed} 且主程序在运行，判定安装成功，跳过回滚");
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
