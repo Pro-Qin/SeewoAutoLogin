@@ -244,6 +244,17 @@ namespace SeewoAutoLogin
         {
             try
             {
+                // 优先用扫码凭据续期：token 换发不经过密码登录接口，不会触发「需要图片验证码」的风控。
+                // 老账号往往同时存着密码和扫码凭据；若先走密码分支，等于每 15 分钟拿密码登录一次，
+                // 把账号一路推进 4906/4909。只有扫码这条真的不通（临时故障 / 凭据缺失）才回退密码。
+                if (!string.IsNullOrWhiteSpace(account.QrCredentialId))
+                {
+                    var qrOutcome = await RefreshViaQrAsync(account).ConfigureAwait(true);
+                    if (qrOutcome.kind != SeewoFailureKind.Network && qrOutcome.kind != SeewoFailureKind.Server)
+                        return qrOutcome;
+                    WriteDiagnosticLog($"[KeepAlive] 扫码续期遇到临时故障，改用密码兜底; account-id={account.Id}");
+                }
+
                 // 密码账号：用保存的密码重新登录，顺带刷新用户信息
                 if (!string.IsNullOrEmpty(account.Password))
                 {
@@ -269,12 +280,26 @@ namespace SeewoAutoLogin
                     return (true, "已自动重新登录", SeewoFailureKind.None);
                 }
 
-                // 扫码账号：用当前令牌换发新令牌，换发成功后立即写回本地加密凭据
-                if (!string.IsNullOrWhiteSpace(account.QrCredentialId))
-                {
-                    if (!_qrSessionStore.TryLoad(account.QrCredentialId, out var session))
-                        return (false, "扫码凭据不可用，需要重新扫码", SeewoFailureKind.Credential);
+                return (false, "没有可用于续期的凭据", SeewoFailureKind.Credential);
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message, SeewoFailureKind.Unknown);
+            }
+        }
 
+        /// <summary>
+        /// 扫码凭据续期：用当前令牌换发新令牌，成功后立即写回本地加密凭据。
+        /// 抽成独立方法是为了让「扫码优先、密码兜底」这条顺序在调用处一眼可见。
+        /// </summary>
+        private async Task<(bool ok, string message, SeewoFailureKind kind)> RefreshViaQrAsync(SeewoAccount account)
+        {
+            try
+            {
+                if (!_qrSessionStore.TryLoad(account.QrCredentialId, out var session))
+                    return (false, "扫码凭据不可用，需要重新扫码", SeewoFailureKind.Credential);
+
+                {
                     using var service = new SeewoAuthService();
                     service.DiagnosticMessage += WriteDiagnosticLog;
                     service.RestoreQrSession(session.Token, account.UserInfo);
@@ -319,8 +344,6 @@ namespace SeewoAutoLogin
                         "keepalive", true, "自动续期（扫码凭据换发）");
                     return (true, "已自动续期", SeewoFailureKind.None);
                 }
-
-                return (false, "没有可用于续期的凭据", SeewoFailureKind.Credential);
             }
             catch (Exception ex)
             {
@@ -400,7 +423,7 @@ namespace SeewoAutoLogin
                 var qrCount = bad.Count(a => !string.IsNullOrWhiteSpace(a.QrCredentialId));
                 var pwdCount = bad.Count - qrCount;
                 var hint = new List<string>();
-                if (pwdCount > 0) hint.Add($"{pwdCount} 个密码账号：请确认密码是否已修改");
+                if (pwdCount > 0) hint.Add($"{pwdCount} 个密码账号：多为登录过于频繁触发风控，先在希沃白板里手动登录一次；确实改过密码的再重新录入");
                 if (qrCount > 0) hint.Add($"{qrCount} 个扫码账号：需要重新扫码添加");
 
                 // 用托盘气球而不是模态框：不抢焦点、会自己消失，也不会有系统提示音，
@@ -433,7 +456,9 @@ namespace SeewoAutoLogin
                 if (!need) return;
 
                 WriteDiagnosticLog("[KeepAlive] 退出前刷新凭据…");
-                var task = RunKeepAliveAsync(force: true);
+                // 必须丢到线程池再等：这个方法跑在 UI 线程，而续期内部是 ConfigureAwait(true)，
+                // 直接 Wait 会等待一个「需要回到 UI 线程才能完成」的任务 —— 死锁到超时，白等 12 秒。
+                var task = Task.Run(() => RunKeepAliveAsync(force: true));
                 if (!task.Wait(TimeSpan.FromSeconds(12)))
                     WriteDiagnosticLog("[KeepAlive] 退出前刷新超时，已跳过（不影响退出）");
                 else

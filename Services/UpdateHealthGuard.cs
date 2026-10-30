@@ -206,13 +206,16 @@ namespace SeewoAutoLogin.Services
                 File.Copy(backup, target, true);
                 log?.Invoke($"[Update] 已用备份覆盖 {target}");
 
+                // 带上 --updated：让被换回来的旧版本也走一次「更新后收尾」。
+                // 它会发现版本没到位，把 FailedUpdateVersion 记成这次要装的版本 ——
+                // 否则一小时后后台又去装同一个包，装完再被回滚，就会一直循环。
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = target,
-                    Arguments = "--elevated --minimized",
+                    Arguments = "--elevated --minimized --updated",
                     UseShellExecute = true
                 });
-                log?.Invoke("[Update] 已启动回滚后的版本");
+                log?.Invoke("[Update] 已启动回滚后的版本（标记为该版本安装失败）");
                 TryDelete(markerPath);
             }
             catch (Exception ex)
