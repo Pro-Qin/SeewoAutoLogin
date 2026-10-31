@@ -13,15 +13,12 @@ namespace SeewoAutoLogin
         /// </summary>
         private async Task HandleExportPackageAsync()
         {
-            var password = Services.PackagePasswordStore.Get();
-            if (string.IsNullOrEmpty(password))
-            {
-                password = PromptSecret("设置配置包口令",
-                    "配置包里的账号、手机号与密码都会加密。请设置一个至少 6 位的口令，导入时要输入同一个口令：");
-                if (password == null) return;
-                if (password.Length < 6) { await SendToast("口令至少 6 位", "error"); return; }
-                Services.PackagePasswordStore.Set(password);
-            }
+            // 每次导出都要手输一遍口令：口令存在本机等于「谁坐在这台机器前谁就能导出全部账号」，
+            // 强制输入把这道门重新关上。存下来的口令只用于导入时自动尝试。
+            var password = PromptSecret("导出配置包",
+                "为这次导出输入口令（至少 6 位）。配置包里的账号、手机号与密码都会用它加密，导入时要输入同一个口令：");
+            if (password == null) return;
+            if (password.Length < 6) { await SendToast("口令至少 6 位", "error"); return; }
 
             var dialog = new Microsoft.Win32.SaveFileDialog
             {
@@ -40,6 +37,8 @@ namespace SeewoAutoLogin
                 return;
             }
 
+            // 记下这次的口令，只为「本机再导入同一个包」时免输；导出本身永远要手输
+            Services.PackagePasswordStore.Set(password);
             _app.WriteDiagnosticLog($"[Package] 已导出配置包（{accounts} 个账号）到 {dialog.FileName}");
             await SendToast($"已导出：{accounts} 个账号 + 设置（AES-256 加密）", "ok");
         }

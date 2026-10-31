@@ -258,9 +258,16 @@ namespace SeewoAutoLogin.Services
         public void SetStatusText(string statusMessage)
         {
             if (string.IsNullOrWhiteSpace(statusMessage)) return;
-            // 健康状态（正常 / N 个账号有问题 / 被风控）优先：否则「已重建开机自启」这类后台提示
-            // 会把用户真正需要看的账号状态顶掉，悬停一看全是修复日志。
+
+            // 「自动修复：…」是后台运维事件：日志里已经记了，诊断包里也有。
+            // 悬停托盘时用户只想看「账号有没有问题」，看到「已重建开机自启（task）」只会困惑 ——
+            // 这是给机器看的，不是给人看的。
+            if (statusMessage.StartsWith("自动修复", StringComparison.Ordinal)) return;
+
+            // 健康状态（一切正常 / N 个账号有问题 / 被风控）优先：账号出问题时，
+            // 别的提示不许把它顶掉。
             if (_healthLevel > 0) return;
+
             ApplyTooltipText(statusMessage);
         }
 
