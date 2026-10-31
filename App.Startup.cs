@@ -137,6 +137,24 @@ namespace SeewoAutoLogin
             // 安装器静默升级完成后会带 --updated 启动：用于跳过提权询问、自动接管 SSO 端口并清理待更新状态。
             _isPostUpdateBoot = args.Contains("--updated");
 
+            // 让 .swalcfg 双击就进本程序：写在 HKCU 下，不需要管理员，卸载时也能清掉
+            try
+            {
+                var exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                var iconPath = Services.FileAssociationService.PublishIcon();
+                if (!string.IsNullOrWhiteSpace(exePath))
+                    Services.FileAssociationService.EnsureRegistered(exePath, iconPath, WriteDiagnosticLog);
+            }
+            catch (Exception ex) { WriteDiagnosticLog($"[Assoc] 初始化失败: {ex.GetType().Name}"); }
+
+            // 双击 .swalcfg 时由文件关联带进来：主界面就绪后直接进入导入向导
+            var importIndex = Array.IndexOf(args, "--import-config");
+            if (importIndex >= 0 && importIndex + 1 < args.Length && File.Exists(args[importIndex + 1]))
+            {
+                PendingImportPath = args[importIndex + 1];
+                WriteDiagnosticLog($"[Package] 由文件关联启动，待导入: {PendingImportPath}");
+            }
+
             // 排查 Win7 上的渲染残影（界面上偶尔飘过的深色小条）：--software-render 强制 WebView2 走
             // 软件渲染。正常启动看一次、带这个参数看一次，就能判断残影是不是 GPU 合成造成的。
             // 属于诊断开关，不写进设置界面。

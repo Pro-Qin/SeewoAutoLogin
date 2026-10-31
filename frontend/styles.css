@@ -1535,3 +1535,32 @@ nav { padding-bottom: 5%; }
 .avatar-mini .avatar-fallback { display: none; }
 .avatar-mini.img-failed img { display: none; }
 .avatar-mini.img-failed .avatar-fallback { display: block; }
+
+/* ===== 导入配置包 ===== */
+.package-panel { width: min(680px, 92vw); max-height: 82vh; display: flex; flex-direction: column; }
+.package-section { margin-top: 14px; }
+.package-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12.5px; color: var(--text-secondary);
+  letter-spacing: .02em; margin-bottom: 6px;
+}
+.package-list {
+  max-height: 190px; overflow: auto;
+  border: 1px solid var(--border-subtle); border-radius: 10px;
+  background: rgba(255, 255, 255, .02); padding: 4px;
+}
+.package-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 9px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; color: var(--text-primary);
+}
+.package-item:hover { background: rgba(255, 255, 255, .05); }
+.package-item.muted { opacity: .5; cursor: default; }
+.package-item .pi-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.package-item .pi-side { font-size: 12px; color: var(--text-tertiary); }
+.pi-tag { font-size: 11.5px; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+.pi-tag.badge-new { background: rgba(52, 199, 89, .16); color: #34C759; }
+.pi-tag.badge-upd { background: rgba(255, 159, 10, .16); color: #FF9F0A; }
+.pi-tag.badge-same { background: rgba(255, 255, 255, .06); color: var(--text-tertiary); }
+.package-empty { padding: 12px; font-size: 12.5px; color: var(--text-tertiary); }
+.package-foot { display: flex; justify-content: flex-end; margin-top: 16px; }

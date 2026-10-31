@@ -312,5 +312,13 @@
   "tray.problem": "{0} 个账号有问题",
   "tray.risk": "被风控（{0} 个账号）",
   "accounts.captchaFix": "在白板里手动登录一次即可解除",
-  "settings.tab.danger": "危险"
+  "settings.tab.danger": "危险",
+  "settings.exportPackage": "导出配置包（.swalcfg）",
+  "settings.importPackage": "导入配置包",
+  "package.title": "导入配置包",
+  "package.cancel": "取消",
+  "package.apply": "应用选中项",
+  "package.accounts": "账号",
+  "package.settings": "设置（只列出与本机不同的项）",
+  "package.toggleAll": "全选 / 全不选"
 }

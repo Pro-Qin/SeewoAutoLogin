@@ -135,6 +135,14 @@ namespace SeewoAutoLogin
             UpdateGatewayStatus();
             StartSeewoMonitor();
 
+            // 双击 .swalcfg 启动：等界面和数据都到位再弹导入向导，否则差异列表是空的
+            var pendingImport = _app?.PendingImportPath;
+            if (!string.IsNullOrWhiteSpace(pendingImport))
+            {
+                _app.PendingImportPath = null;
+                _ = HandleImportPackageAsync(pendingImport);
+            }
+
             // 希沃客户端版本变化提示（仅在检测到变化的那一次启动推送一次）
             var seewoVersionChange = _app?.SeewoVersionChange;
             if (seewoVersionChange != null && seewoVersionChange.Changed)

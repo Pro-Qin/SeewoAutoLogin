@@ -24,6 +24,9 @@ namespace SeewoAutoLogin
             }
         }
 
+        /// <summary>双击 .swalcfg 启动时带进来的文件路径；主界面就绪后消费掉。</summary>
+        internal string PendingImportPath { get; set; }
+
         /// <summary>本机功能使用统计（只写本机，不上报）</summary>
         private Services.LocalUsageStats _usageStats;
         /// <summary>切换账号口令</summary>

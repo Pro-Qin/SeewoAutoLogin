@@ -307,10 +307,8 @@
           <h2 class="card-title" data-i18n="settings.page-settings-32">数据与迁移</h2>
           <div class="card-desc" data-i18n="settings.page-settings-33">换电脑、备份，或者从旧机器搬过来</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
-            <button class="btn btn-secondary" onclick="send({type:'export-config'})" data-i18n="settings.page-settings-34">导出配置</button>
-            <button class="btn btn-secondary" onclick="send({type:'import-config'})" data-i18n="settings.page-settings-35">导入配置</button>
-            <button class="btn btn-secondary" onclick="send({type:'export-accounts'})" data-i18n="settings.page-settings-36">导出账号（加密）</button>
-            <button class="btn btn-secondary" onclick="send({type:'import-accounts'})" data-i18n="settings.page-settings-37">导入账号</button>
+            <button class="btn btn-primary" onclick="send({type:'export-package'})" data-i18n="settings.exportPackage">导出配置包（.swalcfg）</button>
+            <button class="btn btn-secondary" onclick="send({type:'import-package'})" data-i18n="settings.importPackage">导入配置包</button>
           </div>
           <div style="font-size:12px;color:#d7d7d7;margin-top:10px" data-i18n="settings.page-settings-38">卸载或迁移前请运行卸载程序，避免残留 hosts 映射与开机自启任务。</div>
           <hr class="divider">
@@ -542,6 +540,34 @@
   </div>
 </div>
 
+<!-- 导入配置包：先列差异，再让用户勾要应用的部分 -->
+<div id="packageModal" class="terms-overlay" hidden>
+  <div class="terms-panel package-panel">
+    <div class="terms-head">
+      <h2 data-i18n="package.title">导入配置包</h2>
+      <button class="btn btn-secondary" id="packageClose" type="button" data-i18n="package.cancel">取消</button>
+    </div>
+    <div class="card-desc" id="packageMeta"></div>
+    <div class="package-section">
+      <div class="package-head">
+        <span data-i18n="package.accounts">账号</span>
+        <button class="inline-link" id="packageAccountAll" type="button" data-i18n="package.toggleAll">全选 / 全不选</button>
+      </div>
+      <div id="packageAccounts" class="package-list"></div>
+    </div>
+    <div class="package-section">
+      <div class="package-head">
+        <span data-i18n="package.settings">设置（只列出与本机不同的项）</span>
+        <button class="inline-link" id="packageSettingAll" type="button" data-i18n="package.toggleAll">全选 / 全不选</button>
+      </div>
+      <div id="packageSettings" class="package-list"></div>
+    </div>
+    <div class="package-foot">
+      <button class="btn btn-primary" id="packageApply" type="button" data-i18n="package.apply">应用选中项</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast 容器 -->
 <div id="toastContainer" class="toast-container"></div>
 <!-- 前端按职责拆分为多个普通脚本（非 ES module）：共享全局作用域，标签顺序即依赖顺序；调整顺序前先看各文件顶部注释 -->
@@ -556,6 +582,7 @@
 <script src="js/health.js" defer></script>
 <script src="js/import.js" defer></script>
 <script src="js/backup.js" defer></script>
+<script src="js/package.js" defer></script>
 <script src="js/history.js" defer></script>
 <script src="js/tour.js" defer></script>
 <script src="js/terms.js" defer></script>

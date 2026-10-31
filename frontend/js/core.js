@@ -179,6 +179,7 @@ function handleCSharpMessage(raw) {
     case 'batch-import-result': renderBatchImportResult(msg); break;
     case 'csv-imported': renderCsvImportResult(msg); break;
     case 'backups': renderBackups(msg); break;
+    case 'package-preview': renderPackagePreview(msg); break;
     case 'login-history': renderLoginHistory(msg); break;
     case 'toast': showToast(msg.text, msg.level); break;
     case 'start-tour': startTour(); break;

@@ -46,6 +46,20 @@ namespace SeewoAutoLogin
                     case "rename-account-dialog": await HandleRenameAccountDialogAsync(root); break;
                     case "add-fake-account-dialog": await HandleAddFakeAccountDialogAsync(); break;
                     case "export-config": HandleExportConfig(); break;
+                    case "export-package": await HandleExportPackageAsync(); break;
+                    case "import-package": await HandleImportPackageAsync(); break;
+                    case "apply-import":
+                        {
+                            var usernames = root.TryGetProperty("accounts", out var u) && u.ValueKind == JsonValueKind.Array
+                                ? u.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToArray()
+                                : Array.Empty<string>();
+                            var settingKeys = root.TryGetProperty("settings", out var s) && s.ValueKind == JsonValueKind.Array
+                                ? s.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToArray()
+                                : Array.Empty<string>();
+                            await ApplyPackageImportAsync(usernames, settingKeys);
+                        }
+                        break;
+                    case "cancel-import": _pendingPackage = null; break;
                     case "export-accounts": await HandleExportAccountsAsync(); break;
                     case "get-switch-pin": await SendSwitchPinStatusAsync(); break;
                     case "set-switch-pin": await SetSwitchPinAsync(root); break;
