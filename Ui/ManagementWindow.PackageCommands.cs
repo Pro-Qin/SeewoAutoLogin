@@ -33,7 +33,7 @@ namespace SeewoAutoLogin
             if (dialog.ShowDialog() != true) return;
 
             var accounts = _app.Config.Accounts.Count(a => !a.IsPlaceholder);
-            if (!Services.ConfigPackageService.Export(dialog.FileName, _app.Config, App.CurrentAppVersion, password, out var error))
+            if (!Services.ConfigPackageService.Export(dialog.FileName, _app.Config, AppVersion, password, out var error))
             {
                 _app.WriteDiagnosticLog($"[Package] 导出失败: {error}");
                 await SendToast("导出失败：" + error, "error");
