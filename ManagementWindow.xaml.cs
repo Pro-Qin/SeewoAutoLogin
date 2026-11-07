@@ -116,6 +116,10 @@ namespace SeewoAutoLogin
             {
                 type = "init",
                 version = AppVersion,
+                // 构建时间：关于页在版本号后面跟一句「今天 / 3 天前 / 9月14日」，
+                // 报障时不用再问用户「你装的哪个包」
+                buildDate = BuildInfo.DescribeBuildAge(),
+                buildDateExact = BuildInfo.DescribeBuildDate(),
                 // 整份语言包随 init 下发：前端按 data-i18n 标注的静态文案与 t() 动态文案共用这一份
                 i18n = I18n.Current,
                 locale = I18n.Locale,
@@ -190,7 +194,7 @@ namespace SeewoAutoLogin
             }
         }
 
-        private static string AppVersion
+        internal static string AppVersion
         {
             get
             {

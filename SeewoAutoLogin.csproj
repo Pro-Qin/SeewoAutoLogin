@@ -10,9 +10,14 @@
     <AssemblyName>SeewoAutoLogin</AssemblyName>
     <RootNamespace>SeewoAutoLogin</RootNamespace>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-    <Version>1.14.26</Version>
+    <Version>1.14.27</Version>
     <Company>SeewoAutoLogin</Company>
     <Description>SeewoAutoLogin - 希沃自动登录</Description>
+
+    <!-- 版本发布时间：编译期把 UTC 时间写进程序集元数据（下面 AssemblyMetadata），
+         关于页直接读，不联网也不依赖安装包有没有改过文件时间。
+         刻意用 yyyyMMddTHHmmss 而不是 ISO：MSBuild 属性函数里冒号会和参数分隔符抢解析。 -->
+    <BuildDateUtc>$([System.DateTime]::UtcNow.ToString('yyyyMMddTHHmmss'))</BuildDateUtc>
 
     <!-- 单文件发布配置 -->
     <PublishSingleFile Condition="'$(Configuration)'=='Release'">true</PublishSingleFile>
@@ -21,6 +26,11 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType Condition="'$(Configuration)'=='Release'">embedded</DebugType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 生成 [assembly: AssemblyMetadata("BuildDate", ...)]，供 Services/BuildInfo.cs 读取 -->
+    <AssemblyMetadata Include="BuildDate" Value="$(BuildDateUtc)" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="HandyControl" Version="3.5.1" />

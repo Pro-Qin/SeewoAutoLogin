@@ -517,7 +517,7 @@ namespace SeewoAutoLogin.Services
             sb.AppendLine("生成时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             sb.AppendLine();
 
-            var accounts = root?["accounts"] as JsonArray;
+            var accounts = FindKey(root as JsonObject, "accounts") as JsonArray;
             if (accounts == null)
             {
                 sb.AppendLine("配置中未找到账号列表（accounts）。");
@@ -555,7 +555,7 @@ namespace SeewoAutoLogin.Services
                 sb.AppendLine("  占位账号：" + (GetBool(item, "isPlaceholder") ? "是" : "否"));
                 sb.AppendLine("  凭据最近续期：" + GetString(item, "lastTokenExchangeAtUtc"));
                 sb.AppendLine("  SSO 请求次数：" + GetString(item, "requestCount"));
-                sb.AppendLine("  标签数：" + ((item["tags"] as JsonArray)?.Count ?? 0));
+                sb.AppendLine("  标签数：" + ((FindKey(item, "tags") as JsonArray)?.Count ?? 0));
                 sb.AppendLine();
             }
 
@@ -565,9 +565,27 @@ namespace SeewoAutoLogin.Services
             return sb.ToString();
         }
 
+        /// <summary>
+        /// 按键名取节点，忽略大小写。
+        ///
+        /// 配置文件里是 PascalCase（Accounts / Password / HealthState），而这里一直按 camelCase 取。
+        /// JsonObject 的索引器区分大小写，取不到就静默返回 null —— 诊断包里的「账号概览」因此
+        /// 一直写「配置中未找到账号列表」，等于白带一份最有用的东西。
+        /// </summary>
+        private static JsonNode FindKey(JsonObject obj, string key)
+        {
+            if (obj == null || string.IsNullOrEmpty(key)) return null;
+            if (obj.TryGetPropertyValue(key, out var direct)) return direct;
+            foreach (var pair in obj)
+            {
+                if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)) return pair.Value;
+            }
+            return null;
+        }
+
         private static bool HasContent(JsonObject obj, string key)
         {
-            var value = obj?[key];
+            var value = FindKey(obj, key);
             if (value == null) return false;
             try
             {
@@ -582,7 +600,7 @@ namespace SeewoAutoLogin.Services
         {
             try
             {
-                var value = obj?[key];
+                var value = FindKey(obj, key);
                 if (value is JsonValue jv && jv.TryGetValue<string>(out var text)) return text ?? "";
                 return value?.ToJsonString() ?? "";
             }
@@ -593,7 +611,7 @@ namespace SeewoAutoLogin.Services
         {
             try
             {
-                var value = obj?[key];
+                var value = FindKey(obj, key);
                 if (value is JsonValue jv && jv.TryGetValue<bool>(out var flag)) return flag;
                 return false;
             }

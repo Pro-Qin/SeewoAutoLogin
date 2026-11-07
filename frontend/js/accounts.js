@@ -154,7 +154,8 @@ function cardHtml(a, isActive, idx, isFull, animate) {
   let renewLine = '';
   const renewFailed = hState === 'bad';
   const renewTransient = hState === 'warn';
-  if (!a.isPlaceholder && (a.lastTokenExchangeAtUtc || renewFailed || renewTransient)) {
+  // 密码解不开时，续期失败只是它的后果，说「续期失败 / 请重新扫码」会把用户带到错的方向。
+  if (!a.isPlaceholder && !a.credentialBroken && (a.lastTokenExchangeAtUtc || renewFailed || renewTransient)) {
     const when = a.lastTokenExchangeAtUtc || a.lastHealthCheckAtUtc;
     const captcha = /图片验证码/.test(hMsg || '');
     if (captcha) {
@@ -178,6 +179,15 @@ function cardHtml(a, isActive, idx, isFull, animate) {
     }
   }
 
+  // 本地凭据丢了：密码字段还在，但本机的密钥解不开它（配置来自另一台电脑、换过 Windows 账户）。
+  // 这不是密码错，也不是扫码令牌过期，唯一出路是重新录入一次密码 —— 卡片上直说。
+  const brokenLine = (a.credentialBroken && !a.isPlaceholder)
+    ? '<div class="renew-line bad">' + esc(t('accounts.credentialBroken', '密码无法解密，请重新录入密码'))
+      + '<span class="help-dot" data-tip="'
+      + escAttr(t('accounts.credentialBrokenHint', '本机凭据密钥已更换（例如配置来自另一台电脑），此前保存的密码无法恢复。重新输入一次密码即可恢复自动续期。'))
+      + '">?</span></div>'
+    : '';
+
   // 扫码账号的凭据一旦过期就无法自动恢复（希沃只发一个 token，没有 refresh token），
   // 所以直接给一个补救入口：重新扫一次，登录后会自动替换该账号的凭据，不用删了重加。
   const rescanBtn = (!a.isPlaceholder && a.loginType === '扫码')
@@ -195,6 +205,7 @@ function cardHtml(a, isActive, idx, isFull, animate) {
       <div class="info">
         <div class="name">${esc(a.displayName||a.username||'')}</div>
         <div class="meta">${esc(a.username||'')} · ${esc(a.loginType||'')}</div>
+        ${brokenLine}
         ${renewLine}
       </div>
       ${healthDot}

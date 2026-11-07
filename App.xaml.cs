@@ -124,7 +124,10 @@ namespace SeewoAutoLogin
 
             // 网络出口决策（系统代理/直连回退）也写进日志，便于排查“登录失败 / 登录信息过期”。
             NetworkRoute.DiagnosticMessage += WriteDiagnosticLog;
-            SeewoAccount.DiagnosticSink = WriteDiagnosticLog;
+            // 凭据解不开是「功能坏了」不是「发生了什么」：按警告记，日志窗口能一眼筛出来。
+            SeewoAccount.DiagnosticSink = WriteWarn;
+            // 主密钥解不开时要能在日志里看见（用户报“导入配置后全部账号登录失败”就是这条线）。
+            Services.SecureStore.DiagnosticSink = WriteWarn;
 
             _authService = new SeewoAuthService();
             _authService.DiagnosticMessage += WriteDiagnosticLog;

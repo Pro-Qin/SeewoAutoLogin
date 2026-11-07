@@ -123,13 +123,35 @@ namespace SeewoAutoLogin
             _pendingPackage = null;
             if (preview == null) { await SendToast("导入会话已失效，请重新选择文件", "warn"); return; }
 
-            var (added, updated, settings) = Services.ConfigPackageService.Apply(preview, _app.Config, usernames, settingKeys);
+            var result = Services.ConfigPackageService.Apply(preview, _app.Config, usernames, settingKeys);
             _app.SaveConfig("import-package");
-            _app.WriteDiagnosticLog($"[Package] 应用完成：新增 {added}，更新 {updated}，设置 {settings} 项");
+
+            var summary = $"已应用：新增 {result.Added} 个账号，更新 {result.Updated} 个，设置 {result.Settings} 项";
+            _app.WriteDiagnosticLog($"[Package] 应用完成：{summary}" +
+                                   (result.NeedPassword.Count > 0 ? $"; 需重录密码={string.Join(",", result.NeedPassword)}" : "") +
+                                   (result.NeedLogin.Count > 0 ? $"; 需扫码或补密码={string.Join(",", result.NeedLogin)}" : ""));
 
             await RefreshAccountList();
             await SendSettings();
-            await SendToast($"已应用：新增 {added} 个账号，更新 {updated} 个，设置 {settings} 项", "ok");
+
+            // 导入只搬账号元数据和密码，搬不动本机的凭据环境：
+            // 扫码登录的会话文件（DPAPI）不会进包，主密钥坏掉时密码也存不进去。
+            // 这两种情况以前都是静默的，用户只看到"导入后全部登录失败"，所以现在必须说清楚。
+            var todo = new List<string>();
+            if (result.NeedPassword.Count > 0)
+                todo.Add($"{result.NeedPassword.Count} 个账号的密码需要重新录入（{string.Join("、", result.NeedPassword.Take(3))}"
+                         + (result.NeedPassword.Count > 3 ? " 等" : "") + "）");
+            if (result.NeedLogin.Count > 0)
+                todo.Add($"{result.NeedLogin.Count} 个账号需要重新扫码或补密码（{string.Join("、", result.NeedLogin.Take(3))}"
+                         + (result.NeedLogin.Count > 3 ? " 等" : "") + "）");
+
+            if (todo.Count > 0)
+            {
+                await SendToast(summary + "。但 " + string.Join("；", todo), "warn");
+                return;
+            }
+
+            await SendToast(summary, "ok");
         }
     }
 }

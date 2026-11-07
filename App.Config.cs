@@ -141,8 +141,19 @@ namespace SeewoAutoLogin
                 string plaintext;
                 if (Services.SecureStore.IsLegacyEncrypted(acct.Password))
                 {
-                    // 旧 dpapi: 格式：先解出明文，再用 v2 随机主密钥重新加密
-                    plaintext = Services.SecureStore.Decrypt(acct.Password);
+                    // 旧 dpapi: 格式：先解出明文，再用 v2 随机主密钥重新加密。
+                    // 解不开（配置来自另一台电脑 / 另一个 Windows 账户）时必须跳过这一条，
+                    // 不能让它把异常抛给调用方：SaveConfig 会因此整次中止，
+                    // 用户连改个设置都存不下来，而这条密文本来就不可能变回明文。
+                    try
+                    {
+                        plaintext = Services.SecureStore.Decrypt(acct.Password);
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteWarn($"[Config] 旧格式密码无法在本机解密，保留原密文等待重新录入; account-id={acct.Id}; error={ex.GetType().Name}");
+                        continue;
+                    }
                 }
                 else
                 {
@@ -367,16 +378,41 @@ namespace SeewoAutoLogin
             }
         }
 
-        /// <summary>
-        /// 从文件导入配置
-        /// </summary>
-        internal bool ImportConfig(string filePath)
+        /// <summary>导入结果：JSON 里每个账号在本机到底能不能用。</summary>
+        internal sealed class ImportReport
         {
+            public bool Ok { get; set; }
+            public string Error { get; set; }
+            public int Total { get; set; }
+
+            /// <summary>账号在，但密码密文是别的机器/别的 Windows 账户加的，本机只能重新录入。</summary>
+            public List<string> NeedPassword { get; } = new List<string>();
+
+            /// <summary>账号在，但原本就没有密码（导出端是扫码登录），本机要扫码或补密码。</summary>
+            public List<string> NeedLogin { get; } = new List<string>();
+
+            public int Usable => Total - NeedPassword.Count - NeedLogin.Count;
+            public bool HasProblem => NeedPassword.Count > 0 || NeedLogin.Count > 0;
+        }
+
+        /// <summary>从文件导入配置（兼容旧调用点，不关心体检结果）。</summary>
+        internal bool ImportConfig(string filePath) => ImportConfigDetailed(filePath).Ok;
+
+        /// <summary>
+        /// 从文件导入配置，并给出「哪些账号导入后在当前机器上根本登不进去」。
+        ///
+        /// 旧实现把 JSON 整个读进来就写盘、只记一行「导入配置 (N 个账号)」，
+        /// 于是换台电脑导入后 4 个账号全部解不开密文，界面却一片正常 —— 用户只能看到
+        /// 「登录失败」和满屏日志。这里导入后立刻逐条试解密，把结论交回界面去提示。
+        /// </summary>
+        internal ImportReport ImportConfigDetailed(string filePath)
+        {
+            var report = new ImportReport();
             try
             {
                 var json = File.ReadAllText(filePath);
                 var loaded = JsonSerializer.Deserialize<PluginConfig>(json);
-                if (loaded == null) return false;
+                if (loaded == null) { report.Error = "配置文件内容为空"; return report; }
                 loaded.Accounts ??= new List<SeewoAccount>();
                 // 校验导入内容：剔除空账号与非法 Id（Id 会进入前端 DOM 与 SSO 请求路径）
                 loaded.Accounts.RemoveAll(a => a == null || string.IsNullOrWhiteSpace(a.Id) || a.Id.Length > 64);
@@ -386,14 +422,39 @@ namespace SeewoAutoLogin
                     account.HealthMessage = "";
                 }
                 lock (ConfigIoLock) { _config = loaded; }
+
+                report.Total = _config.Accounts.Count;
+                foreach (var account in _config.Accounts)
+                {
+                    if (account.IsPlaceholder) continue;
+                    var who = string.IsNullOrWhiteSpace(account.DisplayName) ? account.Username : account.DisplayName;
+                    if (string.IsNullOrEmpty(account.Password))
+                    {
+                        report.NeedLogin.Add(string.IsNullOrWhiteSpace(who) ? account.Id : who);
+                        account.HealthState = "bad";
+                        account.HealthMessage = "配置里没有密码（导出端是扫码登录），本机需要重新扫码或补录密码";
+                        continue;
+                    }
+
+                    // 真去解一次：这里失败就是真失败，不允许“看起来导进去了”就算成功
+                    if (!string.IsNullOrEmpty(account.DecryptedPassword)) continue;
+                    report.NeedPassword.Add(string.IsNullOrWhiteSpace(who) ? account.Id : who);
+                    account.HealthState = "bad";
+                    account.HealthMessage = "本地凭据无法解密，请重新录入密码";
+                }
+
                 SaveConfig();
-                WriteDiagnosticLog($"[Config] 已从 {filePath} 导入配置 ({_config.Accounts.Count} 个账号)");
-                return true;
+                report.Ok = true;
+                WriteDiagnosticLog($"[Config] 已从 {filePath} 导入配置 ({report.Total} 个账号；可用 {report.Usable}" +
+                                   (report.NeedPassword.Count > 0 ? $"；需重录密码 {report.NeedPassword.Count}" : "") +
+                                   (report.NeedLogin.Count > 0 ? $"；需扫码或补密码 {report.NeedLogin.Count}" : "") + ")");
+                return report;
             }
             catch (Exception ex)
             {
                 WriteDiagnosticLog($"[Config] 导入失败: {ex.Message}");
-                return false;
+                report.Error = ex.Message;
+                return report;
             }
         }
 

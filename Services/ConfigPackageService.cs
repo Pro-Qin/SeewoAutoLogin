@@ -352,24 +352,58 @@ namespace SeewoAutoLogin.Services
         }
 
         /// <summary>
-        /// 应用选中的账号与设置。返回 (新增数, 更新数, 设置数)。
-        /// 只动调用方勾选的部分：没勾的账号与设置保持本机原样。
+        /// 导入结果。除了数量，还要带回「哪些账号落盘后仍然不可用」——
+        /// 导入是用户唯一能自己修复凭据的入口，结果说得含糊，用户只会看到一排红色账号。
         /// </summary>
-        public static (int added, int updated, int settings) Apply(
+        public sealed class ApplyResult
+        {
+            public int Added { get; set; }
+            public int Updated { get; set; }
+            public int Settings { get; set; }
+
+            /// <summary>账号已写入，但密码存不进去或旧密码解不开，必须在本机重新录入密码。</summary>
+            public List<string> NeedPassword { get; } = new List<string>();
+
+            /// <summary>新增账号本身就没有密码（导出端是扫码登录），本机必须扫码或补密码才能用。</summary>
+            public List<string> NeedLogin { get; } = new List<string>();
+        }
+
+        /// <summary>
+        /// 应用选中的账号与设置。只动调用方勾选的部分：没勾的账号与设置保持本机原样。
+        /// </summary>
+        public static ApplyResult Apply(
             ImportPreview preview, PluginConfig config,
             IEnumerable<string> selectedUsernames, IEnumerable<string> selectedSettingKeys)
         {
             var wantedAccounts = new HashSet<string>(selectedUsernames ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
             var wantedSettings = new HashSet<string>(selectedSettingKeys ?? Array.Empty<string>(), StringComparer.Ordinal);
 
-            var added = 0;
-            var updated = 0;
+            var result = new ApplyResult();
+
             foreach (var item in preview.Accounts)
             {
                 if (item.Kind == "unchanged") continue;
                 if (!wantedAccounts.Contains(item.Username)) continue;
 
                 var incoming = item.Source;
+                var incomingPlain = incoming.Password ?? "";
+                var hasPassword = !string.IsNullOrEmpty(incomingPlain);
+
+                // 先独立完成加密：主密钥不可用（跨机、换账户）时这里会失败，
+                // 但失败只能影响这一个账号的密码字段，不能把整次导入连坐掉。
+                string encryptedPassword = null;
+                if (hasPassword)
+                {
+                    try
+                    {
+                        encryptedPassword = SecureStore.Encrypt(incomingPlain);
+                    }
+                    catch (Exception)
+                    {
+                        encryptedPassword = null;
+                    }
+                }
+
                 var existing = config.Accounts.FirstOrDefault(a =>
                     !string.IsNullOrWhiteSpace(a.Username) &&
                     string.Equals(a.Username, incoming.Username, StringComparison.OrdinalIgnoreCase));
@@ -381,39 +415,64 @@ namespace SeewoAutoLogin.Services
                         DisplayName = string.IsNullOrWhiteSpace(incoming.DisplayName) ? incoming.Username : incoming.DisplayName,
                         Username = incoming.Username,
                         // 落盘前统一加密：与手动添加的账号走同一条路径
-                        Password = string.IsNullOrEmpty(incoming.Password) ? "" : SecureStore.Encrypt(incoming.Password),
+                        Password = encryptedPassword ?? "",
                         Tags = SplitTags(incoming.Tags)
                     };
                     config.Accounts.Add(account);
-                    added++;
+                    result.Added++;
+                    if (hasPassword)
+                    {
+                        if (encryptedPassword == null) result.NeedPassword.Add(incoming.Username);
+                    }
+                    else
+                    {
+                        // 导出端是扫码账号，包里只有用户名；本机没有会话文件，登录不了。
+                        result.NeedLogin.Add(incoming.Username);
+                    }
                 }
                 else
                 {
-                    if (!string.Equals(existing.DecryptedPassword ?? "", incoming.Password ?? "", StringComparison.Ordinal))
-                        existing.Password = string.IsNullOrEmpty(incoming.Password) ? "" : SecureStore.Encrypt(incoming.Password);
+                    var currentPlain = existing.DecryptedPassword ?? "";
+                    var currentBroken = existing.PasswordDecryptFailed;
+                    var passwordChanged = !string.Equals(currentPlain, incomingPlain, StringComparison.Ordinal);
+
+                    if (hasPassword && encryptedPassword != null && passwordChanged)
+                    {
+                        // 能覆盖就覆盖：跨机搬过来的旧密文解不开时，这一步正好把它换成新密钥的密文。
+                        existing.Password = encryptedPassword;
+                    }
+                    else if (hasPassword && encryptedPassword == null && passwordChanged)
+                    {
+                        result.NeedPassword.Add(existing.Username);
+                    }
+                    else if (!hasPassword && currentBroken)
+                    {
+                        // 包里没带密码，本地这份又解不开 —— 不提示的话用户只会看到登录一直失败。
+                        result.NeedPassword.Add(existing.Username);
+                    }
+
                     if (!string.Equals(existing.DisplayName ?? "", incoming.DisplayName ?? "", StringComparison.Ordinal))
                         existing.DisplayName = incoming.DisplayName;
                     var incomingTags = SplitTags(incoming.Tags);
                     var currentTags = existing.Tags ?? new List<string>();
                     if (!currentTags.SequenceEqual(incomingTags, StringComparer.Ordinal))
                         existing.Tags = incomingTags;
-                    updated++;
+                    result.Updated++;
                 }
             }
 
-            var settings = 0;
             foreach (var key in wantedSettings)
             {
                 if (!preview.Payload.Settings.TryGetValue(key, out var value)) continue;
                 ApplySetting(config, key, value);
-                settings++;
+                result.Settings++;
             }
 
             // 首个账号设为当前账号：否则导入后希沃侧看到的仍是空列表
-            if (added > 0 && string.IsNullOrWhiteSpace(config.ActiveAccountId))
+            if (result.Added > 0 && string.IsNullOrWhiteSpace(config.ActiveAccountId))
                 config.ActiveAccountId = config.Accounts.FirstOrDefault()?.Id ?? "";
 
-            return (added, updated, settings);
+            return result;
         }
 
         // ---------- 内部 ----------

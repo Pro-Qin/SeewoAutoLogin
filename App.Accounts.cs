@@ -67,6 +67,23 @@ namespace SeewoAutoLogin
             SaveConfig("account");
         }
 
+        /// <summary>
+        /// 密码登录接管了原本的扫码账号时，把旧扫码凭据作废（删会话文件 + 清引用）。
+        /// 不清理的后果：保活会先拿旧扫码会话去换令牌，失败了就按「扫码已过期」报警，
+        /// 而密码其实完全可用 —— 用户看到的就是「后台续期正常、前台说已过期」。
+        /// </summary>
+        public void DiscardQrCredential(SeewoAccount account, string reason)
+        {
+            if (account == null || string.IsNullOrWhiteSpace(account.QrCredentialId)) return;
+
+            var credentialId = account.QrCredentialId;
+            try { _qrSessionStore.Delete(credentialId); }
+            catch (Exception ex) { WriteDiagnosticLog($"[Account] 删除旧扫码会话失败（不影响后续）; credential-id={credentialId}; error={ex.GetType().Name}"); }
+
+            account.QrCredentialId = "";
+            WriteDiagnosticLog($"[Account] 已作废扫码凭据，该账号改用密码续期; account-id={account.Id}; reason={reason}");
+        }
+
         public void SwitchActiveAccount(string accountId)
         {
             _config.ActiveAccountId = accountId;

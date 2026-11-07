@@ -75,6 +75,7 @@ function handleCSharpMessage(raw) {
       if (msg.config) applyConfig(msg.config);
       state.accounts = msg.accounts || []; state.health = {}; renderAccounts(); updateStatusBar();
       if (msg.version) setVersion(msg.version);
+      setBuildDate(msg.buildDate, msg.buildDateExact);
       if (msg.needsPassword) showLock();
       if (msg.status) renderSelfCheck(msg.status);
       if (msg.health) renderHealth(msg.health);
@@ -182,6 +183,8 @@ function handleCSharpMessage(raw) {
     case 'package-preview': renderPackagePreview(msg); break;
     case 'login-history': renderLoginHistory(msg); break;
     case 'toast': showToast(msg.text, msg.level); break;
+    case 'troubleshoot': renderTroubleshoot(msg); break;
+    case 'seewo-state': renderSeewoState(msg); break;
     case 'start-tour': startTour(); break;
     case 'update-progress': {
       renderUpdateProgress(msg);
@@ -204,12 +207,6 @@ function handleCSharpMessage(raw) {
       const dst = document.getElementById('diagnosticsStatus');
       if (dst) dst.textContent = msg.ok ? ('已导出到：' + (msg.path || '')) : (msg.message || '导出失败');
       showToast(msg.ok ? (msg.message || '诊断包已导出') : (msg.message || '诊断包导出失败'), msg.ok ? 'ok' : 'error');
-      break;
-    }
-    case 'logs-exported': {
-      const dstLogs = document.getElementById('diagnosticsStatus');
-      if (dstLogs) dstLogs.textContent = msg.ok ? ('已放到桌面：' + (msg.path || '')) : (msg.message || '导出失败');
-      showToast(msg.ok ? '日志已导出到桌面' : (msg.message || '日志导出失败'), msg.ok ? 'ok' : 'error');
       break;
     }
     case 'seewo-version-changed':

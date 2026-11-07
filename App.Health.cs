@@ -44,6 +44,11 @@ namespace SeewoAutoLogin
 
         private int _autoRepairRunning;
 
+        // 开机自启重建的退避状态：连续失败说明环境层面被卡住（组策略禁用计划任务、
+        // 注册表被别的守护进程回滚等），每 3 分钟硬重试只会把日志刷满，对恢复毫无帮助。
+        private int _autoStartRepairFailures;
+        private DateTime _autoStartNextAttemptUtc = DateTime.MinValue;
+
         /// <summary>一键修复：重写 hosts 映射并重启 SSO 网关</summary>
         internal async Task<string> RepairSsoAsync()
         {
@@ -136,16 +141,40 @@ namespace SeewoAutoLogin
 
                 if (_config.AutoStartEnabled && !Services.AutoStartService.IsEnabledForCurrentPath())
                 {
-                    if (Services.AutoStartService.Enable(out var autoStartError, out var mode))
-                        actions.Add("已重建开机自启（" + mode + "）");
+                    if (DateTime.UtcNow < _autoStartNextAttemptUtc)
+                    {
+                        // 冷却期内只留一条 DEBUG 痕迹：运维排查时能看到「还在等」，
+                        // 但不会每 3 分钟往日志里塞一条 INFO。
+                        WriteDiagnosticLog(LogLevel.Debug,
+                            $"[AutoRepair] 开机自启仍未指向当前路径，处于重建冷却期，{RemainingAutoStartCoolDownMinutes()} 分钟后重试");
+                    }
+                    else if (Services.AutoStartService.Enable(out var autoStartError, out var mode))
+                    {
+                        // 写完必须复检：Enable 只代表命令执行没报错，任务是否真的指向当前 exe
+                        // 要再读一次。少了这一步，「重建成功」就会变成每 3 分钟一次的假修复。
+                        if (Services.AutoStartService.IsEnabledForCurrentPath())
+                        {
+                            _autoStartRepairFailures = 0;
+                            actions.Add("已重建开机自启（" + mode + "）");
+                        }
+                        else
+                        {
+                            NoteAutoStartRepairFailure($"重建后复检仍未生效（{mode}）", actions);
+                        }
+                    }
                     else
-                        actions.Add("开机自启修复失败：" + autoStartError);
+                    {
+                        NoteAutoStartRepairFailure(autoStartError, actions);
+                    }
                 }
 
                 if (actions.Count == 0) return "";
 
                 var summary = string.Join("；", actions);
-                WriteDiagnosticLog("[AutoRepair] " + summary);
+                var level = summary.Contains("失败") || summary.Contains("未生效") || summary.Contains("不一致")
+                    ? LogLevel.Warn
+                    : LogLevel.Info;
+                WriteDiagnosticLog(level, "[AutoRepair] " + summary);
                 // 只写日志，不碰托盘：自动修复是无人值守的运维行为，每 3 分钟巡检一次。
                 // 悬停托盘应当是「账号状态」的仪表，不是我们的修复流水账。
                 return summary;
@@ -154,6 +183,26 @@ namespace SeewoAutoLogin
             {
                 Interlocked.Exchange(ref _autoRepairRunning, 0);
             }
+        }
+
+        private void NoteAutoStartRepairFailure(string reason, List<string> actions)
+        {
+            _autoStartRepairFailures++;
+            if (_autoStartRepairFailures >= 3)
+            {
+                _autoStartNextAttemptUtc = DateTime.UtcNow.AddHours(1);
+                actions.Add($"开机自启重建连续 {_autoStartRepairFailures} 轮未生效（{reason}），已暂停自动重建 1 小时");
+            }
+            else
+            {
+                actions.Add("开机自启修复失败：" + reason);
+            }
+        }
+
+        private int RemainingAutoStartCoolDownMinutes()
+        {
+            var minutes = (_autoStartNextAttemptUtc - DateTime.UtcNow).TotalMinutes;
+            return minutes <= 0 ? 0 : Math.Max(1, (int)Math.Ceiling(minutes));
         }
 
         /// <summary>自动修复循环：启动后延迟首检，之后每 3 分钟巡检一次，不依赖主界面。</summary>
@@ -170,7 +219,7 @@ namespace SeewoAutoLogin
                 catch (OperationCanceledException) { return; }
                 catch (Exception ex)
                 {
-                    WriteDiagnosticLog("[AutoRepair] 本轮异常: " + ex.GetType().Name + " - " + ex.Message);
+                    WriteWarn("[AutoRepair] 本轮异常: " + ex.GetType().Name + " - " + ex.Message);
                 }
 
                 await Task.Delay(TimeSpan.FromMinutes(3));

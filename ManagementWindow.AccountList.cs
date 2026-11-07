@@ -23,6 +23,15 @@ namespace SeewoAutoLogin
         {
             // 先取快照再渲染：后台保活在线程池线程上触发刷新时，界面线程可能正在增删账号
             var accounts = _app.Config.Accounts.ToList();
+
+            // 顺手读一次明文，把「密码解不开」这件事变成本次渲染可见的状态。
+            // 主密钥重建（跨机、换 Windows 账户）后旧密文永远解不开，界面上必须直说，
+            // 否则用户看到的就是「账号在、但一登录就失败」，完全无从下手。
+            foreach (var account in accounts)
+            {
+                if (!string.IsNullOrEmpty(account.Password)) _ = account.DecryptedPassword;
+            }
+
             return accounts.Select(a => new
             {
                 id = a.Id,
@@ -41,7 +50,9 @@ namespace SeewoAutoLogin
                 lastHealthCheckAtUtc = a.LastHealthCheckAtUtc?.ToLocalTime().ToString("MM-dd HH:mm") ?? "",
                 // 后台自动续期的时间：账号卡片上会显示「已自动续期 · 3 分钟前」
                 lastTokenExchangeAtUtc = a.LastTokenExchangeAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "",
-                isPlaceholder = a.IsPlaceholder
+                isPlaceholder = a.IsPlaceholder,
+                // 密码字段还在、但本机解不开：界面要提示重新录入，而不是报「登录失败」
+                credentialBroken = a.PasswordDecryptFailed
             }).ToList();
         }
 

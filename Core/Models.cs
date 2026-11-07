@@ -141,6 +141,12 @@ namespace SeewoAutoLogin
         public bool PasswordDecryptFailed { get; private set; }
 
         /// <summary>
+        /// 已经报过失败的密文（Id|密文）。界面每刷新一次都会读一次密码，
+        /// 不去重的话同一条失败会把日志刷满，新问题反而被淹没。
+        /// </summary>
+        private static readonly HashSet<string> DecryptReported = new HashSet<string>();
+
+        /// <summary>
         /// 获取解密后的密码（如果已加密则自动解密，否则返回原值）。
         /// 解密失败时返回空串并置位 PasswordDecryptFailed —— 调用方必须据此提示“凭据已失效”，
         /// 不能把它当成“密码错误”，否则用户会误以为密码记错了。
@@ -162,7 +168,13 @@ namespace SeewoAutoLogin
                     catch (Exception ex)
                     {
                         PasswordDecryptFailed = true;
-                        try { DiagnosticSink?.Invoke($"[Credential] 账号凭据解密失败（不是密码错误）; account-id={Id}; error={ex.GetType().Name} - {ex.Message}"); } catch { }
+                        var reportKey = Id + "|" + Password;
+                        bool firstReport;
+                        lock (DecryptReported) firstReport = DecryptReported.Add(reportKey);
+                        if (firstReport)
+                        {
+                            try { DiagnosticSink?.Invoke($"[Credential] 账号凭据解密失败（不是密码错误）; account-id={Id}; error={ex.GetType().Name} - {ex.Message}"); } catch { }
+                        }
                         return "";
                     }
                 }

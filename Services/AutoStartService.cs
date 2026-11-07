@@ -1,5 +1,7 @@
 using Microsoft.Win32;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Text.RegularExpressions;
 
 namespace SeewoAutoLogin.Services
 {
@@ -63,6 +65,12 @@ namespace SeewoAutoLogin.Services
         /// <summary>
         /// 当前自启项是否指向本程序当前的可执行文件。
         /// 程序换目录（例如从开发版切到正式安装版）后旧启动项会指向不存在的文件，需要据此重建。
+        ///
+        /// 判定必须基于启动项里「实际写着的命令行」，不能基于 schtasks 的文本输出。
+        /// 1.14.26 的故障就是这样来的：按 Encoding.Unicode 去解 schtasks /Query /XML 的输出
+        /// （在中文系统上其实是 UTF-8 字节），解出来是乱码，IndexOf 永远失败，于是每 3 分钟
+        /// 重建一次开机自启，日志里刷成一片「已重建开机自启」。
+        /// COM 与任务目录里的 XML 都是结构化数据，没有这个编码陷阱。
         /// </summary>
         internal static bool IsEnabledForCurrentPath()
         {
@@ -71,15 +79,121 @@ namespace SeewoAutoLogin.Services
 
             var mode = CurrentMode();
             if (mode == "registry")
-                return RegistryValue().IndexOf(exe, StringComparison.OrdinalIgnoreCase) >= 0;
+                return CommandTargetsExe(RegistryValue(), exe);
 
             if (mode == "task")
             {
-                // schtasks /XML 输出为 UTF-16，必须按 Unicode 读取才能比对路径
-                var (ok, xml) = RunSchtasks(new[] { "/Query", "/TN", TaskName, "/XML" }, Encoding.Unicode);
-                return ok && xml.IndexOf(exe, StringComparison.OrdinalIgnoreCase) >= 0;
+                var commandLine = ReadTaskCommandLine();
+                // 两条探测路都断了（任务计划服务不可用、任务目录读不到）：退回「任务存在即认为已启用」。
+                // 宁可漏修一次，也不要因为读不出来就每轮重建。
+                if (commandLine == null) return TaskExists();
+                return CommandTargetsExe(commandLine, exe);
             }
             return false;
+        }
+
+        /// <summary>
+        /// 读计划任务里实际执行的命令行；两条路都读不到时返回 null（与「读到但没有 Exec 动作」的 "" 区分开）。
+        /// 首选 COM，回退到任务计划服务落盘的 XML 文件。
+        /// </summary>
+        internal static string ReadTaskCommandLine()
+        {
+            var fromCom = ReadTaskCommandLineViaCom();
+            if (fromCom != null) return fromCom;
+            return ReadTaskCommandLineFromTaskFile();
+        }
+
+        /// <summary>结构化读取：Task Scheduler COM 的 GetTask().Definition.Actions。</summary>
+        private static string ReadTaskCommandLineViaCom()
+        {
+            object root = null;
+            try
+            {
+                var type = Type.GetTypeFromProgID("Schedule.Service");
+                if (type == null) return null;
+                root = Activator.CreateInstance(type);
+                if (root == null) return null;
+
+                dynamic service = root;
+                service.Connect();
+                dynamic actions = service.GetFolder("\\").GetTask(TaskName).Definition.Actions;
+                for (var i = 1; i <= actions.Count; i++)   // COM 集合从 1 开始
+                {
+                    dynamic action = actions.Item(i);
+                    if ((int)action.Type != 0) continue;   // 0 = TASK_ACTION_EXEC
+                    var path = (string)action.Path ?? "";
+                    var arguments = "";
+                    try { arguments = (string)action.Arguments ?? ""; } catch { }
+                    return (path + " " + arguments).Trim();
+                }
+                return "";
+            }
+            catch { return null; }
+            finally
+            {
+                if (root != null && Marshal.IsComObject(root))
+                {
+                    try { Marshal.ReleaseComObject(root); } catch { }
+                }
+            }
+        }
+
+        /// <summary>回退读取 %SystemRoot%System32\Tasks\SeewoAutoLogin（任务计划服务的落盘定义）。</summary>
+        private static string ReadTaskCommandLineFromTaskFile()
+        {
+            try
+            {
+                var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                if (string.IsNullOrEmpty(windows)) return null;
+                var path = Path.Combine(windows, "System32", "Tasks", TaskName);
+                if (!File.Exists(path)) return null;
+
+                var text = DecodeTaskXml(File.ReadAllBytes(path));
+                var command = MatchTaskElement(text, "Command");
+                if (string.IsNullOrEmpty(command)) return null;
+                return (command + " " + MatchTaskElement(text, "Arguments")).Trim();
+            }
+            catch { return null; }
+        }
+
+        private static string MatchTaskElement(string xml, string element)
+        {
+            var match = Regex.Match(xml, "<" + element + ">(.*?)</" + element + ">",
+                RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            return match.Success ? System.Net.WebUtility.HtmlDecode(match.Groups[1].Value).Trim() : "";
+        }
+
+        /// <summary>
+        /// 任务文件通常是 UTF-16LE 带 BOM，但手工导入或第三方工具写的可能没有 BOM，
+        /// 所以不能直接假定编码（这就是 1.14.26 踩过的坑）。
+        /// </summary>
+        private static string DecodeTaskXml(byte[] bytes)
+        {
+            if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+            if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+                return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+            if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+                return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+
+            // 无 BOM：纯 ASCII 内容按 UTF-16 存时，奇数位几乎全是 0x00
+            var limit = Math.Min(bytes.Length, 64);
+            var zeros = 0;
+            for (var i = 1; i < limit; i += 2) if (bytes[i] == 0) zeros++;
+            var utf16 = zeros * 2 >= limit / 2;
+            return utf16 ? Encoding.Unicode.GetString(bytes) : Encoding.UTF8.GetString(bytes);
+        }
+
+        /// <summary>
+        /// 命令行是否指向本程序。两侧都去掉引号再比：计划任务里写的是
+        /// "C:\...\SeewoAutoLogin.exe" --minimized，带引号时裸路径是找不到的。
+        /// </summary>
+        private static bool CommandTargetsExe(string commandLine, string exe)
+        {
+            if (string.IsNullOrWhiteSpace(commandLine) || string.IsNullOrWhiteSpace(exe)) return false;
+            var target = exe.Replace("\"", "").Trim();
+            if (target.Length == 0) return false;
+            return commandLine.Replace("\"", "").IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>启用自启。优先创建最高权限计划任务，失败则回退注册表启动项。</summary>
@@ -183,7 +297,12 @@ namespace SeewoAutoLogin.Services
             catch { }
         }
 
-        private static (bool ok, string message) RunSchtasks(string[] args, Encoding encoding = null)
+        /// <summary>
+        /// 只用于「创建/删除/查询存在性」这类只看退出码的操作。
+        /// 输出文本一律不解析：schtasks 的输出编码随系统区域设置变化，
+        /// 按固定编码去解必然在别的语言环境下碎掉（1.14.26 的自启重建死循环就源于此）。
+        /// </summary>
+        private static (bool ok, string message) RunSchtasks(string[] args)
         {
             try
             {
@@ -193,10 +312,9 @@ namespace SeewoAutoLogin.Services
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
-                    // Encoding.Default 在 net8 上就是 UTF-8；在 net48（Win7 分支）上是系统 ANSI 代码页，
-                    // 正好用于中文系统 schtasks 的 GBK 输出（查 /XML 的那条另行指定 Unicode）。
-                    StandardOutputEncoding = encoding ?? Encoding.Default,
-                    StandardErrorEncoding = encoding ?? Encoding.Default
+                    // 只用于把错误提示原样带进日志：Encoding.Default 在 net8 上是 UTF-8。
+                    StandardOutputEncoding = Encoding.Default,
+                    StandardErrorEncoding = Encoding.Default
                 };
                 foreach (var a in args) psi.ArgumentList.Add(a);
 

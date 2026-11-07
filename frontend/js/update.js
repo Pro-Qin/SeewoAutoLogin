@@ -1,6 +1,15 @@
 // update.js — 版本号、检查更新、下载进度与自动安装开关。依赖：core.js、ui.js。
 
 // ===== 版本 / 更新检查 =====
+// 版本号后面跟一个构建时间：用户报障时能立刻确认他手上的包有多旧，
+// 不用再问「你什么时候下载的」。
+function setBuildDate(age, exact) {
+  const el = document.getElementById('appBuildDate');
+  if (!el) return;
+  el.textContent = age ? ('· ' + age) : '';
+  el.title = exact ? ('构建于 ' + exact) : '';
+}
+
 function setVersion(version) {
   if (!version) return;
   const el = document.getElementById('appVersion');

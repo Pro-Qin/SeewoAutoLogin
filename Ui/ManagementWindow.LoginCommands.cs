@@ -32,6 +32,9 @@ namespace SeewoAutoLogin
                     {
                         existing.Password = password;
                         existing.IsPlaceholder = false;
+                        // 用户用密码登进来，就是要用密码续期：旧扫码凭据必须作废。
+                        // 否则保活会永远先试那次注定失败的扫码，再把账号标成「扫码已过期」。
+                        _app.DiscardQrCredential(existing, "界面密码登录");
                         if (result.UserInfo != null) existing.UserInfo = result.UserInfo;
                         if (!string.IsNullOrWhiteSpace(displayName)) existing.DisplayName = displayName;
                         _app.SaveConfig();

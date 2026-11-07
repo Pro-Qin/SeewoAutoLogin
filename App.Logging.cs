@@ -3,18 +3,40 @@ using System.Windows;
 
 namespace SeewoAutoLogin
 {
+    /// <summary>
+    /// 日志等级。写进日志文件的标签（[INFO]/[WARN]/[ERROR]/[DEBUG]）与日志窗口的染色、
+    /// 筛选都靠它。等级由调用点自己决定，不做关键词推断：「已清除失败计数」「重试成功」
+    /// 这类句子含失败字样，自动推断只会造出一堆假警告。
+    /// </summary>
+    internal enum LogLevel
+    {
+        Debug = 0,
+        Info = 1,
+        Warn = 2,
+        Error = 3
+    }
+
     public partial class App
     {
         #region Logging
 
-        internal void WriteDiagnosticLog(string message)
+        /// <summary>兼容既有调用点：不标等级的日志一律按 INFO 落盘。</summary>
+        internal void WriteDiagnosticLog(string message) => WriteDiagnosticLog(LogLevel.Info, message);
+
+        /// <summary>可自愈、但值得留痕的问题（探测失败、回退方案、复检未生效）。</summary>
+        internal void WriteWarn(string message) => WriteDiagnosticLog(LogLevel.Warn, message);
+
+        /// <summary>功能已经不可用、需要人介入的错误。</summary>
+        internal void WriteError(string message) => WriteDiagnosticLog(LogLevel.Error, message);
+
+        internal void WriteDiagnosticLog(LogLevel level, string message)
         {
-            System.Diagnostics.Debug.WriteLine($"[SeewoAutoLogin] {message}");
+            System.Diagnostics.Debug.WriteLine($"[SeewoAutoLogin][{LevelTag(level)}] {message}");
             try
             {
                 var baseDir = Path.Combine(AppDataDir, "Logs");
                 var path = Path.Combine(baseDir, DateTime.Now.ToString("yyyy-MM-dd") + ".log");
-                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [INFO] {message}{Environment.NewLine}";
+                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{LevelTag(level)}] {message}{Environment.NewLine}";
                 lock (LogIoLock)
                 {
                     Directory.CreateDirectory(baseDir);
@@ -28,6 +50,14 @@ namespace SeewoAutoLogin
             }
             catch { }
         }
+
+        private static string LevelTag(LogLevel level) => level switch
+        {
+            LogLevel.Debug => "DEBUG",
+            LogLevel.Warn => "WARN",
+            LogLevel.Error => "ERROR",
+            _ => "INFO"
+        };
 
         /// <summary>单个日志文件超过上限后滚动为 .1.log，避免长期驻留无限增长</summary>
         private static void RotateLogIfNeeded(string path)

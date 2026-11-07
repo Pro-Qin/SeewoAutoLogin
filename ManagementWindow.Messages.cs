@@ -66,7 +66,7 @@ namespace SeewoAutoLogin
                     case "clear-switch-pin": await ClearSwitchPinAsync(); break;
                     case "get-credential-lifetime": await SendCredentialLifetimeAsync(); break;
                     case "import-accounts": await HandleImportAccountsAsync(); break;
-                    case "import-config": HandleImportConfig(); break;
+                    case "import-config": await HandleImportConfigAsync(); break;
                     case "open-log-viewer": new LogViewerWindow { Owner = this }.ShowDialog(); break;
                     case "open-diagnostic": new DiagnosticWindow { Owner = this }.ShowDialog(); break;
                     case "restart": _app.RestartApp(); break;
@@ -94,9 +94,13 @@ namespace SeewoAutoLogin
                     case "tour-done": HandleTourDone(root); break;
                     case "factory-reset": HandleFactoryReset(); break;
                     case "export-diagnostics": await HandleExportDiagnosticsAsync(); break;
-                    case "export-logs-to-desktop": await HandleExportLogsToDesktopAsync(); break;
                     case "get-terms": await SendTerms(); break;
                     case "open-external": HandleOpenExternal(root); break;
+                    case "launch-seewo": await HandleLaunchSeewoAsync(); break;
+                    case "get-seewo-state": await HandleGetSeewoStateAsync(); break;
+                    case "troubleshoot-snapshot": await HandleTroubleshootSnapshotAsync(); break;
+                    case "copy-support-report": await HandleCopyIssueReportAsync(); break;
+                    case "report-issue": await HandleReportIssueAsync(); break;
                     case "reorder-accounts": HandleReorderAccounts(root); break;
                     case "renew-account": await HandleRenewAccountsAsync(root); break;
                     case "get-login-history": await HandleGetLoginHistory(root); break;

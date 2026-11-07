@@ -1564,3 +1564,138 @@ nav { padding-bottom: 5%; }
 .pi-tag.badge-same { background: rgba(255, 255, 255, .06); color: var(--text-tertiary); }
 .package-empty { padding: 12px; font-size: 12.5px; color: var(--text-tertiary); }
 .package-foot { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+/* ===== Sidebar: 启动希沃 =====
+   它不是导航项（没有页面），所以用按钮而不是 .nav-item：
+   一个「动作」长得像「位置」，用户会以为点进去是新页面。 */
+.side-launch { padding: 6px 10px 0 10px; }
+.launch-btn {
+  position: relative;
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 8px 10px;
+  border: 1px solid rgba(0, 200, 128, 0.22);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(0, 200, 128, 0.16), rgba(0, 200, 128, 0.05));
+  color: var(--text-primary);
+  cursor: pointer; text-align: left;
+  transition: transform var(--transition-fast), border-color var(--transition-fast),
+              box-shadow var(--transition-fast), background var(--transition-fast);
+}
+.launch-btn:hover {
+  border-color: rgba(0, 200, 128, 0.45);
+  background: linear-gradient(135deg, rgba(0, 200, 128, 0.24), rgba(0, 200, 128, 0.08));
+  box-shadow: 0 6px 18px rgba(0, 200, 128, 0.16);
+  transform: translateY(-1px);
+}
+.launch-btn:active { transform: translateY(0) scale(0.985); }
+.launch-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.launch-btn.pending { opacity: 0.65; pointer-events: none; }
+.launch-btn-icon {
+  flex-shrink: 0; width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  background: rgba(0, 200, 128, 0.18);
+  color: var(--blue-light);
+  transition: transform var(--transition-fast);
+}
+.launch-btn:hover .launch-btn-icon { transform: scale(1.06); }
+.launch-btn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.launch-btn-title { font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em; }
+.launch-btn-sub {
+  font-size: 10px; color: var(--text-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.launch-btn-dot {
+  flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  transition: background var(--transition-fast);
+}
+.launch-btn-dot.running {
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(52, 199, 89, 0.55);
+  animation: breathe 2s ease-in-out infinite alternate;
+}
+
+/* ===== 疑难解答页 ===== */
+.ts-wrap { max-width: 820px; margin: 0 auto; }
+.ts-intro { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.ts-intro-text { flex: 1; min-width: 220px; }
+.ts-intro .card-title { margin-bottom: 6px; }
+.ts-intro .card-desc { margin-bottom: 0; }
+.ts-h3 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0; letter-spacing: -0.01em; }
+.ts-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.ts-summary { font-size: 12px; color: var(--text-tertiary); }
+.ts-summary.ok { color: var(--success); }
+.ts-checks { display: flex; flex-direction: column; gap: 8px; }
+.ts-check {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.ts-check.ts-ok { border-color: rgba(52, 199, 89, 0.22); }
+.ts-check.ts-warn { border-color: rgba(255, 149, 0, 0.28); background: rgba(255, 149, 0, 0.05); }
+.ts-check.ts-bad { border-color: rgba(255, 59, 48, 0.32); background: rgba(255, 59, 48, 0.06); }
+.ts-check-dot {
+  flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: 11px; font-weight: 700;
+  background: rgba(52, 199, 89, 0.16); color: var(--success);
+}
+.ts-check.ts-warn .ts-check-dot { background: rgba(255, 149, 0, 0.16); color: var(--warning); }
+.ts-check.ts-bad .ts-check-dot { background: rgba(255, 59, 48, 0.16); color: var(--danger); }
+.ts-check-body { flex: 1; min-width: 0; }
+.ts-check-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ts-check-line b { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.ts-check-value { font-size: 11.5px; color: var(--text-secondary); font-family: var(--font-mono); }
+.ts-check-detail { margin-top: 3px; font-size: 12px; line-height: 1.55; color: var(--text-tertiary); }
+.ts-fix {
+  flex-shrink: 0; align-self: center;
+  padding: 5px 11px;
+  border: 1px solid rgba(0, 200, 128, 0.4);
+  border-radius: 999px;
+  background: rgba(0, 200, 128, 0.12);
+  color: var(--blue-light);
+  font-size: 11.5px; cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+.ts-fix:hover { background: rgba(0, 200, 128, 0.24); }
+.ts-fix:active { transform: scale(0.96); }
+.ts-fix:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.ts-empty { padding: 8px 2px; font-size: 12.5px; color: var(--text-tertiary); }
+
+/* 常见问题：原生 details，键盘可达、可被浏览器查找 */
+.ts-faq { display: flex; flex-direction: column; margin-top: 4px; }
+.ts-faq-item { border-bottom: 1px solid var(--border); }
+.ts-faq-item:last-child { border-bottom: none; }
+.ts-faq-item summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 2px;
+  font-size: 13px; color: var(--text-primary);
+  cursor: pointer; list-style: none;
+  transition: color var(--transition-fast);
+}
+.ts-faq-item summary::-webkit-details-marker { display: none; }
+.ts-faq-item summary::after {
+  content: '+'; flex-shrink: 0;
+  font-size: 15px; color: var(--text-tertiary);
+  transition: color var(--transition-fast);
+}
+.ts-faq-item[open] summary::after { content: '−'; color: var(--blue-light); }
+.ts-faq-item summary:hover { color: var(--blue-light); }
+.ts-faq-item summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+.ts-faq-body { padding: 0 2px 14px 2px; font-size: 12.5px; line-height: 1.7; color: var(--text-secondary); }
+
+.ts-report { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.ts-report-text { flex: 1; min-width: 240px; }
+.ts-report-desc { margin: 6px 0 0 0; font-size: 12px; line-height: 1.65; color: var(--text-tertiary); }
+.ts-report-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .launch-btn, .launch-btn-icon, .ts-check, .ts-fix { transition: none; }
+  .launch-btn:hover { transform: none; }
+  .launch-btn-dot.running { animation: none; }
+}

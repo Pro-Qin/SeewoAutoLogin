@@ -14,6 +14,26 @@ namespace SeewoAutoLogin
         }
 
         /// <summary>
+        /// CSV 里正常是明文，直接加密。但也有人把别处配置里的 `v2:` 密文粘进来——
+        /// 那串只有原机器的 DPAPI 主密钥解得开，本机原样存下等于一个永远解不开的密码，
+        /// 账号从此登录失败且没有任何提示。所以这里先试着解一次：解不开就报错让用户改填明文。
+        /// </summary>
+        private static string SealCsvPassword(string password)
+        {
+            if (!Services.SecureStore.IsEncrypted(password)) return Services.SecureStore.Encrypt(password);
+
+            try
+            {
+                Services.SecureStore.Decrypt(password);
+                return password;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("这行密码是加密串，本机解不开（多半是从另一台电脑抄过来的），请改填明文密码", ex);
+            }
+        }
+
+        /// <summary>
         /// CSV 批量导入：选择 .csv 文件 → 解析（UTF-8 / GBK，RFC4180 引号规则）→ 新增或更新账号。
         /// 与粘贴导入的区别：用户名已存在时更新密码/备注，而不是当成失败跳过。
         /// </summary>
@@ -71,7 +91,7 @@ namespace SeewoAutoLogin
                         var existing = _app.Config.Accounts.FirstOrDefault(a => string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase));
                         if (existing != null)
                         {
-                            existing.Password = Services.SecureStore.IsEncrypted(password) ? password : Services.SecureStore.Encrypt(password);
+                            existing.Password = SealCsvPassword(password);
                             // 备注留空时保留原有显示名，避免一次导入把用户自己改过的备注清掉
                             if (note.Length > 0) existing.DisplayName = note;
                             updated++;
@@ -84,7 +104,7 @@ namespace SeewoAutoLogin
                             var account = new SeewoAccount
                             {
                                 Username = username,
-                                Password = Services.SecureStore.IsEncrypted(password) ? password : Services.SecureStore.Encrypt(password),
+                                Password = SealCsvPassword(password),
                                 DisplayName = note.Length > 0 ? note : username
                             };
                             _app.Config.Accounts.Add(account);
@@ -248,11 +268,42 @@ namespace SeewoAutoLogin
             if (d.ShowDialog() == true) { _app.ExportConfig(d.FileName); _app.TrayIcon?.Notify("配置已导出"); }
         }
 
-        private void HandleImportConfig()
+        private async Task HandleImportConfigAsync()
         {
-            if (!Dialogs.ConfirmDanger(this, "导入", "导入配置将覆盖当前所有设置，确定？")) return;
+            if (!Dialogs.ConfirmDanger(this, "导入", "导入配置将覆盖当前所有设置与账号，确定？")) return;
             var d = new Microsoft.Win32.OpenFileDialog { Title = "导入配置", Filter = "配置文件 (*.json)|*.json" };
-            if (d.ShowDialog() == true && _app.ImportConfig(d.FileName)) { _app.TrayIcon?.Notify("配置已导入"); _app.RestartApp(); }
+            if (d.ShowDialog() != true) return;
+
+            var report = _app.ImportConfigDetailed(d.FileName);
+            if (!report.Ok)
+            {
+                await SendToast("导入失败：" + (report.Error ?? "文件内容无法识别"), "error");
+                return;
+            }
+
+            if (!report.HasProblem)
+            {
+                _app.TrayIcon?.Notify("配置已导入");
+                await SendToast($"已导入 {report.Total} 个账号", "ok");
+                _app.RestartApp();
+                return;
+            }
+
+            // 有问题就先说清楚，别直接重启：这些账号的密文是在别的电脑/别的 Windows 账户下加密的，
+            // 本机永远解不开。只重启不给提示，用户下次打开只会看到「登录失败」，然后以为软件坏了。
+            var lines = new List<string>();
+            if (report.NeedPassword.Count > 0)
+                lines.Add($"以下 {report.NeedPassword.Count} 个账号的密码在本机无法解密，必须重新录入密码：\n  " + string.Join("、", report.NeedPassword));
+            if (report.NeedLogin.Count > 0)
+                lines.Add($"以下 {report.NeedLogin.Count} 个账号原本是扫码登录，配置里没有密码，需要重新扫码或补录密码：\n  " + string.Join("、", report.NeedLogin));
+
+            Dialogs.Inform(this, "导入完成，但有账号在本机用不了",
+                $"已导入 {report.Total} 个账号，其中 {report.Usable} 个可以直接使用。\n\n" +
+                string.Join("\n\n", lines) +
+                "\n\n配置已保存。账号列表里这些账号会被标成异常，重新录入密码后会自动恢复。");
+
+            _app.TrayIcon?.Notify("配置已导入，部分账号需重新录入密码");
+            _app.RestartApp();
         }
     }
 }

@@ -8,13 +8,14 @@ function navigate(page) {
   document.body.dataset.page = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === 'page-' + page));
-  const t = { accounts:'账号列表', add:'添加账号', qr:'扫码登录', settings:'设置', history:'登录记录', about:'关于' };
+  const t = { accounts:'账号列表', add:'添加账号', qr:'扫码登录', settings:'设置', history:'登录记录', troubleshoot:'疑难解答', about:'关于' };
   // 注意：操作栏里凡是要「先选中账号」的按钮，都必须出现在 updateActionButtons 的 id 列表里，
   // 否则它会一直停在 HTML 初始的 disabled 上，选中账号也点不动。
   document.getElementById('pageTitle').textContent = t[page] || '';
   if (page === 'accounts') renderAccounts();
   if (page === 'settings') { send({ type: 'get-credential-lifetime' }); send({ type: 'get-switch-pin' }); }
   if (page === 'history') loadLoginHistory();
+  if (page === 'troubleshoot') loadTroubleshoot();
   moveNavIndicator();
 }
 

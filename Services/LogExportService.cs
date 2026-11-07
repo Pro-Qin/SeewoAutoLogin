@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace SeewoAutoLogin.Services
 {
     /// <summary>
-    /// 一键把所有日志整合成一份纯文本，直接放到桌面。
+    /// 把所有日志整合成一份纯文本（默认落在用户挑的位置，日志窗口的「导出日志」用它）。
     ///
     /// 与「导出诊断包」的分工：诊断包是给开发者看的 zip（配置、自检、脱敏后的账号概览）；
     /// 这个是「用户能直接拖进微信/QQ 发出去」的一份 txt —— 排查问题时最省事的一步，
@@ -21,11 +21,19 @@ namespace SeewoAutoLogin.Services
 
         private static readonly Regex PhonePattern = new Regex(@"(?<!\d)1[3-9]\d{9}(?!\d)", RegexOptions.Compiled);
 
-        /// <summary>导出到桌面，返回实际写入的文件路径。</summary>
-        public static string ExportToDesktop(string appDataDir, string appVersion, Action<string> log)
+        /// <summary>建议的文件名（调用方拿它给 SaveFileDialog 当前值，也用于默认落点）。</summary>
+        public static string DefaultFileName()
+        {
+            return $"SeewoAutoLogin-日志-{DateTime.Now:yyyyMMdd-HHmmss}.txt";
+        }
+
+        /// <summary>把全部日志整合写入指定路径，返回实际写入的文件路径。</summary>
+        public static string Export(string targetPath, string appDataDir, string appVersion, Action<string> log)
         {
             if (string.IsNullOrWhiteSpace(appDataDir))
                 throw new ArgumentException("数据目录为空", nameof(appDataDir));
+            if (string.IsNullOrWhiteSpace(targetPath))
+                throw new ArgumentException("导出路径为空", nameof(targetPath));
 
             var logsDir = Path.Combine(appDataDir, "Logs");
             var crashDir = Path.Combine(appDataDir, "crashes");
@@ -44,8 +52,10 @@ namespace SeewoAutoLogin.Services
                 sb.AppendLine($"（日志总量超过 {MaxBytes / 1024 / 1024} MB，以下文件未包含：{string.Join("、", skipped)}）");
             }
 
-            var fileName = $"SeewoAutoLogin-日志-{DateTime.Now:yyyyMMdd-HHmmss}.txt";
-            var path = Path.Combine(DesktopOrTemp(), fileName);
+            var path = targetPath;
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
             // 带 BOM 的 UTF-8：Windows 记事本打开无 BOM 的 UTF-8 会显示乱码，而用户多半就是双击记事本看
             File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
 
@@ -135,17 +145,6 @@ namespace SeewoAutoLogin.Services
             if (string.IsNullOrEmpty(text)) return text ?? "";
             try { return PhonePattern.Replace(text, "1**********"); }
             catch { return text; }
-        }
-
-        private static string DesktopOrTemp()
-        {
-            try
-            {
-                var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                if (!string.IsNullOrWhiteSpace(desktop) && Directory.Exists(desktop)) return desktop;
-            }
-            catch { }
-            return Path.GetTempPath();
         }
 
         private static bool IsAdministrator()

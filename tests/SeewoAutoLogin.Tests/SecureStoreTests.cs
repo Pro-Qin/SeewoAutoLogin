@@ -5,6 +5,9 @@ using Xunit;
 
 namespace SeewoAutoLogin.Tests
 {
+    // 与 ConfigPackageApplyTests 共用同一个集合：两边都要改 SecureStore.KeyPathOverride
+    // 这个全局静态字段，并行跑会互相踩（曾导致随机的 Encrypt_Decrypt_RoundTrips 失败）。
+    [Collection("SecureStore")]
     public class SecureStoreTests : IDisposable
     {
         private readonly string _dir;
@@ -48,6 +51,28 @@ namespace SeewoAutoLogin.Tests
             var chars = encrypted.Substring(3).ToCharArray();
             chars[^1] = chars[^1] == 'A' ? 'B' : 'A';
             Assert.ThrowsAny<Exception>(() => SecureStore.Decrypt("v2:" + new string(chars)));
+        }
+
+        [Fact]
+        public void Broken_Master_Key_Is_Rebuilt_And_Old_Ciphertext_Becomes_Unreadable()
+        {
+            var oldCipher = SecureStore.Encrypt("old-secret");
+
+            // 模拟「配置目录从另一台电脑搬过来」：key 文件在，但本机 DPAPI 解不开
+            SecureStore.ResetCacheForTests();
+            File.WriteAllBytes(_keyPath, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+            SecureStore.ResetCacheForTests();
+
+            // 自愈的第一目标：还能加密。否则用户连「重新录入密码」都存不进去，软件等于变砖
+            var newCipher = SecureStore.Encrypt("new-secret");
+            Assert.Equal("new-secret", SecureStore.Decrypt(newCipher));
+            Assert.True(SecureStore.MasterKeyRecreated);
+
+            // 坏钥匙改名留档，不删除
+            Assert.NotEmpty(Directory.GetFiles(_dir, "credential.key.broken-*"));
+
+            // 旧密文在新钥匙下解不开：这是预期结果，由 DecryptedPassword 捕获并提示重新录入
+            Assert.ThrowsAny<Exception>(() => SecureStore.Decrypt(oldCipher));
         }
 
         [Fact]

@@ -32,6 +32,16 @@ namespace SeewoAutoLogin.Services
         /// <summary>测试用：覆盖主密钥文件路径；生产保持 null。</summary>
         internal static string KeyPathOverride { get; set; }
 
+        /// <summary>
+        /// 主密钥曾被重建过（credential.key 解不开 → 备份旧的 → 生成新的）。
+        /// 一旦为 true，说明此前保存的密码全部不可解，上层必须提示用户重新录入；
+        /// 这也是“导入配置到另一台电脑后所有账号登录失败”的唯一自救路径。
+        /// </summary>
+        public static bool MasterKeyRecreated { get; private set; }
+
+        /// <summary>主密钥不可用时的诊断出口（由 App 注入，Services 层不反向依赖日志实现）。</summary>
+        internal static Action<string> DiagnosticSink { get; set; }
+
         /// <summary>测试用：清除主密钥缓存。</summary>
         internal static void ResetCacheForTests()
         {
@@ -142,12 +152,32 @@ namespace SeewoAutoLogin.Services
                 var path = KeyPath;
                 if (File.Exists(path))
                 {
-                    var protectedKey = File.ReadAllBytes(path);
-                    var key = ProtectedData.Unprotect(protectedKey, null, DataProtectionScope.CurrentUser);
-                    if (key.Length != KeySize)
-                        throw new CryptographicException("凭据密钥长度不合法");
-                    _cachedMasterKey = key;
-                    return key;
+                    byte[] key = null;
+                    try
+                    {
+                        var protectedKey = File.ReadAllBytes(path);
+                        var unwrapped = ProtectedData.Unprotect(protectedKey, null, DataProtectionScope.CurrentUser);
+                        if (unwrapped.Length == KeySize) key = unwrapped;
+                        else throw new CryptographicException("凭据密钥长度不合法");
+                    }
+                    catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException or FormatException)
+                    {
+                        // credential.key 解不开，只有几种可能：目录被拷到了另一台电脑、换过 Windows
+                        // 账户、或文件损坏。旧实现直接把异常抛出去，于是 Encrypt 也跟着失败 ——
+                        // 用户连“重新录入密码”都存不进去，软件彻底不可用。
+                        // 这里必须自愈：把坏文件留档，换一把新钥匙，代价是旧密文全废（只能重新录入），
+                        // 收益是软件立刻恢复可用。
+                        var backup = TryBackupBrokenKey(path);
+                        MasterKeyRecreated = true;
+                        SafeDiagnose($"[Credential] 主密钥不可用，已重建; reason={ex.GetType().Name} - {ex.Message}; " +
+                                     $"backup={(backup ?? "备份失败")}; 此前保存的密码需要重新录入");
+                    }
+
+                    if (key != null)
+                    {
+                        _cachedMasterKey = key;
+                        return key;
+                    }
                 }
 
                 var newKey = RandomNumberGenerator.GetBytes(KeySize);
@@ -164,6 +194,32 @@ namespace SeewoAutoLogin.Services
                 _cachedMasterKey = newKey;
                 return newKey;
             }
+        }
+
+        /// <summary>
+        /// 把解不开的主密钥改名留档（不删除：万一哪天靠它恢复了旧数据，文件还在）。
+        /// 备份失败也不阻断重建 —— 可用性优先于考古。
+        /// </summary>
+        private static string TryBackupBrokenKey(string path)
+        {
+            try
+            {
+                var backup = path + ".broken-" + DateTime.Now.ToString("yyyyMMddHHmmss");
+                var index = 1;
+                while (File.Exists(backup))
+                    backup = path + ".broken-" + DateTime.Now.ToString("yyyyMMddHHmmss") + "-" + index++;
+                File.Move(path, backup);
+                return backup;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void SafeDiagnose(string message)
+        {
+            try { DiagnosticSink?.Invoke(message); } catch { }
         }
 
         private static void TryHardenKeyFileAcl(string path)

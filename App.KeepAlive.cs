@@ -246,13 +246,36 @@ namespace SeewoAutoLogin
             {
                 // 优先用扫码凭据续期：token 换发不经过密码登录接口，不会触发「需要图片验证码」的风控。
                 // 老账号往往同时存着密码和扫码凭据；若先走密码分支，等于每 15 分钟拿密码登录一次，
-                // 把账号一路推进 4906/4909。只有扫码这条真的不通（临时故障 / 凭据缺失）才回退密码。
+                // 把账号一路推进 4906/4909。
+                //
+                // 但「扫码优先」不等于「扫码独占」：只要本地还留着能用的密码，扫码这条路废了就必须切过去。
+                // 旧实现在扫码返回凭据类失败（令牌过期 / 本机没有会话文件）时直接 return，
+                // 于是密码兜底成了死代码 —— 界面长期挂着「续期失败，请重新扫码」，
+                // 而实际上这个账号用密码一登就通。这是误报，必须止住。
+                string fallbackNote = null;
                 if (!string.IsNullOrWhiteSpace(account.QrCredentialId))
                 {
                     var qrOutcome = await RefreshViaQrAsync(account).ConfigureAwait(true);
-                    if (qrOutcome.kind != SeewoFailureKind.Network && qrOutcome.kind != SeewoFailureKind.Server)
-                        return qrOutcome;
-                    WriteDiagnosticLog($"[KeepAlive] 扫码续期遇到临时故障，改用密码兜底; account-id={account.Id}");
+                    if (qrOutcome.ok) return qrOutcome;
+
+                    var qrTransient = qrOutcome.kind == SeewoFailureKind.Network || qrOutcome.kind == SeewoFailureKind.Server;
+                    if (qrTransient)
+                    {
+                        WriteDiagnosticLog($"[KeepAlive] 扫码续期遇到临时故障，改用密码兜底; account-id={account.Id}");
+                    }
+                    else
+                    {
+                        // 凭据类失败：扫码这条路已经确定废了，但账号本身可能完全正常（密码还在）。
+                        // 没有可用密码时才把「需要重新扫码」原样上报给用户。
+                        var probe = account.DecryptedPassword;
+                        if (string.IsNullOrEmpty(account.Password))
+                            return qrOutcome;
+                        if (string.IsNullOrEmpty(probe))
+                            return (false, "本地凭据无法解密，请重新录入密码", SeewoFailureKind.Credential);
+
+                        WriteWarn($"[KeepAlive] 扫码凭据不可用，改用密码续期; account-id={account.Id}; reason={qrOutcome.message}");
+                        fallbackNote = "扫码凭据已失效，已改用密码续期";
+                    }
                 }
 
                 // 密码账号：用保存的密码重新登录，顺带刷新用户信息
@@ -275,9 +298,16 @@ namespace SeewoAutoLogin
                         return (false, reason, result.FailureKind);
                     }
                     if (result.UserInfo != null) account.UserInfo = result.UserInfo;
+
+                    // 扫码已是硬失败（令牌被拒 / 本机没有会话文件），密码一次就通：
+                    // 这个账号事实上已经由密码接管。旧扫码凭据留着只会让下一轮保活再白试一次、
+                    // 再写一条告警 —— 就是用户抱怨的「一直提示扫码过期」。
+                    if (fallbackNote != null)
+                        DiscardQrCredential(account, "扫码续期失败，已由密码续期接管");
+
                     LoginHistoryService.Record(account.Id, account.DisplayName, account.Username,
-                        "keepalive", true, "自动续期（密码重新登录）");
-                    return (true, "已自动重新登录", SeewoFailureKind.None);
+                        "keepalive", true, fallbackNote ?? "自动续期（密码重新登录）");
+                    return (true, fallbackNote ?? "已自动重新登录", SeewoFailureKind.None);
                 }
 
                 return (false, "没有可用于续期的凭据", SeewoFailureKind.Credential);
@@ -297,7 +327,12 @@ namespace SeewoAutoLogin
             try
             {
                 if (!_qrSessionStore.TryLoad(account.QrCredentialId, out var session))
-                    return (false, "扫码凭据不可用，需要重新扫码", SeewoFailureKind.Credential);
+                {
+                    // 「会话文件不在本机」和「令牌在希沃那边过期」表现一样，但处理方式不同：
+                    // 前者多半是换机或清过缓存，后者要重新扫码。日志分开写，用户才知道该做什么。
+                    WriteWarn($"[KeepAlive] 本机找不到该账号的扫码会话文件; account-id={account.Id}; credential-id={account.QrCredentialId}");
+                    return (false, "扫码凭据不在本机（换过电脑或清理过缓存），需要重新扫码", SeewoFailureKind.Credential);
+                }
 
                 {
                     using var service = new SeewoAuthService();

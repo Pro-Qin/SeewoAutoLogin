@@ -55,6 +55,13 @@ namespace SeewoAutoLogin
         // 这里只对「成功路径」的两类常规日志各做每分钟一条的节流；异常、失败、拒绝这些路径不走节流，
         // 那些必须留痕。
         private const int SsologinLogIntervalSeconds = 60;
+        /// <summary>
+        /// 本地密码解不开的日志按账号节流：希沃开着登录界面时每 2 秒轮询一次 SSOLOGIN，
+        /// 一个坏账号一分钟就能刷出几十条同类记录，真正的新问题反而被淹没。
+        /// </summary>
+        private static readonly ConcurrentDictionary<string, DateTime> _credentialFailureLogAt
+            = new ConcurrentDictionary<string, DateTime>();
+
         private static readonly object SsologinSourceLogGate = new object();
         private static readonly object SsologinServedLogGate = new object();
         private static DateTime _lastSsologinSourceLogUtc = DateTime.MinValue;
@@ -68,6 +75,16 @@ namespace SeewoAutoLogin
                 lastUtc = DateTime.UtcNow;
                 return true;
             }
+        }
+
+        /// <summary>同一账号的解密失败日志 5 分钟最多一条。</summary>
+        private static bool ShouldLogCredentialFailure(string accountId)
+        {
+            var now = DateTime.UtcNow;
+            var last = _credentialFailureLogAt.GetOrAdd(accountId, DateTime.MinValue);
+            if ((now - last).TotalSeconds < 300) return false;
+            _credentialFailureLogAt[accountId] = now;
+            return true;
         }
 
         private static bool ShouldLogSsologinSource() => ShouldLogThrottled(SsologinSourceLogGate, ref _lastSsologinSourceLogUtc);
@@ -649,7 +666,7 @@ namespace SeewoAutoLogin
                         Log($"SSOLOGIN 来源: remote={remoteKey}; ua={TruncateForLog(req.UserAgent, 80)}; referer={TruncateForLog(req.Headers["Referer"], 120)}（高频请求，日志已节流为每分钟一条）");
                     var userId = path.Substring("/getData/SSOLOGIN/".Length);
                     if (ShouldLogSsologinServed())
-                        Log($"SSOLOGIN/{{userid}}: 收到请求 userId={userId}");
+                        Log($"SSOLOGIN/{userId}: 收到请求");
                     var config = _getConfig();
                     var account = config.Accounts.FirstOrDefault(a => a.Id == userId || a.Username == userId);
 
@@ -755,7 +772,8 @@ namespace SeewoAutoLogin
                                     statusCode = "401",
                                     detail = "本地保存的密码已无法解密（可能更换了 Windows 账户或系统凭据被重置），请在管理界面重新录入密码"
                                 });
-                                Log($"SSOLOGIN/{userId}: 本地密码无法解密，需要重新录入（不是密码错误）");
+                                if (ShouldLogCredentialFailure(account.Id))
+                                    Log($"SSOLOGIN/{userId}: 本地密码无法解密，需要重新录入（不是密码错误；同账号 5 分钟内只记一条）");
                                 return;
                             }
                             loginResult = await _authService.LoginAsync(account.Username, password);

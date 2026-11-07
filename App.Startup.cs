@@ -129,6 +129,10 @@ namespace SeewoAutoLogin
         {
             Services.CrashReporter.Install(this, WriteDiagnosticLog);
 
+            // 日志按天滚动，升级时旧实例可能还在跑，两个版本会写进同一份文件。
+            // 不记版本横幅，事后根本分不清某段日志是哪一版产生的（排查「当前 1.10.2」那次就卡在这）。
+            WriteDiagnosticLog($"[App] 启动 v{ManagementWindow.AppVersion}（构建于 {Services.BuildInfo.DescribeBuildDate()}）");
+
             // 启动失败的计数放到真正接管机器之后（见 TryBecomePrimaryInstance），
             // 否则双击几次图标攒够 3 次就会被误判成连续失败、下次启动直接进安全模式。
             _safeMode = Services.CrashReporter.IsSafeModeRequested;
@@ -417,15 +421,30 @@ namespace SeewoAutoLogin
                 if (!needsRebuild && !needsUpgrade) return;
 
                 if (Services.AutoStartService.Enable(out var autoStartError, out var autoStartMode))
-                    WriteDiagnosticLog(needsUpgrade
-                        ? $"[AutoStart] 已将注册表启动项升级为计划任务; mode={autoStartMode}"
-                        : $"[AutoStart] 自启缺失或指向旧路径，已按配置重建; mode={autoStartMode}");
+                {
+                    // 命令没报错不等于启动项真的指向当前 exe：复检一次，避免留下「日志说修好了，
+                    // 但下一轮巡检又判定缺失」的自相矛盾记录。
+                    if (Services.AutoStartService.IsEnabledForCurrentPath())
+                    {
+                        WriteDiagnosticLog(needsUpgrade
+                            ? $"[AutoStart] 已将注册表启动项升级为计划任务; mode={autoStartMode}"
+                            : $"[AutoStart] 自启缺失或指向旧路径，已按配置重建; mode={autoStartMode}");
+                    }
+                    else
+                    {
+                        WriteWarn($"[AutoStart] 自启写入后复检仍未生效; mode={autoStartMode}; "
+                            + $"期望路径={Services.AutoStartService.ExecutablePath}; "
+                            + $"实际={Services.AutoStartService.ReadTaskCommandLine() ?? "读取失败"}");
+                    }
+                }
                 else
-                    WriteDiagnosticLog($"[AutoStart] 自启重建失败: {autoStartError}");
+                {
+                    WriteError($"[AutoStart] 自启重建失败: {autoStartError}");
+                }
             }
             catch (Exception ex)
             {
-                WriteDiagnosticLog($"[AutoStart] 自启自检异常: {ex.Message}");
+                WriteWarn($"[AutoStart] 自启自检异常: {ex.Message}");
             }
         }
 
