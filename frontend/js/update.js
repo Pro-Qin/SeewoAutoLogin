@@ -34,6 +34,10 @@ function checkUpdate() {
   }, 20000);
 }
 function openUpdatePage() { send({type:'download-update'}); }
+// 后端判定「所有源都不可用」时不再自己开浏览器：只把地址交过来，由用户点这个按钮决定时机
+function openManualDownload() {
+  send({ type: 'open-update-page', url: window.__manualPageUrl || '' });
+}
 function fmtMB(bytes) { return ((bytes || 0) / 1048576).toFixed(1) + ' MB'; }
 // ===== 下载完成后自动安装 =====
 // 「关于」页与「设置 → 更新」各有一个开关，两处始终同步到同一份配置（autoInstallAfterDownload）
@@ -90,6 +94,18 @@ function renderUpdateProgress(msg) {
   // 下载过程中给出取消入口，避免用户只能干等
   const cancelBtn = document.getElementById('cancelDownloadBtn');
   if (cancelBtn) cancelBtn.style.display = busy ? '' : 'none';
+  // 「手动下载」只在后端明确交来地址时出现；重新开始下载或已经装完就收起
+  const manualBtn = document.getElementById('manualDownloadBtn');
+  if (manualBtn) {
+    if (msg.manualUrl) {
+      window.__manualPageUrl = msg.manualUrl;
+      manualBtn.style.display = '';
+      manualBtn.disabled = false;
+    } else if (busy || state === 'done' || state === 'installing') {
+      manualBtn.style.display = 'none';
+      window.__manualPageUrl = '';
+    }
+  }
 }
 bindClick('cancelDownloadBtn', function () {
   send({ type: 'cancel-download' });

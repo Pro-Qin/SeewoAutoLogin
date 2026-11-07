@@ -164,6 +164,7 @@
   "about.openSiteBtn": "项目主页",
   "about.downloadUpdateBtn": "下载新版本",
   "about.cancelDownloadBtn": "取消下载",
+  "about.manualDownloadBtn": "手动下载",
   "about.page-about-5": "后台静默更新",
   "about.page-about-6": "发现新版本会自动后台下载并静默安装，完成后自动重启回托盘；关闭后需手动下载安装",
   "about.page-about-7": "当您使用此软件时，则默认您已经阅读并同意",

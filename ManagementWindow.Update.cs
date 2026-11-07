@@ -236,6 +236,21 @@ namespace SeewoAutoLogin
         }
 
         /// <summary>
+        /// 更新链路走不通时的统一出口：把「手动下载」按钮交给前端，同时闪一下任务栏。
+        /// 以前这里直接 ShellExecute 打开浏览器 —— 正在授课时那个窗口会立刻盖住白板，
+        /// 所以打开动作必须留给用户自己按时机点。
+        /// </summary>
+        private async Task OfferManualDownloadAsync(string text)
+        {
+            var pageUrl = string.IsNullOrWhiteSpace(_latestUpdate?.PageUrl)
+                ? UpdateChecker.ReleasesPageUrl
+                : _latestUpdate.PageUrl;
+
+            await SendToJs(new { type = "update-progress", state = "error", text, manualUrl = pageUrl });
+            Services.TaskbarNotifier.Flash(this);
+        }
+
+        /// <summary>
         /// 下载新版本：先按网络情况挑最快的加速源，下载完成后校验 SHA256 再启动安装程序。
         /// 直链不可用或下载失败时，回退到打开发布页让用户手动下载。
         /// </summary>
@@ -284,8 +299,8 @@ namespace SeewoAutoLogin
             var info = _latestUpdate;
             if (info == null)
             {
-                _app.WriteDiagnosticLog("[Update] 没有可用的更新信息，改为打开发布页");
-                OpenExternal(UpdateChecker.ReleasesPageUrl);
+                _app.WriteDiagnosticLog("[Update] 没有可用的更新信息，改为引导手动下载");
+                await OfferManualDownloadAsync("暂时拿不到更新信息，可点「手动下载」到发布页自己取件");
                 return;
             }
 
@@ -302,8 +317,8 @@ namespace SeewoAutoLogin
 
             if (string.IsNullOrWhiteSpace(downloadUrl))
             {
-                _app.WriteDiagnosticLog($"[Update] 没有可用的{(isPortable ? "便携版更新包" : "安装包")}直链，改为打开发布页");
-                OpenExternal(UpdateChecker.ReleasesPageUrl);
+                _app.WriteDiagnosticLog($"[Update] 没有可用的{(isPortable ? "便携版更新包" : "安装包")}直链，改为引导手动下载");
+                await OfferManualDownloadAsync($"这个版本没有公开的{(isPortable ? "便携版更新包" : "安装包")}直链，可点「手动下载」自己取件");
                 return;
             }
             _app.WriteDiagnosticLog($"[Update] 手动更新：{UpdateChannel.Describe(kind)}，下载 {downloadUrl}");
@@ -372,16 +387,7 @@ namespace SeewoAutoLogin
                 }
 
                 _app.WriteDiagnosticLog($"[Update] 下载失败: {ex.Message}");
-                await SendToJs(new
-                {
-                    type = "update-progress",
-                    state = "error",
-                    text = "下载失败：" + ex.Message + "（已为你打开发布页，可手动下载）"
-                });
-                var fallback = await UpdateChecker.ResolveBestPageUrlAsync(
-                    string.IsNullOrWhiteSpace(info.PageUrl) ? UpdateChecker.ReleasesPageUrl : info.PageUrl,
-                    _app.WriteDiagnosticLog, CancellationToken.None);
-                OpenExternal(fallback, alreadyValidated: true);
+                await OfferManualDownloadAsync("下载失败：" + ex.Message + "。可点「手动下载」到发布页自己取件");
             }
             finally
             {
@@ -401,9 +407,8 @@ namespace SeewoAutoLogin
             var staging = PortableUpdater.PrepareStaging(localPath, _app.WriteDiagnosticLog);
             if (string.IsNullOrWhiteSpace(staging))
             {
-                _app.WriteDiagnosticLog("[Update] 便携版更新包整理失败，改为打开发布页由用户手动下载");
-                await SendToJs(new { type = "update-progress", state = "error", text = "便携版更新包不可用，已为你打开发布页" });
-                OpenExternal(UpdateChecker.ReleasesPageUrl);
+                _app.WriteDiagnosticLog("[Update] 便携版更新包整理失败，改为引导手动下载");
+                await OfferManualDownloadAsync("便携版更新包不可用，可点「手动下载」到发布页重新取件");
                 return;
             }
 
@@ -453,11 +458,10 @@ namespace SeewoAutoLogin
 
                 if (!check.PathTrusted)
                 {
-                    // 位置不可信（不在下载目录 / 不是 exe / 文件已消失）：什么都不启动，回发布页
+                    // 位置不可信（不在下载目录 / 不是 exe / 文件已消失）：什么都不启动
                     _app.WriteDiagnosticLog($"[Update] 安装包位置校验未通过，取消自动安装：{check.Reason}");
-                    await SendToJs(new { type = "update-progress", state = "error", text = "安装包位置校验未通过：" + check.Reason });
-                    await SendToJs(new { type = "toast", text = "安装包位置校验未通过，已为你打开发布页", level = "error" });
-                    OpenExternal(UpdateChecker.ReleasesPageUrl);
+                    await SendToJs(new { type = "toast", text = "安装包位置校验未通过", level = "error" });
+                    await OfferManualDownloadAsync("安装包位置校验未通过：" + check.Reason + "。可点「手动下载」重新取件");
                     return;
                 }
 
@@ -472,9 +476,8 @@ namespace SeewoAutoLogin
                     var toast = check.HashAvailable
                         ? "安装包校验未通过，已阻止自动安装，请在发布页重新下载"
                         : "该版本缺少官方 SHA256 清单，已跳过自动安装";
-                    await SendToJs(new { type = "update-progress", state = "error", text });
                     await SendToJs(new { type = "toast", text = toast, level = check.HashAvailable ? "error" : "warn" });
-                    OpenExternal(UpdateChecker.ReleasesPageUrl);
+                    await OfferManualDownloadAsync(text);
                     return;
                 }
 
