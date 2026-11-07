@@ -1,7 +1,7 @@
 name: 错误报告
 description: 程序崩溃、界面异常、账号登录失败等「本来能用的功能坏了」
 title: "[Bug] "
-labels: ["bug"]
+labels: ["缺陷"]
 body:
   - type: markdown
     attributes:

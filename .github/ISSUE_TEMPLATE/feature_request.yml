@@ -1,7 +1,7 @@
 name: 功能建议
 description: 想要的新能力，或现有行为改得更顺手
 title: "[Feature] "
-labels: ["enhancement"]
+labels: ["新功能"]
 body:
   - type: markdown
     attributes:

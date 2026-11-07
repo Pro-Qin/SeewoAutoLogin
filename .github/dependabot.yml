@@ -1,12 +1,15 @@
 version: 2
 updates:
+  # labels 显式写死中文名，否则 dependabot 会自动建出 dependencies / github_actions 英文标签
   - package-ecosystem: "nuget"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    labels: ["依赖升级"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    labels: ["依赖升级"]
