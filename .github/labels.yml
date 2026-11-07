@@ -1,0 +1,87 @@
+# GitHub 标签清单 —— 单一事实来源。
+# 同步到仓库：pwsh .github/scripts/sync-labels.ps1（需要 gh CLI 且已 gh auth login）
+# 改标签只改这里，别在网页上零散地建。
+
+- name: bug
+  color: d73a4a
+  description: 行为不符合预期、崩溃、登录失败
+
+- name: enhancement
+  color: a2eeef
+  description: 新功能或现有行为改得更顺手
+
+- name: documentation
+  color: 0075ca
+  description: 文档、注释、Issue 模板本身的问题
+
+- name: question
+  color: d876e3
+  description: 使用上的疑问，还没确认是缺陷
+
+- name: needs-info
+  color: ededed
+  description: 缺版本号、日志或复现步骤，补齐后才能定位
+
+- name: duplicate
+  color: cfd3d7
+  description: 与已有 Issue 重复
+
+- name: invalid
+  color: e4e669
+  description: 不是本程序的问题（系统环境、希沃自身、第三方软件）
+
+- name: wontfix
+  color: ffffff
+  description: 明确不做，理由写在 Issue 里
+
+- name: good first issue
+  color: 7057ff
+  description: 边界清楚、不需要懂全局架构，适合第一次贡献
+
+- name: help wanted
+  color: 008672
+  description: 需要他人协助（复现环境、特定系统、翻译）
+
+- name: dependencies
+  color: 0366d6
+  description: 依赖升级
+
+- name: "area: sso-gateway"
+  color: 1d76db
+  description: 本地 SSO 网关、端口占用、hosts 映射、希沃侧登录
+
+- name: "area: credential"
+  color: b60205
+  description: 密码加密、扫码会话、令牌续期、账号健康巡检
+
+- name: "area: autostart"
+  color: 0e8a16
+  description: 开机自启、计划任务、提权
+
+- name: "area: update"
+  color: fbca04
+  description: 版本检查、下载选源、安装与回滚
+
+- name: "area: ui"
+  color: 5319e7
+  description: WPF 窗口、WebView2 界面、交互与样式
+
+- name: "area: logging"
+  color: c2e0c6
+  description: 日志、诊断包、崩溃上报
+
+- name: "area: packaging"
+  color: fef2c0
+  description: 安装包、发布流水线、构建脚本
+
+- name: "os: windows-11"
+  color: c5def5
+  description: 只在 Windows 11 上出现
+
+- name: "os: windows-10"
+  color: c5def5
+  description: 只在 Windows 10 上出现
+
+- name: "os: windows-7"
+  color: d4c5f9
+  description: win7 兼容分支相关

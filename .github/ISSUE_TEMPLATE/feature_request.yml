@@ -1,0 +1,42 @@
+name: 功能建议
+description: 想要的新能力，或现有行为改得更顺手
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先说清「你要解决的麻烦」，再谈具体做法 —— 做法往往有更省事的实现。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的麻烦
+      description: 现在必须怎么做、为什么别扭、多久遇到一次。
+      placeholder: 例如：每次换教室都要手动把账号从「暂未生效」拖回生效区，一天十几次。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望怎么做
+      description: 描述界面或行为即可，不需要写实现方案。
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 现在怎么绕过去的
+      description: 有没有别的工具或手工流程解决了这个问题，为什么不满意。
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我搜索过现有 issue 与 ROADMAP，没有人提过同样的建议
+          required: true

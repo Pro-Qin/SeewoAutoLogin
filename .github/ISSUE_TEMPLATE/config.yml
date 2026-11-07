@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用问题 / 卡住了
+    url: https://github.com/Pro-Qin/SeewoAutoLogin/blob/main/README.md#常见问题
+    about: 希沃里没有快捷登录入口、提示「登录信息过期」、白屏、开机自启没生效 —— 先看这里
+  - name: 看别人怎么解决的
+    url: https://github.com/Pro-Qin/SeewoAutoLogin/issues?q=is%3Aissue
+    about: 已关闭的 issue 里有大量同类问题的结论
+  - name: 下载与更新说明
+    url: https://github.com/Pro-Qin/SeewoAutoLogin/releases
+    about: 三个安装包的区别、每个版本改了什么
