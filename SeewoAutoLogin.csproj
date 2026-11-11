@@ -37,7 +37,7 @@
     <PackageReference Include="iNKORE.UI.WPF.Modern" Version="0.10.2.1" />
     <PackageReference Include="iNKORE.UI.WPF" Version="1.2.8" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
 
   <ItemGroup>
