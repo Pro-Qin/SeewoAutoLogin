@@ -1,5 +1,9 @@
 # SeewoAutoLogin（希沃自动登录）
 
+> [!WARNING]
+> **维护状态**：作者在学校的岗位发生了变更，学校的一体机也更换了，本项目进入低频维护。
+> 程序依旧可以正常使用，现有功能不受影响；反馈和 issue 照常会看，只是修复与新功能的节奏会明显放慢。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/project-map-dark.svg?v=20261004b">
   <img alt="SeewoAutoLogin 项目版图" src="docs/assets/project-map-light.svg?v=20261004b">
